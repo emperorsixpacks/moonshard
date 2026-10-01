@@ -26,9 +26,12 @@ import { juice } from '../engine/JuiceEffects.js';
 import confetti from 'canvas-confetti';
 import ShardDrop from '../entities/ShardDrop.js';
 import { fetchRewardsStatus } from '../gd/rewards.js';
-import { runs } from '../gd/runs.js';
+import { runs, shardsLine, survivalLabel } from '../gd/runs.js';
 import { ActiveClock, pageHidden } from '../gd/activeClock.js';
 import { SHARD_RATE_GD, DAILY_SHARD_CAP_GD } from '../gd/config.js';
+
+// After this long without an answer from the server the result screen says the run is still being submitted.
+const SLOW_SUBMIT_MS = 20_000;
 
 
 export default class SurvivalScene extends Phaser.Scene {
@@ -85,6 +88,8 @@ export default class SurvivalScene extends Phaser.Scene {
     this.crystalBankResult = null;
     this.rewardsStatus = null;
     this.isDailyHarvestCapped = false;
+    this.runProof = null;
+    this.gameOverDetails = null;
     runs.start({ mode: 'TRIAL' });
     this.events.once('shutdown', () => runs.stop());
     fetchRewardsStatus().then((st) => {
@@ -1255,73 +1260,149 @@ export default class SurvivalScene extends Phaser.Scene {
       duration: this.secondsSurvived,
       durationMs: Math.round(this.activeClock.ms),
       kills: this.killCount.total,
+      // What is submitted, and what the result screen describes: a shard picked up after this point is not part of the run.
+      shards: this.sessionCrystalsCollected || 0,
       score: this.totalScore,
       timestamp: Date.now()
     };
 
-    // Verified submission is best-effort: never block the game-over screen.
-    this.submitRunProof(runData).then((proofInfo) => {
-      if (this.isGameOver) this.showGameOverModal(proofInfo);
-    });
+    // The result screen opens at once and never waits for the server: it says "Submitting run..." and fills in what the
+    // server answered once finish() resolves. Whatever the submit does, the player has a screen with a way out.
+    let proof;
+    try {
+      proof = this.beginRunProof(runData);
+    } catch (err) {
+      console.warn('[survival] could not prepare the run proof', err?.message);
+      proof = { label: 'Run Not Recorded', verified: false, offline: false, notConnected: false, shards: runData.shards, signature: 'RUN-UNSAVED', result: undefined, slow: false };
+      this.runProof = proof;
+    }
+    this.showGameOverModal(proof);
+    this.settleRunProof(runData, proof);
   }
 
-  async submitRunProof(runData) {
+  /** The proof the result screen starts from: what is known before the server has answered. */
+  beginRunProof(runData) {
+    const status = gdService.getStatus();
     const proof = {
       verified: false,
       signature: `RUN-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 8999 + 1000)}`,
       offline: false,
-      notConnected: false,
+      notConnected: !status.connected,
+      shards: runData.shards,
+      result: undefined,
+      slow: false,
     };
+    this.runProof = proof;
+    this.describeProof(proof, status);
+    this.recordTrial(runData, proof);
+    return proof;
+  }
 
-    const status = gdService.getStatus();
-    if (!status.connected) {
-      proof.notConnected = true;
-      proof.label = 'Not Ranked — Connect Wallet to Compete';
-      runs.stop();
-    } else {
-      try {
-        const res = await Promise.race([
-          runs.finish({
-            score: runData.score,
-            kills: runData.kills,
-            shards: this.sessionCrystalsCollected || 0,
-            durationMs: runData.durationMs,
-          }),
-          new Promise((resolve) => setTimeout(() => resolve({ ticketed: true, error: 'timeout', status: 0 }), 9000)),
-        ]);
-        if (!res.ticketed) {
-          proof.offline = true;
-          proof.label = 'Run Not Recorded (Offline)';
-        } else if (res.error) {
-          proof.offline = res.status === 0;
-          proof.label = proof.offline ? 'Run Not Recorded (Offline)' : `Run Not Recorded — ${res.error}`;
-        } else if (res.rankedOk) {
-          proof.verified = true;
-          proof.rank = res.rank?.ranked;
-          proof.isNewBest = res.isNewBest;
-          proof.label = `Ranked — #${res.rank?.ranked}${res.isNewBest ? ' (New Best)' : ''}`;
-        } else {
-          proof.rank = res.rank?.open;
-          proof.label = status.verified
-            ? `Open Board #${res.rank?.open ?? '-'} — run not ranked`
-            : `Open Board #${res.rank?.open ?? '-'} — verify to compete for G$`;
-        }
-      } catch (err) {
-        proof.offline = true;
-        proof.label = 'Run Not Recorded (Offline)';
+  describeProof(proof, status = gdService.getStatus()) {
+    proof.label = survivalLabel({ connected: status.connected, verified: status.verified, result: proof.result, slow: proof.slow });
+  }
+
+  /** Settle the run with the server and bring the result screen and the local record up to date. Never throws. */
+  async settleRunProof(runData, proof) {
+    try {
+      if (!gdService.getStatus().connected) {
+        runs.stop(); // this run has no ticket to settle
+        return;
       }
+      // finish() can take a while on a slow API (checkpoint, submit and one retry of each). Say so rather than
+      // guessing: the run is usually still being recorded, and calling it "offline" would be wrong.
+      const slowTimer = setTimeout(() => {
+        proof.slow = true;
+        this.describeProof(proof);
+        this.refreshGameOverModal(proof);
+      }, SLOW_SUBMIT_MS);
+      let result;
+      try {
+        result = await runs.finish({
+          score: runData.score,
+          kills: runData.kills,
+          shards: runData.shards,
+          durationMs: runData.durationMs,
+        });
+      } finally {
+        clearTimeout(slowTimer);
+      }
+      proof.slow = false;
+      proof.result = result;
+      proof.offline = result.reason === 'offline' || result.status === 0;
+      if (result.rankedOk) {
+        proof.verified = true;
+        proof.rank = result.rank?.ranked;
+        proof.isNewBest = result.isNewBest;
+      } else if (result.rank) {
+        proof.rank = result.rank.open;
+      }
+      this.describeProof(proof);
+      this.recordTrial(runData, proof);
+    } catch (err) {
+      proof.label = 'Run Not Recorded';
     }
+    this.refreshGameOverModal(proof);
+  }
 
-    // Save locally either way; keep the server result for review.
-    storage.recordDailyTrial(this.dayKey, runData.score, {
+  /** Keep the local copy of the day's best trial; its status is updated in place once the server has answered. */
+  recordTrial(runData, proof) {
+    const details = () => ({
       ...runData,
       proofId: proof.signature,
       verified: proof.verified,
       rank: proof.rank || null,
       status: proof.label,
     });
+    try {
+      storage.recordDailyTrial(this.dayKey, runData.score, details());
+      // recordDailyTrial keeps the first record of a score, so a later status has to be written over it.
+      const stored = storage.getDailyRecord(this.dayKey);
+      if (stored?.details?.proofId === proof.signature) {
+        stored.details = details();
+        storage.save();
+      }
+    } catch (err) {
+      console.warn('[survival] could not save the local record', err?.message);
+    }
+  }
 
-    return proof;
+  gameOverDetailsText(proof) {
+    let crystalLine = '';
+    try {
+      if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
+        crystalLine = `🔒 Daily Shard Cap Reached (${DAILY_SHARD_CAP_GD} G$ Max) • Resets 00:00 UTC`;
+      } else {
+        const st = gdService.getStatus();
+        const shards = shardsLine({
+          shards: proof.shards,
+          rateG: SHARD_RATE_GD,
+          connected: st.connected,
+          verified: st.verified,
+          result: proof.result,
+        });
+        crystalLine = `${shards.icon} ${shards.text}`;
+      }
+    } catch (err) {
+      console.warn('[survival] could not describe the Shard Harvest', err?.message); // the rest of the screen still matters
+    }
+    return [
+      `Time Survived: ${this.secondsSurvived}s (+${this.secondsSurvived * GAME_CONFIG.SURVIVAL.PTS_PER_SECOND} pts)`,
+      `Kills: 🐗${this.killCount.boar || 0} 🐌${this.killCount.snail || 0} 🐝${this.killCount.bee || 0} 🍄${this.killCount.mushroom || 0} 👁️${this.killCount.flying_eye || 0} 👺${this.killCount.goblin || 0}`,
+      crystalLine,
+      `${proof.label}`
+    ].join('\n');
+  }
+
+  /** Redraw the result text when the server's answer arrives. Does nothing if that screen is gone or a newer run replaced it. */
+  refreshGameOverModal(proof) {
+    const text = this.gameOverDetails;
+    if (this.runProof !== proof || !text || !text.active) return;
+    try {
+      text.setText(this.gameOverDetailsText(proof));
+    } catch (err) {
+      console.warn('[survival] could not update the result screen', err?.message);
+    }
   }
 
   showGameOverModal(proof) {
@@ -1352,31 +1433,14 @@ export default class SurvivalScene extends Phaser.Scene {
       color: '#ffffff'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
 
-    const st = gdService.getStatus();
-    let crystalLine = '';
-    if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
-      crystalLine = `🔒 Daily Shard Cap Reached (${DAILY_SHARD_CAP_GD} G$ Max) • Resets 00:00 UTC`;
-    } else if (this.sessionCrystalsCollected > 0 && st.verified) {
-      crystalLine = `💎 Shard Harvest: +${this.sessionCrystalsCollected * SHARD_RATE_GD} G$ pending (${this.sessionCrystalsCollected} Shards)`;
-    } else if (this.sessionCrystalsCollected > 0) {
-      crystalLine = '🛡 Verify you are human to bank your Shards as G$';
-    } else if (st.verified) {
-      crystalLine = '💎 Shard Harvest: 0 Shards';
-    } else {
-      crystalLine = '⚡ Connect & verify to bank Shards as G$';
-    }
-
-    const details = this.add.text(w / 2, h / 2 - 14, [
-      `Time Survived: ${this.secondsSurvived}s (+${this.secondsSurvived * 10} pts)`,
-      `Kills: 🐗${this.killCount.boar || 0} 🐌${this.killCount.snail || 0} 🐝${this.killCount.bee || 0} 🍄${this.killCount.mushroom || 0} 👁️${this.killCount.flying_eye || 0} 👺${this.killCount.goblin || 0}`,
-      crystalLine,
-      `${proof.label}`
-    ].join('\n'), {
+    // Kept so the result line can be redrawn when the server's answer arrives (see refreshGameOverModal).
+    this.gameOverDetails = this.add.text(w / 2, h / 2 - 14, this.gameOverDetailsText(proof), {
       fontFamily: 'Press Start 2P',
       fontSize: '5.5px',
       color: '#a0c4a0',
       lineSpacing: 5,
-      align: 'center'
+      align: 'center',
+      wordWrap: { width: 376 } // a long reason or server code wraps inside the card instead of running off it
     }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
 
 

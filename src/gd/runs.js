@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { getToken } from './session.js';
+import { formatG } from './format.js';
 
 /** The server takes at most this many checkpoint points per request. */
 const POINTS_PER_POST = 50;
@@ -305,6 +306,110 @@ export class RunTracker {
       promise.then(done, done);
     });
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// What the end screens may say about a finished run. The server credits Shards only to verified, unflagged runs with
+// checkpoint coverage of at least 0.5 and pays the boss bounty only for a run it accepted as a boss clear
+// (server/src/runs.js), so every promise below follows what the server answered, not what the player did.
+// `result` is the value finish() resolved with, or undefined while it is still settling.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const WHY = {
+  offline: 'Offline',
+  server_error: 'Server Error',
+  signed_out: 'Signed Out',
+  rate_limited: 'Server Busy',
+  superseded: 'A Newer Run Began',
+  expired: 'Run Too Long',
+  starting: 'Server Too Slow',
+  not_connected: 'Wallet Connected Mid-Run',
+  no_run: 'No Run Started',
+};
+const CODE_WHY = { invalid_duration: 'Run Too Short' };
+
+/** Title-case reason a run was not recorded: 'Offline', 'Signed Out', ... or the server's code for an unusual refusal. */
+export function notRecordedWhy(result) {
+  const reason = result?.reason;
+  if (reason === 'rejected') return CODE_WHY[result.error] || String(result.error || 'Rejected');
+  if (WHY[reason]) return WHY[reason];
+  if (result?.status === 0) return 'Offline';
+  return 'Unknown';
+}
+
+const notRecorded = (result) => !result || result.ticketed !== true || Boolean(result.error);
+const flagsOf = (result) => (Array.isArray(result?.flags) ? result.flags : []);
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/**
+ * Will this run's Shards be credited? 'credited' | 'not_credited' | 'unknown' (the server holds the run but we never saw
+ * its verdict). Mirrors the server: verified, no flags, coverage >= 0.5. `rankedOk` is false for an unverified or flagged run.
+ */
+export function shardVerdict(result, { connected, verified }) {
+  if (!connected || !verified) return 'not_credited';
+  if (notRecorded(result)) return 'not_credited';
+  if (result.alreadySubmitted) return 'unknown';
+  if (result.rankedOk === false || flagsOf(result).length > 0) return 'not_credited';
+  if (typeof result.coverage === 'number' && result.coverage < 0.5) return 'not_credited';
+  return 'credited';
+}
+
+/** The Shard Harvest line for an end screen: { icon, text, tone }. The daily-cap notice is left to the scene. */
+export function shardsLine({ shards, rateG, connected, verified, result }) {
+  const n = toCount(shards);
+  if (!connected) {
+    return { icon: '⚡', tone: 'muted', text: n > 0 ? 'Connect a wallet and verify to bank Shards as G$' : 'Connect & verify to bank Shards as G$' };
+  }
+  if (!verified) {
+    return { icon: '🛡', tone: 'warn', text: 'Verify you are human to bank your Shards as G$' };
+  }
+  if (n === 0) return { icon: '💎', tone: 'muted', text: 'Shard Harvest: 0 Shards' };
+  const count = plural(n, 'Shard');
+  if (!result) return { icon: '💎', tone: 'muted', text: `Shard Harvest: ${count} • saving run...` };
+  switch (shardVerdict(result, { connected, verified })) {
+    case 'credited':
+      return { icon: '💎', tone: 'shard', text: `Shard Harvest: +${n * rateG} G$ pending (${count})` };
+    case 'unknown':
+      return { icon: '💎', tone: 'muted', text: `Shard Harvest: ${count} • run recorded, check your G$ wallet` };
+    default: {
+      let why;
+      if (notRecorded(result)) why = `not recorded (${notRecordedWhy(result).toLowerCase()})`;
+      else if (flagsOf(result).length > 0 || result.rankedOk === false) why = 'run flagged';
+      else why = 'too little of the run reached the server';
+      return { icon: '💎', tone: 'warn', text: `${count} not banked • ${why}` };
+    }
+  }
+}
+
+/** The boss bounty line of the Story victory banner: { text, tone }. Prints an amount only if the server gave one. */
+export function bossLine({ connected, verified, result, alreadyClaimed, rewardG }) {
+  if (!connected) return { tone: 'muted', text: 'Connect a wallet and verify to earn boss bounties in future runs' };
+  if (verified && alreadyClaimed) return { tone: 'muted', text: 'First-boss bounty already claimed' };
+  if (!result) return { tone: 'muted', text: 'Saving your run...' };
+  if (notRecorded(result)) {
+    return { tone: 'warn', text: `Bounty not recorded (${notRecordedWhy(result).toLowerCase()}). Defeat the boss again to earn it` };
+  }
+  if (result.alreadySubmitted) return { tone: 'muted', text: 'Run recorded. Check the G$ wallet for your bounty' };
+  if (result.bossCleared !== true) {
+    return { tone: 'bad', text: 'Bounty not recorded: the server flagged this run. Defeat the boss again to earn it' };
+  }
+  if (!verified) return { tone: 'warn', text: 'Verify you are human to claim the boss bounty' };
+  const amount = Number(rewardG);
+  const worth = rewardG !== null && rewardG !== '' && Number.isFinite(amount) && amount > 0 ? `${formatG(amount)} G$` : 'your bounty';
+  return { tone: 'good', text: `Boss slain! Claim ${worth} in the G$ wallet (header)` };
+}
+
+/** The result line of the Survival game-over modal. `slow`: the answer has been awaited for a long time. */
+export function survivalLabel({ connected, verified, result, slow = false }) {
+  if (!connected) return 'Not Ranked — Connect Wallet to Compete';
+  if (!result) return slow ? 'Still submitting — check the Leaderboard shortly' : 'Submitting run...';
+  if (notRecorded(result)) return `Run Not Recorded (${notRecordedWhy(result)})`;
+  if (result.alreadySubmitted) return 'Run Recorded — open the Leaderboard for your rank';
+  if (result.rankedOk) return `Ranked — #${result.rank?.ranked}${result.isNewBest ? ' (New Best)' : ''}`;
+  const board = `Open Board #${result.rank?.open ?? '-'}`;
+  if (flagsOf(result).length > 0) return `${board} — run flagged, not ranked`;
+  if (result.checkpointFailed) return `${board} — not ranked (upload was interrupted)`;
+  return verified ? `${board} — run not ranked` : `${board} — verify to compete for G$`;
 }
 
 export const runs = new RunTracker();

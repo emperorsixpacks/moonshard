@@ -32,7 +32,7 @@ export async function bootGame({ api = false, clock = false, viewport = { width:
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
     if (clock) await page.clock.install();
-    if (init) await page.addInitScript(init);
+    if (init) await page.addInitScript({ content: init }); // a string of JS, run before the app on every load
     return {
       page, web, errors, close, context,
       goto: async () => {
