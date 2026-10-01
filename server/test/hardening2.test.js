@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { encodeAbiParameters, encodeEventTopics } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { fakeChain, fakeClock, makeHarness, playTrial, UBI, ubiClaimedLog } from "./helpers.js";
+import { fakeChain, fakeClock, makeHarness, playTrial, UBI, ubiClaimedLog, VAULT } from "./helpers.js";
 import { createDb } from "../src/db.js";
 import { createIdentityResolver } from "../src/identity.js";
 import { dayKey } from "../src/time.js";
 import { rankOf } from "../src/leaderboard.js";
+import { settleDue, spoilId } from "../src/spoils.js";
+import { vaultAbi } from "../src/chain.js";
 import * as cfg from "../config.js";
 import * as auth from "../src/auth.js";
 
@@ -406,3 +409,66 @@ for (const { name, first, second, want } of [
     } finally { await h.close(); }
   });
 }
+
+// ---------------------------------------------------------------------------------------------
+// H5. A tx with several Claimed events records every one of the caller's spoils.
+//     Break caught: spoil_claims was keyed by tx_hash alone, so only the first event of a multi-claim
+//     tx was recorded and the rest were silently dropped (under-reporting "Spoils paid").
+// ---------------------------------------------------------------------------------------------
+
+const G = (n) => BigInt(n) * 10n ** 18n;
+const SETTLEABLE = Date.parse("2026-10-06T00:42:00.000Z");
+
+const claimedLog = (id, to, amount, hash, logIndex) => ({
+  address: VAULT,
+  topics: encodeEventTopics({ abi: vaultAbi, eventName: "Claimed", args: { id, to } }),
+  data: encodeAbiParameters([{ type: "uint256" }], [amount]),
+  logIndex, blockNumber: 1n, blockHash: "0x" + "00".repeat(32), transactionHash: hash, transactionIndex: 0, removed: false,
+});
+
+test("H5: one tx redeeming two of the caller's spoils records both; a relayed tx also serves the other winner; replays record nothing", async () => {
+  const h = await makeHarness();
+  try {
+    const a = await h.newPlayer({ verified: true });
+    const b = await h.newPlayer({ verified: true });
+    await playTrial(h, a, { score: 500, kills: 40, shards: 30 }); // prize (rank 1) + shard harvest
+    await playTrial(h, b, { score: 400 }); // prize (rank 2)
+    h.clock.set(SETTLEABLE);
+    await settleDue(h.ctx);
+    const day = "2026-10-05";
+    const aPrize = spoilId("TRIAL_PRIZE", day, a.address);
+    const aHarvest = spoilId("SHARD_HARVEST", day, a.address);
+    const bPrize = spoilId("TRIAL_PRIZE", day, b.address);
+
+    // one relayed tx paying a (two vouchers) and b (one voucher)
+    const hash = "0x" + "ee".repeat(32);
+    h.chain.state.txs.set(hash, {
+      tx: { from: stranger(), to: VAULT, input: "0x" },
+      receipt: {
+        status: "success",
+        logs: [
+          claimedLog(aPrize, a.account.address, G(1000), hash, 0),
+          claimedLog(aHarvest, a.account.address, G(60), hash, 1),
+          claimedLog(bPrize, b.account.address, G(600), hash, 2),
+        ],
+      },
+      timestamp: Math.floor(h.clock() / 1000),
+    });
+    const confirm = (p) => h.api.post("/spoils/confirm", { txHash: hash }, { token: p.token });
+    const ids = (r) => [...r.body.recorded].sort();
+
+    const first = await confirm(a);
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.deepEqual(ids(first), [aPrize.toString(), aHarvest.toString()].sort());
+    const second = await confirm(b); // the same tx hash, a different winner
+    assert.deepEqual(ids(second), [bPrize.toString()]);
+
+    const count = async () => (await h.db.query("SELECT count(*)::int AS n FROM spoil_claims WHERE tx_hash = $1", [hash])).rows[0].n;
+    assert.equal(await count(), 3);
+    assert.equal((await h.api.get("/stats")).body.spoilsPaidG, "1660"); // 1000 + 60 + 600
+
+    assert.deepEqual((await confirm(a)).body.recorded, []);
+    assert.deepEqual((await confirm(b)).body.recorded, []);
+    assert.equal(await count(), 3);
+  } finally { await h.close(); }
+});

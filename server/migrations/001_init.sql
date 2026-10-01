@@ -88,12 +88,15 @@ CREATE TABLE spoils (
   UNIQUE (kind, day, subject)
 );
 
+-- One tx can redeem several vouchers (a player's prize and harvest, or a relayer paying several winners),
+-- so a claim is identified by the tx and the spoil together.
 CREATE TABLE spoil_claims (
-  tx_hash text PRIMARY KEY,
+  tx_hash text NOT NULL,
   spoil_id text NOT NULL,
   subject text NOT NULL,
   amount text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tx_hash, spoil_id)
 );
 
 CREATE TABLE ubi_claims (

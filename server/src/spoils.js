@@ -124,7 +124,7 @@ export function spoilsRoutes(ctx) {
       if (mine.rows.length === 0) continue;
       const ins = await ctx.db.query(
         `INSERT INTO spoil_claims(tx_hash, spoil_id, subject, amount) VALUES ($1,$2,$3,$4)
-         ON CONFLICT (tx_hash) DO NOTHING RETURNING spoil_id`,
+         ON CONFLICT (tx_hash, spoil_id) DO NOTHING RETURNING spoil_id`,
         [hash, id, p.subject, mine.rows[0].amount],
       );
       if (ins.rows.length) recorded.push(id);
