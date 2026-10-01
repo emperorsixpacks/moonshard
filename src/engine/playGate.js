@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { gdService } from './GdService.js';
 import { blocksStart, canPlay, gateLabel } from './playGateRules.js';
+import { takeGate } from './gateMemory.js';
 
 /**
  * Wires the verified-human gate (playGateRules.js) into the game: every way of starting play goes through the scene
@@ -16,6 +17,12 @@ const devBypass = () => Boolean(import.meta.env?.DEV && globalThis.__MS_GATE_OFF
 
 const openGate = (request) => globalThis.window?.__gdPanel?.openGate(request);
 
+/** What a scene start does: the other scenes stop, the target starts. Used later, once the player has passed the gate. */
+const goTo = (manager, key, data) => {
+  for (const scene of manager.getScenes(true)) if (scene.scene.key !== key) manager.stop(scene.scene.key);
+  manager.start(key, data);
+};
+
 export function installPlayGate() {
   const proto = Phaser.Scenes.ScenePlugin.prototype;
   if (proto.__playGate) return;
@@ -24,9 +31,22 @@ export function installPlayGate() {
   proto.start = function gatedStart(key, data) {
     const target = key === undefined ? this.key : key;
     if (!blocksStart(target, gdService.getStatus(), { bypass: devBypass() })) return start.call(this, key, data);
-    openGate({ label: gateLabel(target), launch: () => start.call(this, key, data) });
+    // a deep link (?scene=...) arrives from the boot screen: show the menu behind the gate rather than a blank screen
+    if (this.key === 'BootScene') start.call(this, 'MenuScene');
+    openGate({ key: target, data, label: gateLabel(target), launch: () => goTo(this.manager, target, data) });
     return this;
   };
+}
+
+/**
+ * Coming back from GoodDollar's face scan the page has reloaded: if the player had asked to play something and is now
+ * a verified human, offer that mode again with a single "PLAY" tap.
+ */
+export async function resumeRememberedGate() {
+  await gdService.ready;
+  const wanted = takeGate(globalThis.sessionStorage);
+  if (!wanted || !canPlay(gdService.getStatus())) return;
+  openGate({ ...wanted, label: gateLabel(wanted.key), launch: () => goTo(globalThis.window.game.scene, wanted.key, wanted.data) });
 }
 
 /**

@@ -18,7 +18,7 @@ import { GdPanel } from './ui/GdPanel.js';
 import { setupImmersiveLayout } from './engine/ImmersiveLayout.js';
 import { installHiRes } from './engine/HiRes.js';
 import { installHudAnchor } from './engine/HudAnchor.js';
-import { installPlayGate } from './engine/playGate.js';
+import { installPlayGate, resumeRememberedGate } from './engine/playGate.js';
 import { loadGameFonts } from './engine/fonts.js';
 
 // Phaser 3 Game Configuration
@@ -112,4 +112,7 @@ window.__gdPanel.mount();
 installPlayGate();
 
 // Canvas text is drawn once, when it is created: the typefaces must be ready before any scene builds its text.
-loadGameFonts().finally(startGame);
+loadGameFonts().finally(() => {
+  startGame();
+  resumeRememberedGate();
+});

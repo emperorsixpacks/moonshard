@@ -2,6 +2,7 @@ import { gdService } from '../engine/GdService.js';
 import { describeOutcome } from '../gd/outcome.js';
 import { showToast } from './toast.js';
 import { renderPanelHtml } from './gdPanelView.js';
+import { rememberGate } from '../engine/gateMemory.js';
 
 export class GdPanel {
   constructor() {
@@ -70,6 +71,8 @@ export class GdPanel {
       request?.launch();
       return;
     }
+    // the face scan leaves the page: remember what the player asked to play so they can pick it up on return
+    if (act === 'verify' && this.gate?.key) rememberGate(globalThis.sessionStorage, this.gate);
     const actions = {
       connect: () => gdService.connect(),
       reconnect: () => gdService.connect(),
