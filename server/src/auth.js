@@ -7,6 +7,7 @@ import { HttpError, ah } from "./http.js";
 
 export const loginMessage = (nonce, issuedAt) => `Moonshard login\nNonce: ${nonce}\nIssued: ${issuedAt}`;
 
+const JWT_ALGORITHM = "HS256";
 const MESSAGE_RE = /^Moonshard login\nNonce: ([0-9a-f]{64})\nIssued: (\S+)$/;
 const HOSTS = new Set(["goodwallet", "browser"]);
 
@@ -54,7 +55,8 @@ export function makeRequireAuth(ctx) {
     if (!token) throw new HttpError(401, "unauthorized");
     let claims;
     try {
-      claims = jwt.verify(token, ctx.config.jwtSecret);
+      // Only the algorithm we sign with. jsonwebtoken would also accept HS384/HS512 for a string secret.
+      claims = jwt.verify(token, ctx.config.jwtSecret, { algorithms: [JWT_ALGORITHM] });
     } catch {
       throw new HttpError(401, "invalid_session");
     }
@@ -102,7 +104,7 @@ export function authRoutes(ctx) {
     if (!ok) throw new HttpError(401, "invalid_signature");
 
     const player = await ctx.identity.resolve(address, host);
-    const token = jwt.sign({ sub: player.wallet, host }, ctx.config.jwtSecret, { expiresIn: JWT_TTL_SEC });
+    const token = jwt.sign({ sub: player.wallet, host }, ctx.config.jwtSecret, { algorithm: JWT_ALGORITHM, expiresIn: JWT_TTL_SEC });
     res.json({
       token,
       address: player.wallet,

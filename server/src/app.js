@@ -25,15 +25,36 @@ const perIpLimiter = (windowMs, limit) =>
   });
 
 /**
- * @param {{db: any, chain: any, config: any, now?: () => number}} deps
+ * Which cross-origin callers the browser may let read our responses.
+ *  - CORS_ORIGINS set to a list: exactly those origins, in every environment.
+ *  - CORS_ORIGINS unset (or containing "*"): in development any origin is reflected, which is what a dev server on
+ *    another port needs. With NODE_ENV=production nothing is allowed (no CORS headers at all) rather than every origin
+ *    being reflected, and a warning at start-up says to set CORS_ORIGINS.
+ * Returns the options for the cors middleware, or null for "no CORS middleware".
  */
-export function createApp({ db, chain, config, now = Date.now }) {
+function corsOptions(corsOrigins, production) {
+  const list = Array.isArray(corsOrigins) ? corsOrigins : [];
+  const named = list.filter((origin) => origin !== "*");
+  const wildcard = corsOrigins === "*" || list.includes("*");
+  if (!production) return { origin: wildcard ? true : named };
+  if (named.length > 0) return { origin: named };
+  console.warn("[moonshard] CORS_ORIGINS is not set: in production no origin is allowed, so browsers cannot call this API from your site. Set CORS_ORIGINS to your site's origin (comma-separated for several).");
+  return null;
+}
+
+/**
+ * @param {{db: any, chain: any, config: any, now?: () => number, env?: Record<string, string | undefined>}} deps
+ *   `env` is where NODE_ENV is read from (process.env by default).
+ */
+export function createApp({ db, chain, config, now = Date.now, env = process.env }) {
   const app = express();
+  app.disable("x-powered-by"); // do not announce the framework
   // Behind N reverse proxies, req.ip is only the real client when Express knows to read it from
   // X-Forwarded-For; otherwise every player shares the proxy's address and the per-IP limiters below
   // would behave as one global limit.
   app.set("trust proxy", config.trustProxy ?? false);
-  app.use(cors({ origin: config.corsOrigins === "*" ? true : config.corsOrigins }));
+  const corsOpts = corsOptions(config.corsOrigins, env.NODE_ENV === "production");
+  if (corsOpts) app.use(cors(corsOpts));
   // After CORS (so a 429 stays readable to a cross-origin page; preflights are answered above and never
   // counted) and before the body parser (so a throttled client costs no JSON parsing).
   if (config.rateLimit?.enabled) {
