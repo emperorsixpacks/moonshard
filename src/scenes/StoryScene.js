@@ -38,6 +38,7 @@ import ShardDrop from '../entities/ShardDrop.js';
 import { gdService } from '../engine/GdService.js';
 import { fetchRewardsStatus } from '../gd/rewards.js';
 import { runs } from '../gd/runs.js';
+import { ActiveClock, pageHidden } from '../gd/activeClock.js';
 import { SHARD_RATE_GD, DAILY_SHARD_CAP_GD } from '../gd/config.js';
 
 
@@ -85,7 +86,9 @@ export default class StoryScene extends Phaser.Scene {
     this.arenaGateVisual = null;
     this.skipIntroCard = Boolean(data && data.skipIntroCard);
     this.skipDialogue = Boolean(data && data.skipDialogue);
-    this.startTime = performance.now();
+    // Time played, not wall-clock time: it stops while paused or while the tab is hidden, and it is what the run's
+    // duration is reported from (see update()).
+    this.activeClock = new ActiveClock();
     this.secondsElapsed = 0;
   }
 
@@ -177,7 +180,6 @@ export default class StoryScene extends Phaser.Scene {
     this.sessionCrystalsCollected = 0;
     this.runResult = null;
     this.crystalBankResult = null;
-    this.levelStartTime = performance.now();
     fetchRewardsStatus().then((st) => {
       this.rewardsStatus = st;
       this.checkDailyHarvestCap();
@@ -2928,12 +2930,11 @@ export default class StoryScene extends Phaser.Scene {
     }
 
     // Settle the run with the server. The first-boss bounty itself is claimed from the G$ wallet panel.
-    const runDurationMs = performance.now() - (this.levelStartTime || performance.now());
     this.runResultPromise = runs.finish({
       score: 0,
       kills: this.killsCount,
       shards: this.sessionCrystalsCollected || 0,
-      durationMs: runDurationMs,
+      durationMs: Math.round(this.activeClock.ms),
       bossCleared: true,
     }).then((res) => {
       this.runResult = res;
@@ -3219,12 +3220,11 @@ export default class StoryScene extends Phaser.Scene {
       this.player.die();
     }
 
-    const runDurationMs = performance.now() - (this.levelStartTime || performance.now());
     runs.finish({
       score: 0,
       kills: this.killsCount,
       shards: this.sessionCrystalsCollected || 0,
-      durationMs: runDurationMs,
+      durationMs: Math.round(this.activeClock.ms),
       bossCleared: false,
     }).then(() => gdService.refreshAll().catch(() => {}));
 
@@ -3399,7 +3399,9 @@ export default class StoryScene extends Phaser.Scene {
     this.input.keyboard.on('keydown', onKeyDown);
   }
 
-  update() {
+  update(_time, delta) {
+    // Played time advances through dialogue (the scene is live) but not behind the pause screen or in a hidden tab.
+    this.activeClock.tick(delta, { paused: pauseService.isPaused, hidden: pageHidden() });
     runs.update({ score: 0, kills: this.killsCount, shards: this.sessionCrystalsCollected || 0 });
     if (this.inDialogue) {
       if (this.player && this.player.body) {
@@ -3409,7 +3411,7 @@ export default class StoryScene extends Phaser.Scene {
     }
 
     if (!this.isVictory && !this.isGameOver && this.player && !this.player.isDead) {
-      const sec = Math.floor((performance.now() - this.startTime) / 1000);
+      const sec = this.activeClock.seconds;
       if (sec !== this.secondsElapsed) {
         this.secondsElapsed = sec;
         pauseService.updateTimer(this.secondsElapsed);

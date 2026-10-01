@@ -27,6 +27,7 @@ import confetti from 'canvas-confetti';
 import ShardDrop from '../entities/ShardDrop.js';
 import { fetchRewardsStatus } from '../gd/rewards.js';
 import { runs } from '../gd/runs.js';
+import { ActiveClock, pageHidden } from '../gd/activeClock.js';
 import { SHARD_RATE_GD, DAILY_SHARD_CAP_GD } from '../gd/config.js';
 
 
@@ -64,8 +65,9 @@ export default class SurvivalScene extends Phaser.Scene {
     // Arena Lush Forest Background & Atmosphere
     this.createArenaForestBackground();
 
-    // Game stats
-    this.startTime = performance.now();
+    // Game stats. Time survived is the time actually played: it stops while paused or while the tab is hidden,
+    // because it is worth 10 points a second and the daily prizes go to the top scores.
+    this.activeClock = new ActiveClock();
     this.secondsSurvived = 0;
     this.totalScore = 0;
     this.killCount = { boar: 0, snail: 0, bee: 0, mushroom: 0, flying_eye: 0, goblin: 0, boss_gorgok: 0, total: 0 };
@@ -193,7 +195,7 @@ export default class SurvivalScene extends Phaser.Scene {
     this.waveHpMul = 1;
     this.endlessMode = false;
     this.endlessWave = 1;
-    this.waveStartTime = performance.now();
+    this.waveStartTime = this.activeClock.ms;
     this.waveSpawnTimers = [];
     this.modalButtons = null;
     this.player.body.setCollideWorldBounds(true);
@@ -430,7 +432,7 @@ export default class SurvivalScene extends Phaser.Scene {
       });
     }
     this.pendingWaveSpawns = [];
-    this.waveStartTime = performance.now();
+    this.waveStartTime = this.activeClock.ms;
     this.endlessMode = false;
     this.emptyArenaSince = null;
     this.updateWaveHud();
@@ -717,7 +719,7 @@ export default class SurvivalScene extends Phaser.Scene {
     const baseBonus = GAME_CONFIG.SURVIVAL.WAVE_CLEAR_BONUS + (this.currentWaveIndex * 50);
 
     // Speed bonus: finishing the wave faster awards more score!
-    const waveDurationSec = Math.max(1, Math.floor((performance.now() - this.waveStartTime) / 1000));
+    const waveDurationSec = Math.max(1, Math.floor((this.activeClock.ms - this.waveStartTime) / 1000));
     const targetParSec = 30 + this.currentWaveIndex * 10; // Target time: W1: 30s, W2: 40s, W3: 50s...
     const speedBonus = waveDurationSec < targetParSec
       ? (targetParSec - waveDurationSec) * 20
@@ -1251,6 +1253,7 @@ export default class SurvivalScene extends Phaser.Scene {
     const runData = {
       seed: this.dayKey,
       duration: this.secondsSurvived,
+      durationMs: Math.round(this.activeClock.ms),
       kills: this.killCount.total,
       score: this.totalScore,
       timestamp: Date.now()
@@ -1282,7 +1285,7 @@ export default class SurvivalScene extends Phaser.Scene {
             score: runData.score,
             kills: runData.kills,
             shards: this.sessionCrystalsCollected || 0,
-            durationMs: runData.duration * 1000,
+            durationMs: runData.durationMs,
           }),
           new Promise((resolve) => setTimeout(() => resolve({ ticketed: true, error: 'timeout', status: 0 }), 9000)),
         ]);
@@ -1502,8 +1505,18 @@ export default class SurvivalScene extends Phaser.Scene {
     }
   }
 
-  update() {
+  update(_time, delta) {
     if (this.isGameOver) return;
+
+    // Survival timer: only frames that are played count. Pausing stops physics but this method keeps running behind
+    // the pause screen, and a hidden tab can resume with a huge wall-clock gap, so neither may add time.
+    this.activeClock.tick(delta, { paused: pauseService.isPaused, hidden: pageHidden() });
+    const elapsedSec = this.activeClock.seconds;
+    if (elapsedSec !== this.secondsSurvived) {
+      this.secondsSurvived = elapsedSec;
+      pauseService.updateTimer(this.secondsSurvived);
+    }
+
     // The survival time bonus is only added to totalScore at game over, so include it live; otherwise the
     // closing checkpoint of a very long run would carry the whole bonus in one window and trip the server's rate check.
     runs.update({
@@ -1511,13 +1524,6 @@ export default class SurvivalScene extends Phaser.Scene {
       kills: this.killCount.total,
       shards: this.sessionCrystalsCollected || 0,
     });
-
-    // Update survival timer
-    const elapsedSec = Math.floor((performance.now() - this.startTime) / 1000);
-    if (elapsedSec !== this.secondsSurvived) {
-      this.secondsSurvived = elapsedSec;
-      pauseService.updateTimer(this.secondsSurvived);
-    }
 
     const touchInputs = window.touchController ? {
       ...window.touchController.state,
