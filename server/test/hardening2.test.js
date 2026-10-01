@@ -538,8 +538,14 @@ test("H6: a start that loses the race for the open slot retries once and takes o
   } finally { await h.close(); }
 });
 
+// A start now also waits 10 s (Trial) / 3 s (Story) after the player's previous one, in this process (runs.limits.test.js).
+// That wait would answer 429 to the second of two racing starts before either touches the database, so these two tests
+// switch it off: what they pin is the database's own protection, which is what still holds when the racing starts are
+// handled by different processes, each with a wait of its own.
+const NO_START_WAIT = { startGapMs: { TRIAL: 0, STORY: 0 } };
+
 test("H6: two starts racing at READ COMMITTED both succeed and leave exactly one open run", async () => {
-  const h = await makeHarness();
+  const h = await makeHarness({ config: NO_START_WAIT });
   try {
     const p = await h.newPlayer();
     // Interleave the statements of the two starts as concurrent Postgres transactions can: both void-UPDATEs
@@ -582,7 +588,7 @@ test("H6: two starts racing at READ COMMITTED both succeed and leave exactly one
 // instead of colliding them. PGlite cannot show lock effects, so this pins the mechanism: a lock taken first,
 // keyed on the slot and on nothing broader.
 test("H6: a start locks its (subject, mode) slot before it voids the open run", async () => {
-  const h = await makeHarness();
+  const h = await makeHarness({ config: NO_START_WAIT });
   try {
     const a = await h.newPlayer();
     const b = await h.newPlayer();
