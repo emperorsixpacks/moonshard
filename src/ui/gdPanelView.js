@@ -1,7 +1,7 @@
 import { explorerTx } from '../gd/config.js';
 import { explainError, formatCountdown, formatG } from '../gd/format.js';
 import { identiconSvg } from '../gd/identicon.js';
-import { gateStep } from '../engine/playGateRules.js';
+import { canPlay, gateStep } from '../engine/playGateRules.js';
 
 /**
  * The wallet panel as a pure function of the service status (no DOM, no service import), so every state it can be
@@ -152,7 +152,12 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null } = {}) {
     out.push(button('connect', 'CONNECT WALLET', { disabled: busy }));
     if (!s.hasWallet) out.push(warn(NO_WALLET));
   } else {
-    if (s.offline) out.push(warn('Server unreachable. You can still play; rewards resume when it is back.'));
+    if (s.offline) {
+      // the gate holds play while the verification cannot be checked: only promise play to a player who is through already
+      out.push(warn(canPlay(s)
+        ? 'Server unreachable. You can still play; rewards resume when it is back.'
+        : "Server unreachable, so we can't check your verification yet. Play opens as soon as it is back."));
+    }
     if (s.needsReconnect) {
       out.push(warn('Reconnect your wallet to claim rewards.'));
       out.push(button('reconnect', 'RECONNECT WALLET', { disabled: busy }));
@@ -163,7 +168,7 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null } = {}) {
     }
 
     if (status === 'unknown') {
-      out.push(warn("Can't check your verification right now."));
+      if (!s.offline) out.push(warn("Can't check your verification right now."));
       out.push(button('recheck', 'TRY AGAIN', { disabled: busy }));
     } else if (status !== 'verified') {
       const copy = status === 'expired'

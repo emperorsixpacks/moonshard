@@ -3,6 +3,8 @@ import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
 import { gdService } from '../engine/GdService.js';
 import { pauseService } from '../engine/PauseService.js';
+import { requirePlay, startIsBlocked } from '../engine/playGate.js';
+import { menuBadgeText } from '../ui/menuBadge.js';
 
 /*
  * Sizes for the two canvases (480x270 landscape, 480x440 tall), in game units.
@@ -130,14 +132,8 @@ export default class MenuScene extends Phaser.Scene {
       letterSpacing: 2
     }).setOrigin(0.5).setDepth(11);
 
-    // Wallet status badge: tap to open the G$ wallet panel
-    const badgeText = (st) => {
-      if (!st.connected) return '⚡ TAP TO CONNECT • EARN G$';
-      if (st.status === 'verified') return st.ubi?.canClaim ? '💚 DAILY G$ READY — TAP TO CLAIM' : `✔ VERIFIED • ${st.shortAddress}`;
-      if (st.status === 'expired') return '🛡 RE-VERIFY TO KEEP EARNING G$';
-      return `🛡 ${st.shortAddress} • VERIFY TO EARN G$`;
-    };
-    const badge = this.add.text(w / 2, titleY + L.banner.badgeDy, badgeText(gdService.getStatus()), {
+    // Wallet status badge: where the player stands on the way into the game; tap to open the G$ wallet panel
+    const badge = this.add.text(w / 2, titleY + L.banner.badgeDy, menuBadgeText(gdService.getStatus()), {
       fontFamily: 'Press Start 2P',
       fontSize: L.banner.badge,
       color: '#a0c4a0',
@@ -147,7 +143,7 @@ export default class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(11);
     badge.setInteractive({ useHandCursor: true });
     badge.on('pointerdown', () => window.__gdPanel?.open());
-    const stopWatching = gdService.subscribe((st) => { if (badge.active) badge.setText(badgeText(st)); });
+    const stopWatching = gdService.subscribe((st) => { if (badge.active) badge.setText(menuBadgeText(st)); });
     this.events.once('shutdown', stopWatching);
 
     // Pulse animation on title
@@ -160,49 +156,45 @@ export default class MenuScene extends Phaser.Scene {
       ease: 'Sine.easeInOut'
     });
 
-    // Menu entries: an icon at the left of each row, the label and its caption centred
+    // Menu entries: an icon at the left of each row, the label and its caption centred. Play (story, tutorial, endless)
+    // is for verified humans: those rows ask the gate before they do anything, so a visitor sees the gate over the
+    // menu and not a screen fading to black first.
     const options = [
       {
         icon: '⚔️',
         text: '1. STORY MODE',
         desc: 'The Shattered Moon & The Blighted Roots',
-        action: () => this.openStoryModal(),
-        shouldFade: false
+        action: () => requirePlay('STORY MODE', () => { if (this.scene.isActive()) this.openStoryModal(); })
       },
       {
         icon: '🎓',
         text: '2. COMBAT TUTORIAL',
         desc: 'Learn Touch Moves, Jumps, Slashes & Combos',
-        action: () => this.scene.start('TutorialScene'),
-        shouldFade: true
+        action: () => this.leaveFor('TutorialScene')
       },
       {
         icon: '🏆',
         text: '3. ENDLESS MODE',
         desc: 'Endless Arena • Verified Leaderboard',
-        action: () => this.scene.start('SurvivalScene'),
-        shouldFade: true
+        action: () => this.leaveFor('SurvivalScene')
       },
       {
         icon: '⚒️',
         text: '4. FORGE & SATCHEL',
         desc: 'Craft Blades & Companion Relics',
-        action: () => this.scene.start('ForgeScene'),
-        shouldFade: true
+        action: () => this.leaveFor('ForgeScene')
       },
       {
         icon: '💰',
         text: '5. LEADERBOARD',
         desc: 'All-Time & Daily Rankings',
-        action: () => this.scene.start('LeaderboardScene'),
-        shouldFade: true
+        action: () => this.leaveFor('LeaderboardScene')
       },
       {
         icon: '⚙️',
         text: '6. SETTINGS',
         desc: 'Sound Effects & Background Music',
-        action: () => this.openSettingsModal(),
-        shouldFade: false
+        action: () => this.openSettingsModal()
       }
     ];
 
@@ -225,7 +217,6 @@ export default class MenuScene extends Phaser.Scene {
         label: opt.text,
         subtitle: opt.desc,
         callback: opt.action,
-        shouldFade: opt.shouldFade,
         style: L.list
       });
     });
@@ -256,7 +247,20 @@ export default class MenuScene extends Phaser.Scene {
     }
   }
 
-  createMenuButton({ x, y, width, height, icon, label, subtitle, callback, shouldFade = false, style }) {
+  /**
+   * Leave the menu for another screen, with a short fade. If the verified-human gate would stop that start, there is
+   * no fade: the start goes through at once and the gate opens over the menu (engine/playGate.js).
+   */
+  leaveFor(sceneKey, data) {
+    if (startIsBlocked(sceneKey)) {
+      this.scene.start(sceneKey, data);
+      return;
+    }
+    this.cameras.main.fade(200, 0, 0, 0);
+    this.time.delayedCall(220, () => this.scene.start(sceneKey, data));
+  }
+
+  createMenuButton({ x, y, width, height, icon, label, subtitle, callback, style }) {
     const btnBg = this.add.rectangle(x, y, width, height, 0x142814, 0.88).setDepth(10);
     btnBg.setStrokeStyle(1.5, 0x3c6e3c);
     btnBg.setInteractive({ useHandCursor: true });
@@ -294,12 +298,7 @@ export default class MenuScene extends Phaser.Scene {
 
     btnBg.on('pointerdown', () => {
       sound.playCoin();
-      if (shouldFade) {
-        this.cameras.main.fade(200, 0, 0, 0);
-        this.time.delayedCall(220, callback);
-      } else {
-        callback();
-      }
+      callback();
     });
   }
 

@@ -44,6 +44,14 @@ test('a connected player whose server cannot be reached is not asked to verify',
   assert.doesNotMatch(h, /PROVE YOU/);
 });
 
+test('...and is not told they can still play: the gate holds play until the verification can be checked', () => {
+  const h = html({ status: 'unknown', verified: false, offline: true, ubi: null, bounty: null, spoils: [] });
+  assert.doesNotMatch(h, /can still play/i);
+  assert.match(h, /Server unreachable/);
+  assert.match(h, /check your verification/i);
+  assert.equal((h.match(/class="gd-warn"/g) || []).length, 1, 'one notice, not the same bad news twice');
+});
+
 test('Spoils that could not be loaded say "unavailable", not "none yet"', () => {
   const h = html({ spoils: [], stale: { rewards: false, bounty: false, spoils: true, ubi: false } });
   assert.match(h, /Spoils.*unavailable|unavailable.*Spoils/i);

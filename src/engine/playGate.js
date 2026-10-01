@@ -17,6 +17,9 @@ const devBypass = () => Boolean(import.meta.env?.DEV && globalThis.__MS_GATE_OFF
 
 const openGate = (request) => globalThis.window?.__gdPanel?.openGate(request);
 
+/** Whether starting `sceneKey` right now would be stopped by the gate (a screen that fades out first checks this). */
+export const startIsBlocked = (sceneKey) => blocksStart(sceneKey, gdService.getStatus(), { bypass: devBypass() });
+
 /** What a scene start does: the other scenes stop, the target starts. Used later, once the player has passed the gate. */
 const goTo = (manager, key, data) => {
   for (const scene of manager.getScenes(true)) if (scene.scene.key !== key) manager.stop(scene.scene.key);
@@ -30,7 +33,7 @@ export function installPlayGate() {
   const start = proto.start;
   proto.start = function gatedStart(key, data) {
     const target = key === undefined ? this.key : key;
-    if (!blocksStart(target, gdService.getStatus(), { bypass: devBypass() })) {
+    if (!startIsBlocked(target)) {
       const started = start.call(this, key, data);
       // keep who-the-player-is fresh for the next gate decision (verification can lapse between runs)
       if (GATED_SCENES.has(target)) gdService.refreshAll().catch(() => {});
