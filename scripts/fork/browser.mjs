@@ -132,7 +132,8 @@ try {
 
   await startScene('MenuScene');
   await openWallet();
-  await panelHas('CLAIM 5,000 G$ BOUNTY');
+  // the player's share of the pool's 5,000 G$ (registered at 80 / 60), read from the chain by the API: not the headline
+  await panelHas('CLAIM 2,400 G$ BOUNTY');
   await shot('panel-bounty');
   await page.click('[data-act="bounty"]');
   await panelHas('First-boss bounty claimed');

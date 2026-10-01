@@ -51,7 +51,8 @@ export const GAME = {
   BOSS_MIN: { durationMs: 30_000, kills: 3 },
   ENGAGEMENT_BLOCK_WINDOW: 300n,
   ATTEST_MAX_AGE_MS: 24 * 3600_000,
-  ENGAGEMENT_REWARD_G: "5000", // informational: what the protocol pool pays today (read on-chain 2026-10-01)
+  // The first-boss bounty is not a constant here: the pool's reward and this app's share of it are read from the
+  // chain (see engagement.js), so the UI promises what the player will actually receive.
 };
 
 export const config = {

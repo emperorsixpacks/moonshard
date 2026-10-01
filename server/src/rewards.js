@@ -3,7 +3,7 @@ import { formatUnits } from "viem";
 import { GAME } from "../config.js";
 import { ah } from "./http.js";
 import { dayKey } from "./time.js";
-import { hasEngagementClaim, pendingBossRun } from "./engagement.js";
+import { engagementRewardG, hasEngagementClaim, pendingBossRun } from "./engagement.js";
 
 export function rewardsRoutes(ctx) {
   const r = express.Router();
@@ -15,13 +15,14 @@ export function rewardsRoutes(ctx) {
     const shardRow = await ctx.db.query("SELECT shards FROM shard_days WHERE day = $1 AND subject = $2", [day, p.subject]);
     const shards = shardRow.rows[0]?.shards ?? 0;
     const blessing = await ctx.db.query("SELECT 1 FROM blessings WHERE subject = $1 AND day = $2", [p.subject, day]);
+    const bounty = await engagementRewardG(ctx); // what the player receives, same value as /engagement/status rewardG
     res.json({
       wallet: p.wallet,
       dateSeed: day,
       verified: p.verified,
       status: p.status,
       firstBossClaimed: await hasEngagementClaim(ctx, p.subject),
-      firstBossPrizeG: Number(GAME.ENGAGEMENT_REWARD_G),
+      firstBossPrizeG: bounty === null ? null : Number(bounty),
       crystalStatus: {
         gdEarned: Math.min(shards, GAME.DAILY_SHARD_CAP) * rateGd,
         dailyCapGd: GAME.DAILY_SHARD_CAP * rateGd,
