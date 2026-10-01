@@ -291,16 +291,19 @@ test("createTtlCache: fresh while younger than the ttl, evicts the oldest entry 
 });
 
 // ---------------------------------------------------------------------------------------------
-// Indexes (migration 002). Each index is here because a query in the API needs it; the lab behind these
-// choices is in the report. `enable_seqscan = off` makes the planner use any index that can serve the query,
-// so these tests fail when a column order or a partial-index predicate stops matching the SQL.
+// Indexes (migration 002). Each index is here because a query in the API needs it.
+//  - "fits their SQL": with sequential scans switched off the planner must use the named index, so the test fails
+//    when a column order, a sort direction or a partial-index predicate stops matching the query.
+//  - "with real volume": with sequential scans ON, as in production, and enough rows that a scan is the wrong
+//    answer, the planner must choose the index by itself.
+// NOTE PGlite starts with enable_seqscan = off (production Postgres has it on), so both tests set it explicitly.
 // ---------------------------------------------------------------------------------------------
 
 const planOf = async (db, sql, params = []) =>
   (await db.query(`EXPLAIN (COSTS OFF) ${sql}`, params)).rows.map((r) => r["QUERY PLAN"]).join("\n");
 
-async function withoutSeqScan(db, fn) {
-  await db.exec("SET enable_seqscan = off");
+async function withSeqScan(db, on, fn) {
+  await db.exec(`SET enable_seqscan = ${on ? "on" : "off"}`);
   try { return await fn(); } finally { await db.exec("RESET enable_seqscan"); }
 }
 
@@ -322,7 +325,7 @@ test("002_indexes: the board, settlement, run and spoil lookups each have an ind
       ["stats: ubi claims today", `SELECT count(*) FROM ubi_claims WHERE day = $1`, ["2026-10-05"], "ubi_claims_day"],
       ["nonce cleanup", `DELETE FROM nonces WHERE expires_at < $1`, [new Date(T0)], "nonces_expires_at"],
     ];
-    await withoutSeqScan(h.db, async () => {
+    await withSeqScan(h.db, false, async () => {
       for (const [name, sql, params, index] of cases) {
         const plan = await planOf(h.db, sql, params);
         assert.ok(plan.includes(index), `${name} should use ${index}; plan:\n${plan}`);
@@ -331,20 +334,41 @@ test("002_indexes: the board, settlement, run and spoil lookups each have an ind
   } finally { await h.close(); }
 });
 
-test("002_indexes: with real volume the planner picks the day index for the daily board, with no sort", async () => {
+test("002_indexes: with real volume and sequential scans on, the planner picks the indexes by itself", async () => {
   const h = await makeHarness();
   try {
-    await h.db.query(
-      `INSERT INTO scores(day, subject, wallet, verified, ranked_ok, score, kills, duration_ms, run_id)
-       SELECT to_char(date '2026-09-01' + (g % 20), 'YYYY-MM-DD'), '0x' || lpad(to_hex(g), 40, '0'), '0x' || lpad(to_hex(g), 40, '0'),
-              g % 10 = 0, g % 10 = 0, (g * 7919) % 100000, g % 50, 60000 + (g % 7) * 1000, 'run-' || g
-         FROM generate_series(1, 20000) g`,
-    );
-    await h.db.exec("ANALYZE scores");
-    for (const [filter, index] of [["", "scores_day_rank"], ["AND ranked_ok", "scores_day_rank_ranked"]]) {
-      const plan = await planOf(h.db, `SELECT * FROM scores WHERE day = $1 ${filter} ORDER BY ${RANKING} LIMIT 50`, ["2026-09-07"]);
-      assert.ok(plan.includes(index), plan);
-      assert.ok(!/\bSort\b/.test(plan), `the index already delivers the ranking order:\n${plan}`);
-    }
+    await h.db.exec(`
+      INSERT INTO scores(day, subject, wallet, verified, ranked_ok, score, kills, duration_ms, run_id)
+        SELECT to_char(date '2026-09-01' + (g % 20), 'YYYY-MM-DD'), '0x' || lpad(to_hex(g), 40, '0'), '0x' || lpad(to_hex(g), 40, '0'),
+               g % 10 = 0, g % 10 = 0, (g * 7919) % 100000, g % 50, 60000 + (g % 7) * 1000, 'run-' || g
+          FROM generate_series(1, 20000) g;
+      INSERT INTO runs(run_id, subject, wallet, verified, mode, chapter, seed, day, started_at, status, submitted_at, boss_cleared)
+        SELECT 'r' || g, '0x' || lpad(to_hex(g % 5000), 40, '0'), '0x0', false, CASE WHEN g % 4 = 0 THEN 'STORY' ELSE 'TRIAL' END, 1, 's',
+               to_char(date '2026-09-01' + (g % 20), 'YYYY-MM-DD'), now(), CASE WHEN g % 3 = 0 THEN 'void' ELSE 'submitted' END, now(), false
+          FROM generate_series(1, 20000) g;
+      INSERT INTO spoils(id, kind, day, subject, amount)
+        SELECT g::text, CASE WHEN g % 2 = 0 THEN 'TRIAL_PRIZE' ELSE 'SHARD_HARVEST' END, to_char(date '2026-01-01' + (g / 2000), 'YYYY-MM-DD'),
+               '0x' || lpad(to_hex(g % 2000), 40, '0'), '1' FROM generate_series(1, 10000) g;
+      INSERT INTO nonces(nonce, expires_at) SELECT md5(g::text), now() + (g % 300) * interval '1 second' - interval '100 seconds' FROM generate_series(1, 20000) g;
+      ANALYZE;
+    `);
+    const subject = addr(77);
+    await withSeqScan(h.db, true, async () => {
+      for (const [name, sql, params, index, noSort] of [
+        ["daily board, open", `SELECT * FROM scores WHERE day = $1 ORDER BY ${RANKING} LIMIT 50`, ["2026-09-07"], "scores_day_rank", true],
+        ["daily board, ranked", `SELECT * FROM scores WHERE day = $1 AND ranked_ok ORDER BY ${RANKING} LIMIT 50`, ["2026-09-07"], "scores_day_rank_ranked", true],
+        // 1000 rows a day here, so LIMIT 1000 is the whole day and sorting it is the planner's right call; the index must still drive it
+        ["rankOf", `SELECT * FROM scores WHERE day = $1 ORDER BY ${RANKING} LIMIT 1000`, ["2026-09-07"], "scores_day_rank", false],
+        // (the all-time board is not here: at 20k rows the planner rightly prefers a sequential scan and a sort; it
+        // switches to scores_subject_rank at around 100k rows, which is too big for a unit test)
+        ["pendingBossRun", `SELECT run_id FROM runs WHERE subject = $1 AND mode = 'STORY' AND status = 'submitted' AND boss_cleared AND submitted_at > $2 ORDER BY submitted_at DESC LIMIT 1`, [subject, new Date(T0)], "runs_subject_mode_status", false],
+        ["GET /spoils", `SELECT id, kind, day, amount, rank FROM spoils WHERE subject = $1 ORDER BY day DESC, kind LIMIT 30`, [subject], "spoils_subject", false],
+        ["nonce cleanup", `DELETE FROM nonces WHERE expires_at < now() - interval '200 seconds'`, [], "nonces_expires_at", false],
+      ]) {
+        const plan = await planOf(h.db, sql, params);
+        assert.ok(plan.includes(index), `${name} should use ${index}; plan:\n${plan}`);
+        if (noSort) assert.ok(!/\bSort\b/.test(plan), `${name}: the index already delivers the order:\n${plan}`);
+      }
+    });
   } finally { await h.close(); }
 });
