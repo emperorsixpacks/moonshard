@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), ".env") });
+dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), ".env"), quiet: true });
 
 const env = process.env;
 const num = (v, d) => (v == null || v === "" ? d : Number(v));

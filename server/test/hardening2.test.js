@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFile, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { encodeAbiParameters, encodeEventTopics } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { fakeChain, fakeClock, makeHarness, playTrial, UBI, ubiClaimedLog, VAULT } from "./helpers.js";
@@ -600,4 +604,81 @@ test("H6: a start locks its (subject, mode) slot before it voids the open run", 
     assert.notEqual(await lockKeyOf(a, "STORY", 1), trialA, "another mode is another slot");
     assert.notEqual(await lockKeyOf(b, "TRIAL"), trialA, "another player is another slot");
   } finally { await h.close(); }
+});
+
+// ---------------------------------------------------------------------------------------------
+// H7. Boot safety.
+//     Break caught: the API signs sessions and run tickets with JWT_SECRET. Copying .env.example
+//     (a 32-character placeholder) or setting a short secret must not produce a running server.
+// ---------------------------------------------------------------------------------------------
+
+const SERVER_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const PLACEHOLDER_SECRET = /^JWT_SECRET=(.*)$/m.exec(readFileSync(path.join(SERVER_DIR, ".env.example"), "utf8"))[1];
+const FIX_COMMAND = "openssl rand -base64 32";
+
+function childEnv(extra) {
+  const env = { ...process.env, PORT: "0", DATABASE_URL: "", ...extra };
+  delete env.DOTENV_CONFIG_QUIET; // would hide the very output the quiet test looks for
+  delete env.NODE_TEST_CONTEXT; // set by `node --test` for its own children; must not leak into ours
+  return env;
+}
+
+/** Runs node with `args` in server/ and resolves once it exits (killed after `timeoutMs` if it does not). */
+function runNode(args, extraEnv, timeoutMs = 8_000) {
+  return new Promise((resolve) => {
+    execFile(process.execPath, args, { cwd: SERVER_DIR, env: childEnv(extraEnv), timeout: timeoutMs, killSignal: "SIGKILL" }, (error, stdout, stderr) => {
+      resolve({ code: error ? (error.killed ? "still running (killed)" : error.code) : 0, stdout, stderr });
+    });
+  });
+}
+
+test("H7: assertSecureConfig rejects missing, short and placeholder JWT secrets and says how to fix it", async () => {
+  const { assertSecureConfig } = await import("../src/boot.js");
+  assert.equal(PLACEHOLDER_SECRET.length, 32, "premise: the placeholder is long enough to pass a length-only check");
+  const rejected = {
+    "missing": undefined,
+    "empty": "",
+    "short": "short",
+    "31 characters": "a".repeat(31),
+    "the .env.example placeholder, verbatim": PLACEHOLDER_SECRET,
+    "a long secret that still contains the placeholder": "CHANGE_ME_" + "x".repeat(40),
+    "the placeholder in lower case": "change_me_" + "x".repeat(40),
+  };
+  for (const [label, jwtSecret] of Object.entries(rejected)) {
+    assert.throws(() => assertSecureConfig({ jwtSecret }), (err) => err.message.includes(FIX_COMMAND), label);
+  }
+  const accepted = {
+    "exactly 32 characters": "a1B2".repeat(8),
+    "the shape of `openssl rand -base64 32` output": "q3ZP0m8xWc1vYtL5nJr2KdH7sBfG9aUe4oVi6XyNu3E=",
+    "64 hex characters": "0123456789abcdef".repeat(4),
+  };
+  for (const [label, jwtSecret] of Object.entries(accepted)) assert.doesNotThrow(() => assertSecureConfig({ jwtSecret }), label);
+});
+
+test("H7: the server process exits 1 with the fix command on a short or placeholder JWT_SECRET, and never listens", async () => {
+  for (const [label, secret] of [["too short", "short"], ["the .env.example placeholder", PLACEHOLDER_SECRET]]) {
+    const r = await runNode(["index.js"], { JWT_SECRET: secret }, 6_000);
+    assert.equal(r.code, 1, `${label}: ${r.stdout}${r.stderr}`);
+    assert.ok(r.stderr.includes(FIX_COMMAND), `${label}: stderr was ${JSON.stringify(r.stderr)}`);
+    assert.ok(!/API on :/.test(r.stdout), `${label}: it must not have started listening`);
+  }
+});
+
+test("H7: a good JWT_SECRET still boots the real server", async () => {
+  const child = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, env: childEnv({ JWT_SECRET: "q3ZP0m8xWc1vYtL5nJr2KdH7sBfG9aUe4oVi6XyNu3E=" }) });
+  try {
+    const out = await new Promise((resolve, reject) => {
+      let buf = "";
+      const timer = setTimeout(() => reject(new Error(`no start-up line within 8s; output so far: ${buf}`)), 8_000);
+      child.stdout.on("data", (d) => { buf += d; if (/API on :/.test(buf)) { clearTimeout(timer); resolve(buf); } });
+      child.on("exit", (code) => { clearTimeout(timer); reject(new Error(`exited with ${code}: ${buf}`)); });
+    });
+    assert.match(out, /API on :/);
+  } finally { child.kill("SIGKILL"); }
+});
+
+test("H7: loading the config prints nothing (dotenv runs quiet)", async () => {
+  const r = await runNode(["--input-type=module", "-e", "await import('./config.js')"], { JWT_SECRET: "" });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "");
 });
