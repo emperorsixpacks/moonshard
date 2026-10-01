@@ -1332,6 +1332,10 @@ export default class SurvivalScene extends Phaser.Scene {
       this.describeProof(proof);
       this.recordTrial(runData, proof);
     } catch (err) {
+      // finish() does not reject; this is a bug on our side. The player still gets an honest, final screen.
+      console.warn('[survival] could not settle the run', err?.message);
+      proof.slow = false;
+      proof.result = proof.result ?? { ticketed: true, error: 'submit_failed', reason: 'server_error' };
       proof.label = 'Run Not Recorded';
     }
     this.refreshGameOverModal(proof);

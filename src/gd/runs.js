@@ -1,6 +1,5 @@
 import { apiFetch } from './api.js';
 import { getToken } from './session.js';
-import { formatG } from './format.js';
 
 /** The server takes at most this many checkpoint points per request. */
 const POINTS_PER_POST = 50;
@@ -12,7 +11,7 @@ const monotonicNow = () => (typeof performance !== 'undefined' && typeof perform
 const toCount = (v) => (Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
 
 /**
- * Why a run was not recorded, as a stable code (the scenes turn it into text with `failureText`):
+ * Why a run was not recorded, as a stable code (the end screens turn it into text with `notRecordedWhy`):
  *   offline       network error or timeout          server_error  HTTP 5xx
  *   signed_out    HTTP 401 (session gone)           rate_limited  HTTP 429
  *   superseded    409 run_void: a newer run began   expired       410: the ticket is older than the server allows
@@ -180,9 +179,10 @@ export class RunTracker {
     if (this.finishing) return this.finishing;
     const run = this.run;
     if (!run) {
-      const reason = this.noRunReason || 'no_run';
+      // Nothing to settle, and that is the one answer every caller gets until the next start().
+      this.finishing = Promise.resolve({ ticketed: false, reason: this.noRunReason || 'no_run' });
       this.stop(); // also drops a start() still in flight, so it cannot revive a run after the fact
-      return Promise.resolve({ ticketed: false, reason });
+      return this.finishing;
     }
     this.closed = true;
     if (this.timer != null) this.timers.clearInterval(this.timer);
@@ -201,7 +201,8 @@ export class RunTracker {
     const closing = { t: this._stamp(run, finishedAt), ...totals };
 
     const settlement = this._settle(run, { totals, closing, durationMs: Math.min(claimed, sinceStart), bossCleared })
-      .catch((err) => ({ ticketed: true, error: err?.message || 'submit_failed', status: err?.status, reason: reasonFor(err) }));
+      // _settle handles every API failure itself; anything that still gets here is a bug of ours, not the network's.
+      .catch((err) => ({ ticketed: true, error: err?.message || 'submit_failed', reason: 'server_error' }));
     this.finishing = settlement;
     const slot = { mode: run.mode, promise: settlement };
     this.settling = slot;
@@ -349,6 +350,8 @@ export function shardVerdict(result, { connected, verified }) {
   if (!connected || !verified) return 'not_credited';
   if (notRecorded(result)) return 'not_credited';
   if (result.alreadySubmitted) return 'unknown';
+  // If the server says outright whether it credited the Shards, that is the answer; the rest is our reading of its rules.
+  if (typeof result.shardsCredited === 'boolean') return result.shardsCredited ? 'credited' : 'not_credited';
   if (result.rankedOk === false || flagsOf(result).length > 0) return 'not_credited';
   if (typeof result.coverage === 'number' && result.coverage < 0.5) return 'not_credited';
   return 'credited';
@@ -398,7 +401,9 @@ export function bossLine({ connected, verified, result, alreadyClaimed, rewardG 
   }
   if (!verified) return { icon: '🛡', tone: 'warn', text: 'Verify you are human to claim the boss bounty' };
   const amount = Number(rewardG);
-  const worth = rewardG !== null && rewardG !== '' && Number.isFinite(amount) && amount > 0 ? `${formatG(amount)} G$` : 'your bounty';
+  const worth = rewardG !== null && rewardG !== '' && Number.isFinite(amount) && amount > 0
+    ? `${amount.toLocaleString('en-US', { maximumFractionDigits: 0 })} G$`
+    : 'your bounty';
   return { icon: '🌟', tone: 'good', text: `Boss slain! Claim ${worth} in the G$ wallet (header)` };
 }
 
