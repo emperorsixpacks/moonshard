@@ -441,33 +441,78 @@ export default class StoryIntroScene extends Phaser.Scene {
 
     const isTall = h > 300;
 
+    // Text sizes below are font-size hints: under 7 they are drawn in VT323 at 2.3x, from 7 up in Press Start 2P
+    // (engine/typography.js). The tall (portrait) canvas has room for larger type and looser spacing.
+    const L = isTall ? {
+      tagY: 26, tagHint: "6.5px",
+      titleY: 50, titleHint: "14px",
+      illustrationOffsetY: 65,
+      boxW: w - 30, minBoxH: 108, padX: 14, padY: 9,
+      ribbonW: 200, ribbonH: 20, ribbonHint: "5.9px",
+      bodyHint: "6.9px", bodySpacing: 7,
+      controlsFromBottom: 22, pillH: 30,
+      skipW: 120, skipX: 76, skipHint: "6.3px",
+      nextW: 120, nextX: w - 76, nextHint: "6.5px",
+      dotR: 3.5, dotGap: 16
+    } : {
+      tagY: 18, tagHint: "6.5px",
+      titleY: 32, titleHint: "9px",
+      illustrationOffsetY: 0,
+      boxW: w - 40, minBoxH: 0, padX: 8, padY: 7,
+      ribbonW: 160, ribbonH: 14, ribbonHint: "5px",
+      bodyHint: "6px", bodySpacing: 5,
+      controlsFromBottom: 19, pillH: 19,
+      skipW: 96, skipX: 72, skipHint: "5.5px",
+      nextW: 92, nextX: w - 70, nextHint: "5.5px",
+      dotR: 3, dotGap: 16
+    };
+
     // Slide Illustration Container (vertically centered in upper canvas)
-    const illustrationOffsetY = isTall ? 65 : 0;
-    this.illustrationContainer = this.add.container(0, illustrationOffsetY);
+    this.illustrationContainer = this.add.container(0, L.illustrationOffsetY);
 
     // Top Header tags
-    const chapterTagY = isTall ? 28 : 18;
-    const titleTagY = isTall ? 46 : 32;
-
-    this.txtChapterTag = this.add.text(w / 2, chapterTagY, "", {
+    this.txtChapterTag = this.add.text(w / 2, L.tagY, "", {
       fontFamily: "Press Start 2P",
-      fontSize: isTall ? "7px" : "6.5px",
+      fontSize: L.tagHint,
       color: "#00f0ff",
       letterSpacing: 1
     }).setOrigin(0.5);
 
-    this.txtTitle = this.add.text(w / 2, titleTagY, "", {
+    this.txtTitle = this.add.text(w / 2, L.titleY, "", {
       fontFamily: "Press Start 2P",
-      fontSize: isTall ? "11px" : "9px",
+      fontSize: L.titleHint,
       color: "#ffd166",
       stroke: "#000",
       strokeThickness: 3
     }).setOrigin(0.5);
 
-    // Bottom Story Narration Interface Box
-    const boxW = isTall ? (w - 30) : (w - 40);
-    const boxH = isTall ? 88 : 50;
-    const boxY = isTall ? (h - 78) : 166;
+    // Bottom Controls Bar (anchored to the bottom edge); the narration box sits right above it
+    const controlsY = h - L.controlsFromBottom;
+    const pillH = L.pillH;
+    const controlsTop = controlsY - pillH / 2;
+    this.controlsTop = controlsTop - 2;
+
+    // Story narration text: the box is sized for the longest slide, so every slide's paragraph fits inside it
+    const boxW = L.boxW;
+    const bodyStyle = {
+      fontFamily: "Press Start 2P",
+      fontSize: L.bodyHint,
+      color: "#e8f8fc",
+      lineSpacing: L.bodySpacing,
+      wordWrap: { width: boxW - L.padX * 2 }
+    };
+    const probe = this.add.text(0, 0, "", bodyStyle).setVisible(false);
+    let bodyH = 0;
+    PROLOGUE_SLIDES.forEach(slide => {
+      probe.setText(slide.text);
+      bodyH = Math.max(bodyH, probe.height);
+    });
+    probe.destroy();
+
+    const boxH = Math.max(L.minBoxH, Math.ceil(bodyH + L.ribbonH / 2 + L.padY * 2));
+    const boxBottom = controlsTop - 6;
+    const boxTop = boxBottom - boxH;
+    const boxY = boxTop + boxH / 2;
 
     // Dual-layer RPG Dialogue Frame
     this.textBoxOuter = this.add.rectangle(w / 2, boxY, boxW, boxH, 0x07111a, 0.92);
@@ -489,37 +534,28 @@ export default class StoryIntroScene extends Phaser.Scene {
     });
 
     // Dialogue Box Badge / Ribbon
-    this.badgeBox = this.add.rectangle(w / 2, boxY - boxH / 2, isTall ? 180 : 160, isTall ? 14 : 12, 0x0a1c28);
+    this.badgeBox = this.add.rectangle(w / 2, boxTop, L.ribbonW, L.ribbonH, 0x0a1c28);
     this.badgeBox.setStrokeStyle(1, 0x244b62);
-    this.txtBadge = this.add.text(w / 2, boxY - boxH / 2, "", {
+    this.txtBadge = this.add.text(w / 2, boxTop, "", {
       fontFamily: "Press Start 2P",
-      fontSize: isTall ? "5.5px" : "5px",
+      fontSize: L.ribbonHint,
       color: "#ffd166"
     }).setOrigin(0.5);
 
-    // Story narration text
-    this.txtBody = this.add.text(28, boxY - (isTall ? 28 : 14), "", {
-      fontFamily: "Press Start 2P",
-      fontSize: isTall ? "6.8px" : "6px",
-      color: "#e8f8fc",
-      lineSpacing: isTall ? 6 : 5.5,
-      wordWrap: { width: boxW - 16 }
-    });
-
-    // Bottom Controls Bar
-    const controlsY = isTall ? (h - 18) : 203;
-    const pillH = isTall ? 22 : 17;
+    // Each paragraph is centred in the space between the ribbon and the bottom of the box
+    this.bodyArea = { top: boxTop + L.ribbonH / 2, height: boxH - L.ribbonH / 2 };
+    this.txtBody = this.add.text(w / 2 - boxW / 2 + L.padX, this.bodyArea.top, "", bodyStyle);
 
     // 1. Skip Button Pill (bottom left)
-    const skipPillX = isTall ? 80 : 72;
+    const skipPillX = L.skipX;
     const skipPillY = controlsY;
-    this.skipPill = this.add.rectangle(skipPillX, skipPillY, isTall ? 108 : 96, pillH, 0x091722, 0.9)
+    this.skipPill = this.add.rectangle(skipPillX, skipPillY, L.skipW, pillH, 0x091722, 0.9)
       .setStrokeStyle(1, 0x244254)
       .setInteractive({ useHandCursor: true });
 
     this.txtSkip = this.add.text(skipPillX, skipPillY, "⏭ SKIP STORY", {
       fontFamily: "Press Start 2P",
-      fontSize: isTall ? "6px" : "5.5px",
+      fontSize: L.skipHint,
       color: "#8aa4b8"
     }).setOrigin(0.5);
 
@@ -536,20 +572,20 @@ export default class StoryIntroScene extends Phaser.Scene {
     // 2. Pagination Dots
     this.dots = [];
     for (let i = 0; i < PROLOGUE_SLIDES.length; i++) {
-      const dot = this.add.circle(w / 2 - 24 + i * 16, controlsY, isTall ? 3.5 : 3, i === 0 ? 0x00ffff : 0x224455);
+      const dot = this.add.circle(w / 2 - 24 + i * L.dotGap, controlsY, L.dotR, i === 0 ? 0x00ffff : 0x224455);
       this.dots.push(dot);
     }
 
     // 3. Action Prompt (Next / Begin) Pill (bottom right)
-    const nextPillX = w - (isTall ? 72 : 66);
+    const nextPillX = L.nextX;
     const nextPillY = controlsY;
-    this.nextPill = this.add.rectangle(nextPillX, nextPillY, isTall ? 96 : 84, pillH, 0x1d1a08, 0.9)
+    this.nextPill = this.add.rectangle(nextPillX, nextPillY, L.nextW, pillH, 0x1d1a08, 0.9)
       .setStrokeStyle(1, 0xf6c026)
       .setInteractive({ useHandCursor: true });
 
     this.txtPrompt = this.add.text(nextPillX, nextPillY, "NEXT ▶", {
       fontFamily: "Press Start 2P",
-      fontSize: isTall ? "6.5px" : "5.5px",
+      fontSize: L.nextHint,
       color: "#ffd166"
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
@@ -593,7 +629,7 @@ export default class StoryIntroScene extends Phaser.Scene {
     this.input.on("pointerdown", (pointer) => {
       if (this.tutorialPromptOpen) return;
       // Ignore clicks in the bottom control bar area (handled by dedicated buttons)
-      if (pointer.y > 185) return;
+      if (pointer.y > this.controlsTop) return;
       this.advanceSlide();
     });
 
@@ -649,6 +685,7 @@ export default class StoryIntroScene extends Phaser.Scene {
     this.txtChapterTag.setColor("#" + data.tint.toString(16).padStart(6, "0"));
     this.txtTitle.setText(data.title);
     this.txtBody.setText(data.text);
+    this.txtBody.setY(this.bodyArea.top + (this.bodyArea.height - this.txtBody.height) / 2);
     this.txtBadge.setText(data.badge || "📜 MOONSHARD CHRONICLE");
 
     // Color transition on background & interface borders
@@ -724,8 +761,32 @@ export default class StoryIntroScene extends Phaser.Scene {
     this.tutorialPromptOpen = true;
     sound.playVictory();
 
-    const w = GAME_CONFIG.WIDTH;
-    const h = GAME_CONFIG.HEIGHT;
+    const w = this.cameras?.main?.width || GAME_CONFIG.WIDTH;
+    const h = this.cameras?.main?.height || GAME_CONFIG.HEIGHT;
+
+    // Landscape keeps the original compact card; the tall (portrait) canvas gets a larger one with bigger type.
+    // Text sizes are font-size hints (under 7: VT323 at 2.3x, from 7: Press Start 2P, see engine/typography.js).
+    const S = h > 300 ? {
+      cardW: 448, cardH: 304,
+      panelY: -84, panelW: 420, panelH: 116,
+      avatarX: -158, avatarScale: 1.1, avatarR: 34,
+      titleX: -114, titleY: -106, titleHint: '14px', titleText: '⚔️ PLAY COMBAT\nTUTORIAL?',
+      sylvaX: -114, sylvaY: -79, sylvaHint: '5.9px', sylvaSpacing: 5,
+      pillY: -6, pillW: 204, pillH: 26, pillDx: 108, pillHint: '5.4px',
+      btn1Y: 40, btn1W: 400, btn1H: 44, btn1Hint: '6.5px',
+      btn2Y: 94, btn2W: 400, btn2H: 38, btn2Hint: '6.2px',
+      keyY: 130, keyHint: '5.2px'
+    } : {
+      cardW: 380, cardH: 184,
+      panelY: -36, panelW: 356, panelH: 72,
+      avatarX: -134, avatarScale: 0.72, avatarR: 22,
+      titleX: -96, titleY: -56, titleHint: '8px', titleText: '⚔️ PLAY COMBAT TUTORIAL?',
+      sylvaX: -96, sylvaY: -40, sylvaHint: '5px', sylvaSpacing: 5,
+      pillY: 3, pillW: 150, pillH: 16, pillDx: 85, pillHint: '4.5px',
+      btn1Y: 30, btn1W: 340, btn1H: 26, btn1Hint: '6px',
+      btn2Y: 62, btn2W: 340, btn2H: 22, btn2Hint: '6px',
+      keyY: 80, keyHint: '4.5px'
+    };
 
     // Dark blocking backdrop overlay
     this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.85)
@@ -735,76 +796,79 @@ export default class StoryIntroScene extends Phaser.Scene {
     const card = this.add.container(w / 2, h / 2).setDepth(501);
 
     // Modal background card frame
-    const cardBg = this.add.rectangle(0, 0, 380, 184, 0x06151e, 0.98);
+    const cardBg = this.add.rectangle(0, 0, S.cardW, S.cardH, 0x06151e, 0.98);
     cardBg.setStrokeStyle(1.5, 0x00e5ff);
     card.add(cardBg);
 
     // Corner decorative rivets
+    const rx = S.cardW / 2 - 6;
+    const ry = S.cardH / 2 - 6;
     const rivets = [
-      { x: -184, y: -86 },
-      { x: 184, y: -86 },
-      { x: -184, y: 86 },
-      { x: 184, y: 86 }
+      { x: -rx, y: -ry },
+      { x: rx, y: -ry },
+      { x: -rx, y: ry },
+      { x: rx, y: ry }
     ];
     rivets.forEach(rv => {
       card.add(this.add.rectangle(rv.x, rv.y, 3, 3, 0xf6c026, 0.9));
     });
 
     // Inner subtle glow panel for Sylva & Dialogue
-    const innerPanel = this.add.rectangle(0, -36, 356, 72, 0x0c242e, 0.85);
+    const innerPanel = this.add.rectangle(0, S.panelY, S.panelW, S.panelH, 0x0c242e, 0.85);
     innerPanel.setStrokeStyle(1, 0x1d4754);
     card.add(innerPanel);
 
     // Sylva Avatar frame
-    const avatarRing = this.add.circle(-134, -36, 22, 0x082e38);
+    const avatarRing = this.add.circle(S.avatarX, S.panelY, S.avatarR, 0x082e38);
     avatarRing.setStrokeStyle(1.5, 0x00ffcc);
-    const sylvaAvatar = this.add.image(-134, -36, 'fairy_portrait').setScale(0.72);
+    const sylvaAvatar = this.add.image(S.avatarX, S.panelY, 'fairy_portrait').setScale(S.avatarScale);
     card.add([avatarRing, sylvaAvatar]);
 
     // Title
-    const title = this.add.text(-96, -56, '⚔️ PLAY COMBAT TUTORIAL?', {
+    const title = this.add.text(S.titleX, S.titleY, S.titleText, {
       fontFamily: 'Press Start 2P',
-      fontSize: '7.5px',
+      fontSize: S.titleHint,
       color: '#ffd166',
       stroke: '#000000',
-      strokeThickness: 2
+      strokeThickness: 2,
+      lineSpacing: 4
     }).setOrigin(0, 0.5);
     card.add(title);
 
     // Subtitle / Dialogue from Sylva (clean 2 lines)
-    const sylvaText = this.add.text(-96, -40, '"Master your blade before the woods!\nPractice slashes, aerial jumps & combos."', {
+    const sylvaText = this.add.text(S.sylvaX, S.sylvaY, '"Master your blade before the woods!\nPractice slashes, aerial jumps & combos."', {
       fontFamily: 'Press Start 2P',
-      fontSize: '5px',
+      fontSize: S.sylvaHint,
       color: '#d2f4ee',
-      lineSpacing: 5
+      lineSpacing: S.sylvaSpacing
     });
     card.add(sylvaText);
 
     // Feature highlights badges
-    const pill1Bg = this.add.rectangle(-85, 3, 150, 16, 0x07151c, 0.95);
+    const pill1Bg = this.add.rectangle(-S.pillDx, S.pillY, S.pillW, S.pillH, 0x07151c, 0.95);
     pill1Bg.setStrokeStyle(1, 0x1d4754);
-    const pill1Txt = this.add.text(-85, 3, '🎮 Touch Controls', {
+    const pill1Txt = this.add.text(-S.pillDx, S.pillY, '🎮 Touch Controls', {
       fontFamily: 'Press Start 2P',
-      fontSize: '4.5px',
+      fontSize: S.pillHint,
       color: '#64dfdf'
     }).setOrigin(0.5);
 
-    const pill2Bg = this.add.rectangle(85, 3, 150, 16, 0x07151c, 0.95);
+    const pill2Bg = this.add.rectangle(S.pillDx, S.pillY, S.pillW, S.pillH, 0x07151c, 0.95);
     pill2Bg.setStrokeStyle(1, 0x1d4754);
-    const pill2Txt = this.add.text(85, 3, '🗡️ Combos & Air Jumps', {
+    const pill2Txt = this.add.text(S.pillDx, S.pillY, '🗡️ Combos & Air Jumps', {
       fontFamily: 'Press Start 2P',
-      fontSize: '4.5px',
+      fontSize: S.pillHint,
       color: '#64dfdf'
     }).setOrigin(0.5);
     card.add([pill1Bg, pill1Txt, pill2Bg, pill2Txt]);
 
-    const createBtn = (bx, by, bw, bh, bgCol, borderCol, hoverBg, hoverBorder, textCol, label, action) => {
+    const createBtn = (bx, by, bw, bh, bgCol, borderCol, hoverBg, hoverBorder, textCol, label, action, hint) => {
       const rect = this.add.rectangle(bx, by, bw, bh, bgCol)
         .setStrokeStyle(1.5, borderCol)
         .setInteractive({ useHandCursor: true });
       const txt = this.add.text(bx, by, label, {
         fontFamily: 'Press Start 2P',
-        fontSize: '6px',
+        fontSize: hint,
         color: textCol
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
@@ -850,15 +914,15 @@ export default class StoryIntroScene extends Phaser.Scene {
     this.onChooseSkipTutorial = chooseSkipTutorial;
 
     // Button 1: PLAY TUTORIAL (Recommended)
-    createBtn(0, 30, 340, 26, 0x134e2c, 0x4ade80, 0x1d7040, 0x86efac, '#ffffff', '⚔️ PLAY TUTORIAL (RECOMMENDED)', choosePlayTutorial);
+    createBtn(0, S.btn1Y, S.btn1W, S.btn1H, 0x134e2c, 0x4ade80, 0x1d7040, 0x86efac, '#ffffff', '⚔️ PLAY TUTORIAL (RECOMMENDED)', choosePlayTutorial, S.btn1Hint);
 
     // Button 2: SKIP TO CHAPTER 1
-    createBtn(0, 62, 340, 22, 0x162432, 0x334d65, 0x223548, 0x64dfdf, '#cbd5e1', '⏩ SKIP TO CHAPTER 1 (WHISPERING WOODS)', chooseSkipTutorial);
+    createBtn(0, S.btn2Y, S.btn2W, S.btn2H, 0x162432, 0x334d65, 0x223548, 0x64dfdf, '#cbd5e1', '⏩ SKIP TO CHAPTER 1 (WHISPERING WOODS)', chooseSkipTutorial, S.btn2Hint);
 
     // Keyboard shortcut hint
-    const keyHint = this.add.text(0, 80, '[ENTER / SPACE] Play  •  [ESC] Skip', {
+    const keyHint = this.add.text(0, S.keyY, '[ENTER / SPACE] Play  •  [ESC] Skip', {
       fontFamily: 'Press Start 2P',
-      fontSize: '4.5px',
+      fontSize: S.keyHint,
       color: '#527588'
     }).setOrigin(0.5);
     card.add(keyHint);
