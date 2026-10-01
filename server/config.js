@@ -84,9 +84,14 @@ export const GAME = {
   MIN_CHECKPOINT_GAP_MS: 2_000,
   MAX_SHORT_CHECKPOINT_GAPS: 1,
   /**
-   * The wait between two /runs/start of one player and mode (429 slow_down). Trial: 10 s, because nobody dies in the
-   * first 10 s of the arena and a restart is a menu round trip. Story: 3 s, because a hazard at the start can end a
-   * life in 3-4 s and the player retries at once; the server cannot tell a death from a restart.
+   * The wait between two /runs/start of one player and mode (429 slow_down); the server cannot tell a death from a
+   * restart, so each wait is the shortest one that no honest restart is shorter than.
+   *   Trial 10 s. A Survival run ends at the first death and an idle player is not first hit before about 6 s (the
+   *   boars of wave 1 charge from 3.2 s) and needs five hits, 1.2 s apart, to die: no Trial ends before about 10 s,
+   *   and the next one is a menu round trip further on.
+   *   Story 3 s. A Story life can end within seconds (a fall or a hazard near the start) and the player retries at
+   *   once, so it is shorter than any life that gets as far as the 5 s a submit needs. It still caps starts at 20 a
+   *   minute per player.
    */
   START_GAP_MS: { TRIAL: 10_000, STORY: 3_000 },
   MAX_PTS_PER_SEC: SCORE_MODEL.KILLS_PER_SEC * (SCORE_MODEL.KILL_BASE_PTS_MAX + SCORE_MODEL.KILL_BONUS_PTS_MAX) * SCORE_MODEL.COMBO_MAX
@@ -108,8 +113,9 @@ export const GAME = {
   /**
    * What a boss clear needs, in play time (claimed) AND server time. The chapter-1 boss arena opens only after every foe
    * on the level is dead (StoryScene.unsealBossArena) and its gate is 2,310 px from the start at a run speed of 155 px/s:
-   * 14.9 s of unobstructed running, before 16 foes and 240 HP of boss. No real clear is under about 40 s, so 30 s is a
-   * floor beneath all of them and every legitimate clear stays possible.
+   * 14.9 s of unobstructed running, then about forty swings (320 ms each) for sixteen foes, seven more for the boss's
+   * 240 HP and its intro. On paper nothing clears faster than about 35 s and real play is slower, so 30 s is a floor
+   * beneath every legitimate clear: they all stay possible, and the figure is the one already in force.
    */
   BOSS_MIN: { durationMs: 30_000, kills: 3 },
   ENGAGEMENT_BLOCK_WINDOW: 300n,

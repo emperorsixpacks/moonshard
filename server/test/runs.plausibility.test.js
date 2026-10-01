@@ -173,8 +173,8 @@ test("a Story life shorter than 30 s is not ranked and banks no Shards either", 
 
 // ---------------------------------------------------------------------------------------------------------------
 // Boss clears. Chapter 1 opens its boss arena only after every foe on the level is dead, and the gate is 2,310 px from
-// the start at a run speed of 155 px/s: 15 s of pure running, before 16 foes, the arena and 240 HP of boss. Every real
-// clear takes far more than 30 s of play, so 30 s of play AND of server time (BOSS_MIN) keeps all of them possible.
+// the start at a run speed of 155 px/s: 15 s of pure running, then ~40 swings for 16 foes and the boss's 240 HP. On
+// paper nothing clears faster than ~35 s, so 30 s of play AND of server time (BOSS_MIN) leaves every real clear possible.
 // ---------------------------------------------------------------------------------------------------------------
 
 async function storyBoss(h, p, { elapsedMs, durationMs, kills = 14 }) {

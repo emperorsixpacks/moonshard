@@ -17,9 +17,10 @@ const count = async (h, table) => (await h.db.query(`SELECT count(*)::int AS n F
 
 // ---------------------------------------------------------------------------------------------------------------
 // POST /runs/start waits: 10 s between Trials, 3 s between Story starts, per player and mode.
-//   Trial: nobody dies in the first 10 s of the arena (the first foes need ~13 s to walk to the player), and the
-//   earliest honest restart is a menu round trip, so 10 s costs an honest player nothing.
-//   Story: a hazard at the very start (lava, a pit) can end a life in 3-4 s and the player presses retry at once, so
+//   Trial: a Survival run ends at the first death, and an idle player is not first hit before ~6 s (the wave-1 boars
+//   charge from 3.2 s) and needs five hits 1.2 s apart to die, so no Trial ends before ~10 s, and the next start is a
+//   menu round trip further on: 10 s costs an honest player nothing.
+//   Story: a life can end within seconds (a fall or a hazard near the start) and the player presses retry at once, so
 //   the wait is only 3 s, shorter than any life that reaches the 5 s minimum a submit needs. The server cannot tell a
 //   death from a restart; this is the shortest wait that still caps starts at 20 a minute per player and mode.
 // ---------------------------------------------------------------------------------------------------------------
