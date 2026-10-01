@@ -17,7 +17,7 @@ import { loginMessage } from '../../server/src/auth.js';
 export const forkTransport = (url) => http(url, { timeout: 180_000, retryCount: 0 });
 
 /**
- * A minimal EIP-1193 wallet backed by a real private key, standing in for MiniPay / MetaMask on the fork.
+ * A minimal EIP-1193 wallet backed by a real private key, standing in for a browser wallet such as MetaMask on the fork.
  * The GoodDollar SDKs pass the account to viem as a plain address, so viem sends signing and sending requests to
  * the provider (exactly as it would to a browser wallet); a node cannot sign for an address it holds no key for.
  */

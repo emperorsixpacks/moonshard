@@ -10,7 +10,7 @@ It is built to be positioned for the next **GoodBuilders** season (application f
 
 **Done means:**
 1. A player can open the game, play the tutorial, Story Chapter 1 and the Daily Shard Trial **without a wallet**.
-2. Connecting a wallet (MiniPay, GoodWallet or any EIP-1193 browser wallet) shows verified-human status from the GoodDollar Identity contract, with a face-verification path when not verified.
+2. Connecting a wallet (any EIP-1193 browser wallet, or WalletConnect) shows verified-human status from the GoodDollar Identity contract, with a face-verification path when not verified.
 3. A verified player can claim daily G$ UBI from inside the game and receive the Citizen's Blessing buff (server-confirmed from the on-chain claim tx).
 4. Defeating the first Story boss lets a verified player claim the protocol-funded Engagement Rewards bounty (server attests, user submits `nonContractAppClaim`).
 5. Daily top-3 verified humans and the Shard Harvest earn G$ **Spoils** paid from a `MoonshardVault` contract through server-signed, capped vouchers that players redeem themselves.
@@ -25,9 +25,9 @@ It is built to be positioned for the next **GoodBuilders** season (application f
 | Name | **Moonshard**; sword = "the Moonshard"; hero's player-visible name **Selene**; Luna Crystals → **Shards**; Daily Luna Trial → **Daily Shard Trial** | User asked for a new name; keeps the shattered-moon story |
 | Gameplay code | Port Luna Blade as-is (JS, Phaser 4.2.1, Vite), rename strings, keep scenes | "Same game"; 12.6k lines of working gameplay |
 | New code language | JavaScript (ESM) + JSDoc, server in Node 22 | Matches surrounding code; avoids a 12k-line TS migration |
-| Chain | Celo mainnet (chain 42220), G$ `0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A` (18 decimals, verified on-chain) | G$ + GoodDollar contracts live here; MiniPay is Celo-native |
+| Chain | Celo mainnet (chain 42220), G$ `0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A` (18 decimals, verified on-chain) | G$ + GoodDollar contracts live here |
 | SDKs | `@goodsdks/citizen-sdk` (Identity, Claim), `@goodsdks/engagement-sdk` + `engagement-contracts`, `viem` | Official SDKs, headless/viem. No wagmi/React |
-| Wallet | Thin `wallet.js` over EIP-1193 (`window.ethereum`; detects MiniPay via `isMiniPay`); optional WalletConnect through `@walletconnect/ethereum-provider` when `VITE_REOWN_PROJECT_ID` is set | Works in-wallet today; WalletConnect is opt-in config |
+| Wallet | Thin `wallet.js` over EIP-1193 (`window.ethereum`); optional WalletConnect through `@walletconnect/ethereum-provider` when `VITE_REOWN_PROJECT_ID` is set | Works in browser wallets today; WalletConnect is opt-in config. **MiniPay is deliberately not supported** (owner decision, 2026-10-01): it cannot sign messages and was never a GoodBuilders requirement |
 | Server | Express (as Luna), Postgres via `pg`; PGlite for dev/tests (same SQL) | Replaces Luna's JSON files; real transactions for vouchers/tickets |
 | Contracts | Foundry; one contract `MoonshardVault` | Foundry installed; single small audit surface |
 | Hosting (later) | Web on Vercel, API + Postgres on Railway | Already connected tooling; deploys need owner approval |
@@ -43,7 +43,7 @@ moonshard/
 ├── src/
 │   ├── scenes/ entities/ engine/ ui/              # ported gameplay (renamed)
 │   ├── gd/                                        # NEW: GoodDollar layer (replaces src/nimiq/*)
-│   │   ├── host.js        # MiniPay / GoodWallet / browser detection, language, viewport
+│   │   ├── host.js        # GoodWallet / browser label, language, viewport
 │   │   ├── wallet.js      # connect, chain switch to Celo, walletClient/publicClient
 │   │   ├── auth.js        # nonce → personal_sign → JWT
 │   │   ├── identity.js    # IdentitySDK wrapper: status, expiry, face-verify link
@@ -130,7 +130,7 @@ The app address is a dedicated **attestation signer**; the owner registers it wi
 - `StoryScene`/`SurvivalScene`: wrap run start/checkpoint/submit in `gd/runs.js`; replace `claimFirstStoryBossReward`/`bankCrystalHarvest` calls with ticket submit + end-screen CTAs. Do **not** restructure these scenes beyond that (StoryScene is 3.6k lines; refactor is explicitly out of scope).
 - String rename sweep: Luna Blade → Moonshard, Luna Crystal → Shard, Luna Trial → Shard Trial, NIM → G$, Nimiq Pay → wallet. Asset file names may keep their names.
 - New UI follows the existing retro-arcade style (`style.css`, pixel font), not a new design language. Verified by screenshot before presenting.
-- Mobile: touch HUD unchanged; wallet sheet respects safe areas; works inside MiniPay's webview.
+- Mobile: touch HUD unchanged; wallet sheet respects safe areas.
 
 ## 8. Assets and attribution
 

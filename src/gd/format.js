@@ -1,10 +1,9 @@
 const MESSAGES = {
-  no_wallet: 'No wallet found. Open Moonshard inside MiniPay or use a Celo-compatible wallet browser.',
+  no_wallet: 'No wallet found. Open Moonshard in a browser or app with a Celo-compatible wallet.',
   rejected: 'Request cancelled in your wallet.',
   wrong_chain: 'Switch your wallet to the Celo network to continue.',
   no_account: 'Your wallet has no account available.',
   wallet_error: 'Your wallet could not complete that. Check it for a pending prompt, then try again.',
-  signature_required: "This wallet can't sign messages (MiniPay), so the boss bounty isn't available here.",
   wallet_mismatch: 'The connected wallet differs from the signed-in one. Switch accounts or reconnect.',
   unauthorized: 'Please connect your wallet first.',
   invalid_session: 'Your session expired. Reconnect your wallet.',

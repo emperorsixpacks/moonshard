@@ -22,10 +22,7 @@ async function loadWalletConnect() {
   return provider;
 }
 
-const wallet = createWalletManager({
-  getFallbackProvider: GD.reownProjectId ? loadWalletConnect : null,
-  legacyTx: detectHost() === 'minipay', // MiniPay only accepts legacy (non-EIP-1559) transactions
-});
+const wallet = createWalletManager({ getFallbackProvider: GD.reownProjectId ? loadWalletConnect : null });
 
 class GdServiceManager {
   constructor() {
@@ -42,7 +39,7 @@ class GdServiceManager {
       spoils: () => import('../gd/spoils.js'),
     };
     this.s = {
-      sessionAddress: null, status: 'anonymous', verified: false, unsigned: false, offline: false, needsReconnect: false,
+      sessionAddress: null, status: 'anonymous', verified: false, offline: false, needsReconnect: false,
       busy: null, rewards: null, ubi: null, bounty: null, spoils: [], vault: null,
     };
     wallet.subscribe(() => this.notify());
@@ -53,7 +50,6 @@ class GdServiceManager {
     const session = loadSession();
     if (session) {
       this.s.sessionAddress = session.address;
-      this.s.unsigned = Boolean(session.unsigned);
       this.s.needsReconnect = !(await wallet.restore(session.address));
       try {
         await this.fetchIdentity(true);
@@ -63,8 +59,6 @@ class GdServiceManager {
         else this.s.offline = true;
       }
     }
-    // MiniPay pre-connects the wallet and asks apps not to show a connect button or request a signature to log in.
-    if (!this.s.sessionAddress && this.host === 'minipay') await this.connect();
     if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('gdfv')) {
       const url = new URL(window.location.href);
       url.searchParams.delete('gdfv');
@@ -99,8 +93,6 @@ class GdServiceManager {
       shortAddress: address ? shortAddress(address) : '',
       status: this.s.status,
       verified: this.s.verified,
-      unsigned: this.s.unsigned,
-      autoConnect: this.host === 'minipay',
       wrongChain: w.wrongChain,
       hasWallet: (typeof window !== 'undefined' && Boolean(window.ethereum)) || Boolean(GD.reownProjectId),
       needsReconnect: connected && this.s.needsReconnect,
@@ -121,7 +113,6 @@ class GdServiceManager {
     this.s.sessionAddress = me.address;
     this.s.status = me.status || (me.verified ? 'verified' : 'unverified');
     this.s.verified = Boolean(me.verified);
-    this.s.unsigned = Boolean(me.unsigned);
     this.s.offline = false;
     storage.setWalletAccount(me.address);
   }
@@ -142,7 +133,7 @@ class GdServiceManager {
   dropSession() {
     clearSession();
     this.claimSDK = null;
-    this.s = { ...this.s, sessionAddress: null, status: 'anonymous', verified: false, unsigned: false, rewards: null, ubi: null, bounty: null, spoils: [], vault: null };
+    this.s = { ...this.s, sessionAddress: null, status: 'anonymous', verified: false, rewards: null, ubi: null, bounty: null, spoils: [], vault: null };
     setBlessed(false);
     storage.setWalletAccount(null);
   }
@@ -272,7 +263,6 @@ class GdServiceManager {
 
   claimBounty() {
     return this.run('bounty', async () => {
-      if (this.s.unsigned) throw new Error('signature_required'); // the bounty needs the player's EIP-712 signature
       const runId = this.s.bounty?.pendingRunId;
       if (!runId) throw new Error('boss_not_cleared');
       await this.ensureWallet();

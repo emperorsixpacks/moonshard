@@ -26,10 +26,10 @@ Planned next increment: G$ streaming (Streaming SDK) as daily-prize sponsorship,
 
 ## Growth plan and the metrics we will report
 
-`/stats.html` shows verified humans, in-game UBI claims (transaction-verified), bounties claimed, Spoils issued and paid, and daily active players. The game works inside MiniPay and any EIP-1193 wallet, and offers WalletConnect on phones without an injected wallet.
+`/stats.html` shows verified humans, in-game UBI claims (transaction-verified), bounties claimed, Spoils issued and paid, and daily active players. The game works with any EIP-1193 browser wallet and offers WalletConnect on phones without an injected wallet.
 
 - Season targets: **OWNER TO SET** (for example verified humans reached and daily claims made through the game).
-- Distribution: **OWNER TO SET** (MiniPay and GoodWallet entry points, community challenge days, shareable run results).
+- Distribution: **OWNER TO SET** (GoodDollar community channels, community challenge days, shareable run results).
 
 ## Security
 

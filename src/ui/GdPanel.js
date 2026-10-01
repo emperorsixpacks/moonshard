@@ -84,17 +84,11 @@ export class GdPanel {
 
     if (busy) out.push('<p class="gd-muted">Working… confirm in your wallet if asked.</p>');
 
-    if (!s.connected && s.autoConnect) {
-      // MiniPay connects on its own and its review rules forbid a connect button, so only offer a retry after a failure.
-      if (!busy) {
-        out.push('<p class="gd-warn">Couldn\'t connect to your MiniPay wallet.</p>');
-        out.push(button('connect', 'TRY AGAIN', { disabled: busy }));
-      }
-    } else if (!s.connected) {
+    if (!s.connected) {
       out.push('<p class="gd-muted">You can play everything without a wallet. Connect a Celo wallet to join the ranked board, claim your daily G$ and earn Spoils.</p>');
       out.push(button('connect', 'CONNECT WALLET', { disabled: busy }));
       if (!s.hasWallet) {
-        out.push('<p class="gd-warn">No wallet detected. Open Moonshard inside <b>MiniPay</b> or a Celo-compatible wallet browser.</p>');
+        out.push('<p class="gd-warn">No wallet detected. Open Moonshard in a browser or app with a Celo-compatible wallet.</p>');
       }
     } else {
       if (s.offline) out.push('<p class="gd-warn">Server unreachable. You can still play; rewards resume when it is back.</p>');
@@ -140,7 +134,6 @@ export class GdPanel {
 
   bountyHtml(s, txDisabled) {
     const b = s.bounty;
-    if (s.unsigned) return '<p class="gd-muted">The boss bounty needs a wallet that can sign messages. MiniPay cannot yet, so it is not available here.</p>';
     if (!b || !b.configured) return '<p class="gd-muted">Boss bounty is coming soon.</p>';
     if (b.claimedHere) return '<p class="gd-blessing">✔ First-boss bounty claimed.</p>';
     if (b.pendingRunId) {

@@ -12,31 +12,12 @@ export function normalizeError(err) {
 }
 
 /**
- * `getProvider` returns the injected EIP-1193 provider (MiniPay, browser wallets).
+ * `getProvider` returns the injected EIP-1193 provider (browser wallets).
  * `getFallbackProvider` (optional, async) supplies one when nothing is injected, e.g. WalletConnect.
  */
-/**
- * MiniPay only accepts legacy (non-EIP-1559) transactions. viem's JSON-RPC accounts forward whatever fee fields the
- * caller set, so drop the 1559 ones and let the wallet price the transaction.
- */
-export function legacyProvider(provider) {
-  return {
-    request(args) {
-      if (args?.method === 'eth_sendTransaction' && args.params?.[0]) {
-        const { maxFeePerGas, maxPriorityFeePerGas, type, ...rest } = args.params[0]; // eslint-disable-line no-unused-vars
-        return provider.request({ ...args, params: [rest, ...args.params.slice(1)] });
-      }
-      return provider.request(args);
-    },
-    on: provider.on?.bind(provider),
-    removeListener: provider.removeListener?.bind(provider),
-  };
-}
-
 export function createWalletManager({
   getProvider: getInjected = () => globalThis.window?.ethereum,
   getFallbackProvider = null,
-  legacyTx = false,
   chainId = GD.chainId,
   rpcUrl = GD.rpcUrl,
 } = {}) {
@@ -141,7 +122,7 @@ export function createWalletManager({
   function rawWalletClient() {
     const provider = getProvider();
     if (!provider || !state.address) throw new Error('no_wallet');
-    return createWalletClient({ account: state.address, chain: celo, transport: custom(legacyTx ? legacyProvider(provider) : provider) });
+    return createWalletClient({ account: state.address, chain: celo, transport: custom(provider) });
   }
 
   /** viem clients for on-chain actions. Blocks when the wallet is on the wrong chain. */

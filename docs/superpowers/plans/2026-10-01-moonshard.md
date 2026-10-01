@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-01-moonshard-design.md` (read it first; amendments in Task 0 below).
 
+> **Amendment after execution (2026-10-01).** This plan mentions MiniPay as a supported wallet host (Tasks 3, 8, 9, 13). During execution that support was built (signing-free sessions, legacy transactions, auto-connect), then **removed at the owner's request** because it was never required and MiniPay cannot sign messages. Treat every MiniPay reference below as superseded. The execution record, with all deviations from this plan, is `docs/EXECUTION_NOTES.md`.
+
 ## Global Constraints
 
 - Project dir: `/Users/ram/Desktop/moonshard`. **Do not push, create remote repos, deploy, or spend funds.** Commits stay local.

@@ -47,7 +47,7 @@ test('localStorage that exists but rejects writes (quota / restricted storage) s
     removeItem: () => {},
   };
   await withLocalStorage({ value: rejecting, writable: true }, () => {
-    saveSession({ token: 'tok', address: '0xabc', host: 'minipay' });
+    saveSession({ token: 'tok', address: '0xabc', host: 'browser' });
     assert.equal(getToken(), 'tok');
     assert.equal(getAddress(), '0xabc');
     clearSession();

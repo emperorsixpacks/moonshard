@@ -8,7 +8,7 @@ import { HttpError, ah } from "./http.js";
 export const loginMessage = (nonce, issuedAt) => `Moonshard login\nNonce: ${nonce}\nIssued: ${issuedAt}`;
 
 const MESSAGE_RE = /^Moonshard login\nNonce: ([0-9a-f]{64})\nIssued: (\S+)$/;
-const HOSTS = new Set(["minipay", "goodwallet", "browser"]);
+const HOSTS = new Set(["goodwallet", "browser"]);
 
 export function makeRequireAuth(ctx) {
   return ah(async (req, _res, next) => {

@@ -1,5 +1,5 @@
 /**
- * Immersive layout helper for embeddable webviews (wallet mini apps (MiniPay and similar), mobile
+ * Immersive layout helper for embeddable webviews (wallet app browsers, mobile
  * browsers, in-app browser tabs).
  *
  * Host chrome — the wallet app header / "site address" bar and the phone's

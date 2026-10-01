@@ -58,7 +58,7 @@ GoodDollar must then approve the app (Discord `ubi.gd/GoodBuildersDiscord`, Tele
 
 ## 5. Post-deploy checks
 
-- Open the site in MiniPay or a Celo wallet browser, connect, and confirm the panel shows your identity state.
+- Open the site in a browser with a Celo-compatible wallet, connect, and confirm the panel shows your identity state.
 - As a verified account: claim the daily G$, play a Daily Shard Trial, and look at `/stats.html`.
 - After the next UTC day plus 45 minutes, check that Spoils appear and can be redeemed.
 - Do not make the repository public before the release gate in `docs/ATTRIBUTIONS.md` is cleared.
