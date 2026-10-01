@@ -9,9 +9,25 @@ const num = (v, d) => (v == null || v === "" ? d : Number(v));
 const list = (v) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean) : null);
 const G = (n) => BigInt(n) * 10n ** 18n;
 
+/**
+ * TRUST_PROXY -> what Express's "trust proxy" setting expects: a hop count (default 1: one reverse proxy
+ * in front of the API), a boolean, or a comma-separated address/subnet list. The raw string "1" would be
+ * read by Express as an IP address, so counts must become numbers. Never use `true` in production: it
+ * trusts the left-most X-Forwarded-For entry, which any client can set to dodge the rate limiter.
+ */
+export function parseTrustProxy(v) {
+  if (v == null || String(v).trim() === "") return 1;
+  const s = String(v).trim();
+  if (/^true$/i.test(s)) return true;
+  if (/^false$/i.test(s)) return false;
+  if (/^\d+$/.test(s)) return Number(s);
+  return s;
+}
+
 export const JWT_TTL_SEC = 12 * 60 * 60;
 export const NONCE_TTL_MS = 5 * 60_000;
 export const IDENTITY_TTL_MS = 5 * 60_000;
+export const IDENTITY_CACHE_MAX = 5_000;
 
 /** Game-design tunables. Amounts are wei of G$ (18 decimals). */
 export const GAME = {
@@ -42,6 +58,9 @@ export const config = {
   port: num(env.PORT, 3001),
   jwtSecret: env.JWT_SECRET || "",
   corsOrigins: list(env.CORS_ORIGINS) || "*",
+  trustProxy: parseTrustProxy(env.TRUST_PROXY),
+  /** Per-IP request budgets: `general` for all of /api, `auth` (additionally) for /api/auth/*. */
+  rateLimit: { enabled: true, windowMs: 60_000, general: 300, auth: 30 },
   databaseUrl: env.DATABASE_URL || "",
   rpcUrl: env.CELO_RPC_URL || "https://forno.celo.org",
   chainId: num(env.CHAIN_ID, 42220),

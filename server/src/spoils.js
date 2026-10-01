@@ -5,6 +5,9 @@ import { HttpError, ah } from "./http.js";
 import { dayKey } from "./time.js";
 import { vaultAbi } from "./chain.js";
 
+/** Most recent spoils returned by GET /spoils. */
+export const MAX_SPOILS_LISTED = 30;
+
 export const spoilTypes = {
   Spoil: [
     { name: "to", type: "address" },
@@ -68,9 +71,10 @@ export function spoilsRoutes(ctx) {
 
   r.get("/spoils", ctx.requireAuth, ah(async (req, res) => {
     const p = req.player;
+    // Each listed spoil costs a chain lookup and, when unredeemed, a signature: bound the work per request.
     const { rows } = await ctx.db.query(
-      "SELECT id, kind, day, amount, rank FROM spoils WHERE subject = $1 ORDER BY day DESC, kind",
-      [p.subject],
+      "SELECT id, kind, day, amount, rank FROM spoils WHERE subject = $1 ORDER BY day DESC, kind LIMIT $2",
+      [p.subject, MAX_SPOILS_LISTED],
     );
     const vault = ctx.config.contracts.vault;
     const deadline = BigInt(Math.floor(ctx.now() / 1000) + GAME.VOUCHER_TTL_SEC);

@@ -54,6 +54,9 @@ export async function makeHarness(opts = {}) {
     port: 0,
     jwtSecret: "test-secret",
     corsOrigins: "*",
+    trustProxy: 1,
+    // Off by default so tests that fire many requests are unaffected; hardening2.test.js turns it on.
+    rateLimit: { enabled: false, windowMs: 60_000, general: 300, auth: 30 },
     databaseUrl: "",
     rpcUrl: "http://unused",
     chainId: 42220,

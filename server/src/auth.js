@@ -10,6 +10,43 @@ export const loginMessage = (nonce, issuedAt) => `Moonshard login\nNonce: ${nonc
 const MESSAGE_RE = /^Moonshard login\nNonce: ([0-9a-f]{64})\nIssued: (\S+)$/;
 const HOSTS = new Set(["minipay", "goodwallet", "browser"]);
 
+export const REFRESH_COOLDOWN_MS = 5_000;
+export const REFRESH_COOLDOWN_MAX_ENTRIES = 1_000;
+
+/**
+ * Per-key cooldown with bounded memory (used by /me/refresh). `tryAcquire(key)` admits the call and
+ * starts the key's cooldown, unless the key was admitted less than `cooldownMs` ago.
+ *
+ * An entry only matters for `cooldownMs`, so once the map holds more than `maxEntries` the expired
+ * ones are swept. Entries still inside their window are never dropped: they are what enforces the
+ * cooldown. `store` is injectable so a test can look at it.
+ */
+export function createRefreshCooldown({
+  now,
+  cooldownMs = REFRESH_COOLDOWN_MS,
+  maxEntries = REFRESH_COOLDOWN_MAX_ENTRIES,
+  store = new Map(),
+}) {
+  return {
+    tryAcquire(key) {
+      const t = now();
+      const last = store.get(key);
+      if (last !== undefined && t - last < cooldownMs) return false;
+      // Delete first so the Map's insertion order is admission order, oldest first ...
+      store.delete(key);
+      store.set(key, t);
+      if (store.size > maxEntries) {
+        // ... which lets the sweep stop at the first entry that is still inside its window.
+        for (const [k, at] of store) {
+          if (t - at < cooldownMs) break;
+          store.delete(k);
+        }
+      }
+      return true;
+    },
+  };
+}
+
 export function makeRequireAuth(ctx) {
   return ah(async (req, _res, next) => {
     const header = req.headers.authorization || "";
@@ -80,11 +117,10 @@ export function authRoutes(ctx) {
   r.get("/me", ctx.requireAuth, (req, res) => res.json(meShape(req.player)));
 
   // Drops the identity cache so a player who just finished face verification is recognised at once.
-  const lastRefresh = new Map();
+  const refreshCooldown = createRefreshCooldown({ now: () => ctx.now() });
   r.post("/me/refresh", ctx.requireAuth, ah(async (req, res) => {
     const wallet = req.player.wallet;
-    if (ctx.now() - (lastRefresh.get(wallet) ?? -Infinity) < 5_000) throw new HttpError(429, "slow_down");
-    lastRefresh.set(wallet, ctx.now());
+    if (!refreshCooldown.tryAcquire(wallet)) throw new HttpError(429, "slow_down");
     ctx.identity.invalidate(wallet);
     res.json(meShape(await ctx.identity.resolve(wallet)));
   }));
