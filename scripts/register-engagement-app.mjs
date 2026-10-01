@@ -7,6 +7,10 @@
 // After this transaction GoodDollar must approve the app before bounty claims work.
 //
 // 80 / 60 means: 80% of the reward goes to user + inviter, and 60% of that to the user; the rest goes to the app.
+// So of a 5,000 G$ claim the player receives 2,400 G$ (5,000 x 80% x 60%), not 5,000. The attestation names no
+// inviter, so the inviter's 1,600 G$ and the app's own 1,000 G$ both go to the app (2,600 G$ in all). The API reads
+// rewardAmount() and this app's two percentages from the contract and tells the player the 2,400, so if either is
+// changed on-chain later (a new pool reward, updateAppSettings) the game follows without a code change.
 import { createPublicClient, createWalletClient, http, parseAbi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { celo } from 'viem/chains';
