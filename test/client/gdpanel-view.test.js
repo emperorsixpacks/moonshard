@@ -167,3 +167,24 @@ test('without a gate the panel no longer says the game can be played without a w
   assert.doesNotMatch(h, /play everything without a wallet/i);
   assert.match(h, /verified human/i);
 });
+
+/* ---- the 24 h window to claim a boss bounty (finding L8) ---- */
+
+test('a claimable bounty shows how long is left to claim it, when the server says', () => {
+  const soon = new Date(23.5 * 3600 * 1000).toISOString(); // `now` is 0 in these tests
+  const h = renderPanelHtml(status({ bounty: { configured: true, canClaim: true, pendingRunId: 'r', rewardG: '2400', attestExpiresAt: soon } }), 0);
+  assert.match(h, /Claim within 23h 30m/);
+  assert.match(h, /data-act="bounty"/);
+});
+
+test('...and says so when the window has closed, instead of offering a claim that would be refused', () => {
+  const past = new Date(-1000).toISOString();
+  const h = renderPanelHtml(status({ bounty: { configured: true, canClaim: true, pendingRunId: 'r', rewardG: '2400', attestExpiresAt: past } }), 0);
+  assert.match(h, /window .*closed|too late/i);
+  assert.doesNotMatch(h, /data-act="bounty"/);
+});
+
+test('without a deadline from the server nothing is invented', () => {
+  const h = renderPanelHtml(status(), 0);
+  assert.doesNotMatch(h, /Claim within|closed/);
+});

@@ -55,7 +55,7 @@ function dailyHtml(s, txDisabled, now) {
   return html;
 }
 
-function bountyHtml(s, txDisabled) {
+function bountyHtml(s, txDisabled, now) {
   const b = s.bounty;
   if (s.awaiting?.bounty) return `<p>Bounty sent — waiting for the network to confirm.</p>${txLink(s.awaiting.bounty)}`;
   if (!b) return note(s.stale?.bounty ? 'Boss bounty status unavailable right now.' : 'Checking the boss bounty…');
@@ -65,7 +65,13 @@ function bountyHtml(s, txDisabled) {
   const amount = Number(b.rewardG) > 0 ? `${formatG(b.rewardG)} G$` : null;
   if (b.pendingRunId) {
     if (b.canClaim === false) return warn(esc(reasonText(b.reason)));
-    return `<p>Boss defeated! Claim your one-time reward.</p>${button('bounty', amount ? `CLAIM ${amount} BOUNTY` : 'CLAIM BOUNTY', { disabled: txDisabled })}`;
+    // the server only signs for a boss kill from the last 24 h: say how long is left, and never offer a refused claim
+    const left = b.attestExpiresAt ? Date.parse(b.attestExpiresAt) - now : null;
+    if (left !== null && Number.isFinite(left) && left <= 0) {
+      return warn('Too late: the claim window for that boss kill has closed. Defeat a boss again to unlock the bounty.');
+    }
+    const window = left !== null && Number.isFinite(left) ? note(`Claim within ${formatCountdown(left)}.`) : '';
+    return `<p>Boss defeated! Claim your one-time reward.</p>${window}${button('bounty', amount ? `CLAIM ${amount} BOUNTY` : 'CLAIM BOUNTY', { disabled: txDisabled })}`;
   }
   return note(`Defeat a chapter boss in Story Mode to unlock a one-time ${amount ? `bounty of ${amount}` : 'G$ bounty'}.`);
 }
@@ -164,7 +170,7 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null } = {}) {
       out.push(section("PROVE YOU'RE HUMAN", `<p>${copy}</p>${button('verify', 'VERIFY (FACE SCAN)', { disabled: txDisabled })}${button('recheck', "I'M DONE — CHECK AGAIN", { disabled: busy, cls: 'gd-ghost' })}`));
     } else {
       out.push(section('DAILY G$', dailyHtml(s, txDisabled, now)));
-      out.push(section('FIRST-BOSS BOUNTY', bountyHtml(s, txDisabled)));
+      out.push(section('FIRST-BOSS BOUNTY', bountyHtml(s, txDisabled, now)));
       out.push(section('SPOILS', spoilsHtml(s, txDisabled)));
     }
 
