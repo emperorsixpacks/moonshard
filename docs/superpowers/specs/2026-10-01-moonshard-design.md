@@ -9,7 +9,7 @@ Moonshard is a port of **Luna Blade** (MIT, © ScriptedBro; fork JemIIahh/Luna-B
 It is built to be positioned for the next **GoodBuilders** season (application form not yet published; Season 4 rules used as the template). Season 4 scoring: 25% verified-citizen votes, 50% mentor votes, 25% growth metrics. Hard rules: non-trivial G$ integration, open source, security review, "new and innovative".
 
 **Done means:**
-1. A player can open the game, play the tutorial, Story Chapter 1 and the Daily Shard Trial **without a wallet**.
+1. A player must be a verified human **before any game mode starts** (owner decision, 2026-10-01; this replaced the original "play without a wallet" goal): the game gates every way into play behind connect → GoodDollar face verification → play. The menu, forge, leaderboard and public stats stay open to everyone.
 2. Connecting a wallet (any EIP-1193 browser wallet, or WalletConnect) shows verified-human status from the GoodDollar Identity contract, with a face-verification path when not verified.
 3. A verified player can claim daily G$ UBI from inside the game and receive the Citizen's Blessing buff (server-confirmed from the on-chain claim tx).
 4. Defeating the first Story boss lets a verified player claim the protocol-funded Engagement Rewards bounty (server attests, user submits `nonContractAppClaim`).
@@ -71,7 +71,7 @@ Removed from the port: `@nimiq/*` deps, `src/nimiq/*`, `engine/NimiqService.js`,
 
 All rewards, boards and caps are keyed by the **whitelisted root** returned by `IdentitySDK.getWhitelistedRoot(address)`, not the wallet address. Linked wallets (IdentityV4) therefore share one slot, which is far stronger than Luna's per-device cap. Server re-checks the root at login and every 5 minutes (cached), and checks `getIdentityExpiryData` to reject expired identities for prize eligibility.
 
-States: `anonymous` (no wallet) → `connected` (wallet, not whitelisted) → `verified` (whitelisted) → `expired` (needs re-verify). Only `verified` is prize/bounty eligible. Everyone can play and appear on the open board.
+States: `anonymous` (no wallet) → `connected` (wallet, not whitelisted) → `verified` (whitelisted) → `expired` (needs re-verify). Only `verified` can start a game mode (the gate) and is prize/bounty eligible; the server enforces eligibility independently of the client gate.
 
 ## 5. Player flow
 

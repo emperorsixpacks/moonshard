@@ -1,6 +1,6 @@
 # Moonshard: The High Forest
 
-A pixel action-platformer built with **Phaser 4**, where **GoodDollar (G$) on Celo** powers identity, daily income and rewards. Play free in any browser; connect a wallet (any EIP-1193 browser wallet, or WalletConnect) to prove you are a real person, claim your daily G$ without leaving the game, and earn G$ Spoils on a one-human-one-slot leaderboard.
+A pixel action-platformer built with **Phaser 4**, where **GoodDollar (G$) on Celo** powers identity, daily income and rewards. It is for **verified humans**: connect a wallet (any EIP-1193 browser wallet, or WalletConnect) and pass GoodDollar's face verification before you play, then claim your daily G$ without leaving the game and earn G$ Spoils on a one-human-one-slot leaderboard.
 
 > **Derived from [Luna Blade](https://github.com/ScriptedBro/Luna-Blade) by ScriptedBro (MIT).** The gameplay and look are carried over; the Nimiq layer was replaced by GoodDollar, and the flow, reward logic and anti-cheat were rebuilt. See [`LICENSE`](LICENSE) and [`docs/ATTRIBUTIONS.md`](docs/ATTRIBUTIONS.md). **Art provenance is not fully cleared yet: do not publish this repository until the release gate in the attributions file is resolved.**
 
@@ -16,7 +16,7 @@ A pixel action-platformer built with **Phaser 4**, where **GoodDollar (G$) on Ce
 | Anti-cheat | Server-issued run tickets, checkpoints, server clock, rate limits | n/a |
 | Public metrics | `/stats.html`: verified humans, in-game UBI claims, bounties, Spoils, daily players | n/a |
 
-You can play everything without a wallet. Rewards need a connected, verified wallet.
+**Verified humans only.** Before any game mode starts (story, tutorial, endless), the player must connect a wallet and be a verified human; the game shows a three-step gate (connect, prove you are human, play) and starts the mode they asked for once they pass. The menu, forge, leaderboard and public stats are open to everyone. The gate is the experience of the rule; the server independently only ranks and pays verified humans.
 
 Wallets: any EIP-1193 browser wallet (it signs a login message), plus WalletConnect when `VITE_REOWN_PROJECT_ID` is set. **MiniPay is not supported**: it cannot sign messages, and the boss bounty needs a signature.
 

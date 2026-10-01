@@ -6,7 +6,7 @@
 
 ## One-liner
 
-A pixel action-platformer where every G$ reward is tied to a verified human: play free, verify once, claim your daily G$ inside the game, and earn Spoils on a one-human-one-slot leaderboard.
+A pixel action-platformer for verified humans: prove you are a real person with GoodDollar before you play, claim your daily G$ inside the game, and earn Spoils on a one-human-one-slot leaderboard.
 
 ## Which GoodBuilders integrations it uses (all in this repo)
 
