@@ -14,7 +14,14 @@ function manualHarness({ holdCheckpoints = 0 } = {}) {
   let t = 1_000_000;
   const calls = [];
   const held = { start: [], checkpoints: [] };
-  const timers = { fns: [], setInterval(fn) { this.fns.push(fn); return this.fns.length; }, clearInterval(id) { this.fns[id - 1] = null; } };
+  const timers = {
+    fns: [],
+    timeouts: [],
+    setInterval(fn) { this.fns.push(fn); return this.fns.length; },
+    clearInterval(id) { this.fns[id - 1] = null; },
+    setTimeout(fn) { const slot = { fn, live: true }; this.timeouts.push(slot); return slot; },
+    clearTimeout(slot) { slot.live = false; },
+  };
   const hold = (queue) => new Promise((resolve, reject) => queue.push({ resolve, reject }));
   const api = (path, opts = {}) => {
     calls.push({ path, body: opts.body });
@@ -29,6 +36,8 @@ function manualHarness({ holdCheckpoints = 0 } = {}) {
     advance: (ms) => { t += ms; },
     tick: async () => { for (const fn of timers.fns) if (fn) await fn(); },
     liveTimers: () => timers.fns.filter(Boolean).length,
+    // The 4 s cap on start() waiting for the previous finish() passes.
+    expireWait: () => { for (const slot of timers.timeouts) if (slot.live) { slot.live = false; slot.fn(); } },
     resolve: (kind, index, value) => held[kind][index].resolve(value),
     reject: (kind, index, err) => held[kind][index].reject(err),
   };
@@ -43,14 +52,14 @@ test('a start() answered after stop() installs nothing: no zombie run, no leaked
   h.resolve('start', 0, { runId: 'stale', ticket: 'tk', seed: 's' });
   assert.equal(await pending, null);
   assert.equal(h.liveTimers(), 0);
-  assert.deepEqual(await h.tracker.finish({ score: 1, kills: 1, shards: 0, durationMs: 9000 }), { ticketed: false });
+  assert.deepEqual(await h.tracker.finish({ score: 1, kills: 1, shards: 0, durationMs: 9000 }), { ticketed: false, reason: 'no_run' });
   assert.deepEqual(h.calls.map((c) => c.path), ['/runs/start']);
 });
 
 test('finish() before the start response arrives drops that response instead of reviving a run', async () => {
   const h = manualHarness();
   const pending = h.tracker.start({ mode: 'TRIAL' });
-  assert.deepEqual(await h.tracker.finish({ score: 1, kills: 0, shards: 0, durationMs: 9000 }), { ticketed: false });
+  assert.deepEqual(await h.tracker.finish({ score: 1, kills: 0, shards: 0, durationMs: 9000 }), { ticketed: false, reason: 'starting' });
   h.resolve('start', 0, { runId: 'late', ticket: 'tk', seed: 's' });
   assert.equal(await pending, null);
   assert.equal(h.liveTimers(), 0);
@@ -86,7 +95,7 @@ test('an abandoned start that fails late does not wipe the newer run', async () 
   assert.equal(res.ticketed, true);
 });
 
-test('a slow finish() of the old run cannot null the run that started meanwhile', async () => {
+test('a slow finish() of the old run cannot null the run that started meanwhile (the start waited for it, then gave up at the cap)', async () => {
   const h = manualHarness({ holdCheckpoints: 1 });
   const a = h.tracker.start({ mode: 'STORY', chapter: 1 });
   h.resolve('start', 0, { runId: 'A', ticket: 'tkA', seed: 'sA' });
@@ -95,6 +104,10 @@ test('a slow finish() of the old run cannot null the run that started meanwhile'
   const finishA = h.tracker.finish({ score: 0, kills: 5, shards: 0, durationMs: 60_000, bossCleared: true });
   await settle(); // finish(A) is now waiting on its closing checkpoint
   const b = h.tracker.start({ mode: 'STORY', chapter: 2 }); // next chapter begins while A is still settling
+  await settle();
+  assert.equal(h.calls.filter((c) => c.path === '/runs/start').length, 1, 'B waits for A to settle before it voids it');
+  h.expireWait(); // A is stuck for longer than the cap: B goes ahead
+  await settle();
   h.resolve('start', 1, { runId: 'B', ticket: 'tkB', seed: 'sB' });
   await b;
   h.resolve('checkpoints', 0, { ok: true }); // A's closing checkpoint finally returns
@@ -110,7 +123,7 @@ test('a slow finish() of the old run cannot null the run that started meanwhile'
   assert.equal(h.liveTimers(), 0);
 });
 
-test('an old finish() waiting on an in-flight checkpoint sends no closing checkpoint into the new run', async () => {
+test('an old finish() waiting on an in-flight checkpoint sends its closing checkpoint to its own run, never the new one', async () => {
   const h = manualHarness({ holdCheckpoints: 1 });
   const a = h.tracker.start({ mode: 'TRIAL' });
   h.resolve('start', 0, { runId: 'A', ticket: 'tkA', seed: 'sA' });
@@ -122,12 +135,17 @@ test('an old finish() waiting on an in-flight checkpoint sends no closing checkp
   const finishA = h.tracker.finish({ score: 10, kills: 1, shards: 0, durationMs: 12_000 });
   await settle(); // finish(A) waits for the in-flight checkpoint
   const b = h.tracker.start({ mode: 'TRIAL' });
+  await settle();
+  h.expireWait(); // the wait for A's settlement ends at its cap
+  await settle();
   h.resolve('start', 1, { runId: 'B', ticket: 'tkB', seed: 'sB' });
   await b;
   h.resolve('checkpoints', 0, { ok: true });
   await finishA;
 
   assert.equal(h.calls.filter((c) => c.path === '/runs/B/checkpoints').length, 0);
+  assert.equal(h.calls.filter((c) => c.path === '/runs/A/checkpoints').length, 2, 'A got its periodic and its closing checkpoint');
+  assert.equal(h.calls.filter((c) => c.path === '/runs/A/submit').length, 1);
   assert.equal(h.liveTimers(), 1); // B is alive and still has its timer
 });
 

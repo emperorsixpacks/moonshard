@@ -24,7 +24,7 @@ test('anonymous players get no ticket and every call is a safe no-op', async () 
   const h = harness({ token: null });
   assert.equal(await h.tracker.start({ mode: 'TRIAL' }), null);
   h.tracker.update({ score: 5 });
-  assert.deepEqual(await h.tracker.finish({ score: 5, kills: 1, shards: 0, durationMs: 9000 }), { ticketed: false });
+  assert.deepEqual(await h.tracker.finish({ score: 5, kills: 1, shards: 0, durationMs: 9000 }), { ticketed: false, reason: 'not_connected' });
   assert.equal(h.calls.length, 0);
   assert.equal(h.timers.fns.filter(Boolean).length, 0);
 });
@@ -33,7 +33,7 @@ test('server unreachable at start: unticketed offline run, no throw, no timer', 
   const h = harness({ failStart: true });
   assert.equal(await h.tracker.start({ mode: 'TRIAL' }), null);
   h.tracker.update({ score: 5 });
-  assert.deepEqual(await h.tracker.finish({ score: 5, kills: 1, shards: 0, durationMs: 9000 }), { ticketed: false });
+  assert.deepEqual(await h.tracker.finish({ score: 5, kills: 1, shards: 0, durationMs: 9000 }), { ticketed: false, reason: 'offline' });
   assert.equal(h.timers.fns.filter(Boolean).length, 0);
 });
 
