@@ -24,7 +24,7 @@ Wallets: any EIP-1193 browser wallet (it signs a login message), plus WalletConn
 
 ```bash
 npm install
-cd server && npm install && cp .env.example .env     # then set JWT_SECRET (openssl rand -base64 32)
+cd server && npm install && cp .env.example .env     # then set JWT_SECRET (openssl rand -base64 32; the API refuses a short or placeholder secret)
 cd .. && npm run dev:all                              # API on :3001 (in-memory DB), game on :5173
 ```
 
@@ -50,7 +50,7 @@ Tests:
 
 Web (`.env.example`): `VITE_API_URL`, `VITE_CELO_RPC_URL`, `VITE_GD_ENV`, `VITE_REOWN_PROJECT_ID` (optional, enables WalletConnect).
 
-Server (`server/.env.example`): `PORT`, `JWT_SECRET`, `CORS_ORIGINS`, `DATABASE_URL` (empty = in-memory), `CELO_RPC_URL`, `CHAIN_ID`, `VAULT_ADDRESS`, `VOUCHER_SIGNER_KEY`, `APP_SIGNER_KEY`. Prize sizes, caps and anti-cheat limits live in `server/config.js` (`GAME`).
+Server (`server/.env.example`): `PORT`, `JWT_SECRET`, `CORS_ORIGINS`, `TRUST_PROXY` (number of proxies in front of the API, default 1), `DATABASE_URL` (empty = in-memory), `CELO_RPC_URL`, `CHAIN_ID`, `VAULT_ADDRESS`, `VOUCHER_SIGNER_KEY`, `APP_SIGNER_KEY`. Prize sizes, caps and anti-cheat limits live in `server/config.js` (`GAME`).
 
 ## Layout
 
@@ -59,7 +59,7 @@ src/            Phaser client (scenes, entities, engine, ui) + src/gd/ (GoodDoll
 server/         Express API: auth, run tickets, leaderboard, Spoils, Engagement attestation, stats
 contracts/      Foundry project: MoonshardVault
 scripts/        asset audit, Engagement app registration, Celo-fork end-to-end and browser runs
-docs/           design spec, implementation plan, attributions, deploy notes, application brief
+docs/           design spec, implementation plan, execution notes (deviations, evidence, limitations), attributions, deploy notes, application brief, screenshots
 ```
 
 Deployment is described in [`docs/DEPLOY.md`](docs/DEPLOY.md) (not executed by the build agent).
