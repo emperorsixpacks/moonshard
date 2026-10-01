@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { chooseRenderScale, pixelBudget } from './renderScale.js';
+import { adaptRenderScale, chooseRenderScale, pixelBudget } from './renderScale.js';
 import { resolveTextStyle } from './typography.js';
 
 /**
@@ -19,6 +19,17 @@ import { resolveTextStyle } from './typography.js';
 let renderScale = 1;
 let patched = false;
 let textPatched = false;
+
+// A device that could not keep up with the larger buffer is remembered, so the next visit starts lower.
+const CAP_KEY = 'moonshard.render.cap.v1';
+const readCap = () => {
+  try {
+    const n = Number(globalThis.localStorage?.getItem(CAP_KEY));
+    return n >= 1 ? n : Infinity;
+  } catch { return Infinity; }
+};
+let cap = readCap();
+const saveCap = (n) => { try { globalThis.localStorage?.setItem(CAP_KEY, String(n)); } catch { /* blocked storage: relearned next visit */ } };
 
 /** The current multiplier (1 until `installHiRes` has measured the screen). */
 export const getRenderScale = () => renderScale;
@@ -77,13 +88,13 @@ function applyScale(game) {
   const base = game.scale.baseSize;
   const shown = game.canvas.getBoundingClientRect().width || game.scale.parentSize.width || window.innerWidth;
   const coarse = Boolean(window.matchMedia?.('(pointer: coarse)').matches);
-  const next = chooseRenderScale({
+  const next = Math.min(cap, chooseRenderScale({
     cssWidth: shown,
     dpr: window.devicePixelRatio || 1,
     baseWidth: base.width,
     baseHeight: base.height,
     budgetPixels: pixelBudget(coarse),
-  });
+  }));
   const width = Math.round(base.width * next);
   const height = Math.round(base.height * next);
   if (next === renderScale && game.canvas.width === width && game.canvas.height === height) return;
@@ -119,4 +130,18 @@ export function installHiRes(game) {
   };
   watchDensity();
   update();
+
+  // Safety net: if the frame rate stays low while the tab is visible, step the buffer down one notch (and remember it).
+  const startedAt = performance.now();
+  let strikes = 0;
+  setInterval(() => {
+    if (document.hidden || performance.now() - startedAt < 10_000) { strikes = 0; return; }
+    const verdict = adaptRenderScale({ fps: game.loop?.actualFps, scale: renderScale, strikes });
+    strikes = verdict.strikes;
+    if (verdict.changed) {
+      cap = verdict.scale;
+      saveCap(cap);
+      update();
+    }
+  }, 2000);
 }

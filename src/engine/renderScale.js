@@ -21,3 +21,17 @@ export function chooseRenderScale({ cssWidth, dpr = 1, baseWidth, baseHeight, bu
   while (scale > 1 && baseWidth * scale * baseHeight * scale > budgetPixels) scale--;
   return scale;
 }
+
+/**
+ * The safety net for a device that cannot keep up with the larger buffer. Called every couple of seconds with the
+ * measured frame rate while the tab is visible: after `strikesNeeded` slow samples in a row the buffer steps down one
+ * notch. A healthy sample clears the count; a missing or nonsensical measurement counts for nothing either way.
+ */
+export function adaptRenderScale({ fps, scale, strikes }, { minFps = 40, strikesNeeded = 4, floor = 1 } = {}) {
+  if (!(fps > 0)) return { scale, strikes, changed: false };
+  if (fps >= minFps) return { scale, strikes: 0, changed: false };
+  if (scale <= floor) return { scale, strikes: 0, changed: false };
+  const next = strikes + 1;
+  if (next < strikesNeeded) return { scale, strikes: next, changed: false };
+  return { scale: scale - 1, strikes: 0, changed: true };
+}

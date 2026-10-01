@@ -55,3 +55,34 @@ test('missing or nonsensical measurements fall back to 1x instead of NaN', () =>
 test('phones get a smaller pixel budget than desktops', () => {
   assert.ok(pixelBudget(true) < pixelBudget(false));
 });
+
+/* ---- the safety net: a device that cannot keep up gets a smaller buffer ---- */
+
+import { adaptRenderScale } from '../../src/engine/renderScale.js';
+
+test('a healthy frame rate changes nothing and clears earlier bad samples', () => {
+  assert.deepEqual(adaptRenderScale({ fps: 60, scale: 5, strikes: 2 }), { scale: 5, strikes: 0, changed: false });
+});
+
+test('a few slow samples are tolerated, a sustained run of them steps the buffer down one notch', () => {
+  let state = { scale: 5, strikes: 0 };
+  for (let i = 0; i < 3; i++) {
+    state = adaptRenderScale({ fps: 22, ...state });
+    assert.equal(state.changed, false);
+  }
+  state = adaptRenderScale({ fps: 22, ...state });
+  assert.deepEqual(state, { scale: 4, strikes: 0, changed: true });
+});
+
+test('it never goes below the floor, so a device that is slow at 1x is left alone', () => {
+  const state = adaptRenderScale({ fps: 10, scale: 1, strikes: 99 });
+  assert.equal(state.scale, 1);
+  assert.equal(state.changed, false);
+  assert.equal(adaptRenderScale({ fps: 10, scale: 2, strikes: 99 }, { floor: 2 }).scale, 2);
+});
+
+test('a missing or nonsensical frame rate is ignored rather than counted against the device', () => {
+  for (const fps of [undefined, NaN, 0, -5]) {
+    assert.deepEqual(adaptRenderScale({ fps, scale: 5, strikes: 2 }), { scale: 5, strikes: 2, changed: false });
+  }
+});
