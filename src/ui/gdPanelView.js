@@ -23,6 +23,8 @@ export const esc = (v) =>
 const button = (act, label, { disabled = false, id = '', cls = '' } = {}) =>
   `<button type="button" class="pixel-modal-btn gd-btn ${cls.includes('gd-ghost') ? '' : 'btn-resume'} ${cls}" data-act="${act}"${id ? ` data-id="${esc(id)}"` : ''}${disabled ? ' disabled' : ''}>${label}</button>`;
 
+const NO_WALLET = 'No wallet detected. Open Moonshard inside GoodWallet (or any wallet app\'s browser), or install a browser wallet such as MetaMask and reload this page.';
+
 const section = (title, inner) => `<section class="gd-sec"><h4>${title}</h4>${inner}</section>`;
 const note = (text) => `<p class="gd-muted">${text}</p>`;
 const warn = (text) => `<p class="gd-warn">${text}</p>`;
@@ -110,7 +112,7 @@ function gateHtml(s, gate, busy, txDisabled) {
   let action = '';
   if (step === 'connect') {
     action = button('connect', 'CONNECT WALLET', { disabled: busy });
-    if (!s.hasWallet) action += warn('No wallet detected. Open Moonshard in a browser or app with a Celo-compatible wallet.');
+    if (!s.hasWallet) action += warn(NO_WALLET);
   } else if (step === 'checking') {
     action = note('Checking your verification…');
   } else if (step === 'unreachable') {
@@ -148,7 +150,7 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null } = {}) {
     if (s.sessionExpired) out.push(warn('Your session ended. Connect your wallet again to keep earning.'));
     out.push(note('Moonshard is for verified humans. Connect your Celo wallet and prove you are human (GoodDollar face scan) to play, claim your daily G$ and earn Spoils.'));
     out.push(button('connect', 'CONNECT WALLET', { disabled: busy }));
-    if (!s.hasWallet) out.push(warn('No wallet detected. Open Moonshard in a browser or app with a Celo-compatible wallet.'));
+    if (!s.hasWallet) out.push(warn(NO_WALLET));
   } else {
     if (s.offline) out.push(warn('Server unreachable. You can still play; rewards resume when it is back.'));
     if (s.needsReconnect) {

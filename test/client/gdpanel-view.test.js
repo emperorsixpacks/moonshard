@@ -188,3 +188,10 @@ test('without a deadline from the server nothing is invented', () => {
   const h = renderPanelHtml(status(), 0);
   assert.doesNotMatch(h, /Claim within|closed/);
 });
+
+test('a visitor with no wallet at all is told how to get in, not just that nothing was found', () => {
+  const h = renderPanelHtml(status({ ...anonymous, hasWallet: false }), 0, { gate });
+  assert.match(h, /No wallet detected/);
+  assert.match(h, /GoodWallet/);
+  assert.match(h, /browser wallet/i);
+});
