@@ -285,20 +285,20 @@ class GdServiceManager {
     const seq = ++this.seq;
     const live = () => getToken() === token; // false after a disconnect, an expiry or a newer sign-in
 
-    if (force || !this.s.identityLoaded) {
-      try {
-        await this.fetchIdentity(force, { token });
-      } catch (err) {
-        if (err?.status === 401) {
-          this.authLost(token);
-        } else {
-          this.s.offline = true;
-          this.notify();
-        }
-        return;
+    // Always re-read who the player is (a cheap, server-cached call unless forced): verification can lapse while the
+    // page stays open, and the verified-human gate and every verified-only section depend on it.
+    try {
+      await this.fetchIdentity(force, { token });
+    } catch (err) {
+      if (err?.status === 401) {
+        this.authLost(token);
+      } else {
+        this.s.offline = true;
+        this.notify();
       }
-      if (!live()) return;
+      return;
     }
+    if (!live()) return;
 
     await this.pending.retryAll({ onUnauthorized: (used) => this.authLost(used) }).catch(() => {});
     if (!live()) return;

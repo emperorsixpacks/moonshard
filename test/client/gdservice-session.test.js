@@ -246,3 +246,17 @@ test('...but a 401 for an older session does not end the one the player signed i
   assert.equal(gd.getStatus().connected, true);
   assert.equal(gd.getStatus().sessionExpired, false);
 });
+
+/* ---- verification can lapse while the page stays open: the gate must notice ---- */
+
+test('a verification that lapsed on the server since sign-in is noticed by the next refresh', async (t) => {
+  const { gd, server } = await connected(t);
+  assert.equal(gd.getStatus().verified, true);
+  server.verified = false; // the human check expired
+  await gd.refreshAll();
+  const s = gd.getStatus();
+  assert.equal(s.verified, false);
+  assert.equal(s.status, 'unverified');
+  assert.deepEqual(s.spoils, [], 'nothing that needs a verified human is still offered');
+  assert.equal(s.bounty, null);
+});

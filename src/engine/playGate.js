@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { gdService } from './GdService.js';
-import { blocksStart, canPlay, gateLabel } from './playGateRules.js';
+import { GATED_SCENES, blocksStart, canPlay, gateLabel } from './playGateRules.js';
 import { takeGate } from './gateMemory.js';
 
 /**
@@ -30,7 +30,12 @@ export function installPlayGate() {
   const start = proto.start;
   proto.start = function gatedStart(key, data) {
     const target = key === undefined ? this.key : key;
-    if (!blocksStart(target, gdService.getStatus(), { bypass: devBypass() })) return start.call(this, key, data);
+    if (!blocksStart(target, gdService.getStatus(), { bypass: devBypass() })) {
+      const started = start.call(this, key, data);
+      // keep who-the-player-is fresh for the next gate decision (verification can lapse between runs)
+      if (GATED_SCENES.has(target)) gdService.refreshAll().catch(() => {});
+      return started;
+    }
     // a deep link (?scene=...) arrives from the boot screen: show the menu behind the gate rather than a blank screen
     if (this.key === 'BootScene') start.call(this, 'MenuScene');
     openGate({ key: target, data, label: gateLabel(target), launch: () => goTo(this.manager, target, data) });
