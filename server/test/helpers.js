@@ -101,8 +101,9 @@ export async function makeHarness(opts = {}) {
     appSignerKey: generatePrivateKey(),
     ...opts.config,
   };
-  // `opts.env` stands in for process.env (NODE_ENV and friends) so a test can build a "production" app.
-  const { app, ctx } = createApp({ db, chain, config, now: clock, ...(opts.env ? { env: opts.env } : {}) });
+  // `opts.env` stands in for process.env (NODE_ENV and friends), so a test can build a "production" app and the suite
+  // does not change behaviour when it is run with NODE_ENV=production in the shell.
+  const { app, ctx } = createApp({ db, chain, config, now: clock, env: opts.env ?? { NODE_ENV: "test" } });
   const server = await new Promise((resolve) => {
     const s = createServer(app).listen(0, "127.0.0.1", () => resolve(s));
   });
