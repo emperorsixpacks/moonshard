@@ -8,6 +8,7 @@ import { createIdentityResolver } from "./identity.js";
 import { authRoutes, makeRequireAuth } from "./auth.js";
 import { runRoutes } from "./runs.js";
 import { leaderboardRoutes } from "./leaderboard.js";
+import { spoilsRoutes } from "./spoils.js";
 
 /**
  * @param {{db: any, chain: any, config: any, now?: () => number}} deps
@@ -48,6 +49,7 @@ export function createApp({ db, chain, config, now = Date.now }) {
   api.use(authRoutes(ctx));
   api.use(runRoutes(ctx));
   api.use(leaderboardRoutes(ctx));
+  api.use(spoilsRoutes(ctx));
   // ROUTES: later tasks mount their routers here.
   app.use("/api", api);
 
