@@ -5,6 +5,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { GAME } from "../config.js";
 import { errorHandler } from "./http.js";
 import { createIdentityResolver } from "./identity.js";
+import { authRoutes, makeRequireAuth } from "./auth.js";
 
 /**
  * @param {{db: any, chain: any, config: any, now?: () => number}} deps
@@ -41,6 +42,8 @@ export function createApp({ db, chain, config, now = Date.now }) {
       dailyShardCap: GAME.DAILY_SHARD_CAP,
     });
   });
+  ctx.requireAuth = makeRequireAuth(ctx);
+  api.use(authRoutes(ctx));
   // ROUTES: later tasks mount their routers here.
   app.use("/api", api);
 
