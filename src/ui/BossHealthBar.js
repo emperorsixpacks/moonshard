@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 
 export default class BossHealthBar extends Phaser.GameObjects.Container {
-  constructor(scene, bossName = 'BOSS', maxHp = 100, x = 240, y = 48) {
+  constructor(scene, bossName = 'BOSS', maxHp = 100, x = 240, y = (scene.hudLayout?.barH ?? 28) + 22) {
     super(scene, x, y);
     scene.add.existing(this);
 

@@ -35,8 +35,9 @@ export function layoutHud({ width = 480, unit = 2, variant = 'story' } = {}) {
   const stacked = unit < 1.1;
   const left = stacked ? 8 : 12;
   const right = width - left;
-  const healthW = 110;
-  const healthH = 15;
+  const healthBar = { width: 104, height: stacked ? 12 : 9, fontPx: stacked ? 15 : 12 };
+  const healthW = healthBar.width + 6;
+  const healthH = healthBar.height + 6;
 
   const at = (x, row, ox, face) => ({ x, y: rowMid[row], ox, face });
   let health;
@@ -82,7 +83,7 @@ export function layoutHud({ width = 480, unit = 2, variant = 'story' } = {}) {
   }
 
   return {
-    stacked, barH, rowH, rowY, left, right, health, healthW, healthH, slots,
+    stacked, barH, rowH, rowY, left, right, health, healthBar, healthW, healthH, slots,
     fonts: {
       label: { fontFamily: PIXEL, fontSize: `${labelPx}px` },
       value: { fontFamily: BODY, fontSize: `${valuePx}px` },

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 
 export default class HeroHealthBar extends Phaser.GameObjects.Container {
-  constructor(scene, x = 200, y = 14, maxHp = 100) {
+  constructor(scene, x = 200, y = 14, maxHp = 100, { width = 104, height = 9, fontPx = 12 } = {}) {
     super(scene, x, y);
     scene.add.existing(this);
 
@@ -10,8 +10,8 @@ export default class HeroHealthBar extends Phaser.GameObjects.Container {
     this.setScrollFactor(0);
     this.setDepth(205);
 
-    const barWidth = 104;
-    const barHeight = 9;
+    const barWidth = width;
+    const barHeight = height;
 
     this.barWidth = barWidth;
     this.barHeight = barHeight;
@@ -40,15 +40,15 @@ export default class HeroHealthBar extends Phaser.GameObjects.Container {
     this.add(this.topSheen);
 
     // Heart / HP emblem to the left
-    this.lblIcon = scene.add.text(-barWidth / 2 - 16, 0, '💚', {
-      fontSize: '8px'
+    this.lblIcon = scene.add.text(-barWidth / 2 - 14, 0, '💚', {
+      fontSize: `${Math.round(barHeight + 3)}px`
     }).setOrigin(0.5);
     this.add(this.lblIcon);
 
     // Numerical HP display
     this.hpText = scene.add.text(0, 0, `${maxHp} / ${maxHp}`, {
-      fontFamily: 'Press Start 2P',
-      fontSize: '5px',
+      fontFamily: 'VT323',
+      fontSize: `${fontPx}px`,
       color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 2

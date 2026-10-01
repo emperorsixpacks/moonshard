@@ -22,6 +22,9 @@ import { storage } from '../engine/Storage.js';
 import { getTodaySeedString, generateDailySurvivalSpec } from '../engine/PRNG.js';
 import { pauseService } from '../engine/PauseService.js';
 import { gdService } from '../engine/GdService.js';
+import { layoutHud } from '../ui/hudLayout.js';
+import { cssPerUnitOf } from '../engine/uiScale.js';
+import { useHudHeight } from '../engine/HudAnchor.js';
 import { juice } from '../engine/JuiceEffects.js';
 import confetti from 'canvas-confetti';
 import ShardDrop from '../entities/ShardDrop.js';
@@ -1014,35 +1017,33 @@ export default class SurvivalScene extends Phaser.Scene {
 
   createSurvivalHUD() {
     const w = GAME_CONFIG.WIDTH;
+    // One layout for every screen (ui/hudLayout.js): type sized for the screen, nothing overlapping, and the page's
+    // wallet / timer / pause buttons kept just below the bar.
+    const hud = layoutHud({ width: w, unit: cssPerUnitOf(this), variant: 'survival' });
+    this.hudLayout = hud;
+    useHudHeight(this, hud.barH);
+    const { mode, score, wave, foes, harvest } = hud.slots;
+    const label = (slot, text, color) => this.add.text(slot.x, slot.y, text, { ...hud.fonts.label, color })
+      .setOrigin(slot.ox, 0.5).setScrollFactor(0).setDepth(201);
+    const value = (slot, text, color) => this.add.text(slot.x, slot.y, text, { ...hud.fonts.value, color })
+      .setOrigin(slot.ox, 0.5).setScrollFactor(0).setDepth(201);
+
     this.hudContainer = this.add.container(0, 0).setScrollFactor(0).setDepth(200);
 
-    const bar = this.add.rectangle(w / 2, 14, w, 28, 0x0a140a, 0.85);
+    const bar = this.add.rectangle(w / 2, hud.barH / 2, w, hud.barH, 0x0a140a, 0.9);
     bar.setStrokeStyle(1, 0x3d5c3d);
     this.hudContainer.add(bar);
 
     // Mode title
-    this.add.text(12, 6, 'ENDLESS MODE', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '6px',
-      color: '#e9b213'
-    }).setScrollFactor(0).setDepth(201);
+    label(mode, 'ENDLESS MODE', '#e9b213');
 
-    // Score & Timer
-    this.txtScore = this.add.text(12, 17, 'SCORE: 0', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '7px',
-      color: '#ffffff'
-    }).setScrollFactor(0).setDepth(201);
+    // Score
+    this.txtScore = label(score, 'SCORE: 0', '#ffffff');
 
     // Shard Harvest Counter
-    this.txtHarvest = this.add.text(12, 28, '💎 +0 G$', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '5.5px',
-      color: '#38e1ff'
-    }).setScrollFactor(0).setDepth(201);
+    this.txtHarvest = value(harvest, '💎 +0 G$', '#38e1ff');
 
-
-    this.txtCombo = this.add.text(w / 2, 40, '', {
+    this.txtCombo = this.add.text(w / 2, hud.barH + 14, '', {
       fontFamily: 'Press Start 2P',
       fontSize: '8px',
       color: '#ffd700',
@@ -1051,22 +1052,13 @@ export default class SurvivalScene extends Phaser.Scene {
     }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
 
     // Hero Health Bar
-    this.heroHealthBar = new HeroHealthBar(this, w / 2 - 25, 14, this.player ? this.player.maxHealth : GAME_CONFIG.PLAYER.MAX_HEALTH);
+    this.heroHealthBar = new HeroHealthBar(this, hud.health.x, hud.health.y, this.player ? this.player.maxHealth : GAME_CONFIG.PLAYER.MAX_HEALTH, hud.healthBar);
 
-    // Wave progress (right of health bar)
-    this.txtWave = this.add.text(w / 2 + 64, 6, 'WAVE 1/5', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '6px',
-      color: '#f6c026'
-    }).setScrollFactor(0).setDepth(201);
+    // Wave progress
+    this.txtWave = label(wave, 'WAVE 1/5', '#f6c026');
+    this.txtFoes = value(foes, 'FOES: 0', '#d0f0c0');
 
-    this.txtFoes = this.add.text(w / 2 + 64, 17, 'FOES: 0', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '6px',
-      color: '#d0f0c0'
-    }).setScrollFactor(0).setDepth(201);
-
-    this.offscreenArrow = this.add.text(w / 2, 34, '▲ ENEMY ABOVE ▲', {
+    this.offscreenArrow = this.add.text(w / 2, hud.barH + 8, '▲ ENEMY ABOVE ▲', {
       fontFamily: 'Press Start 2P',
       fontSize: '6px',
       color: '#ffdd55',
@@ -1627,13 +1619,13 @@ export default class SurvivalScene extends Phaser.Scene {
       if (isLeft) {
         // Offscreen to the left
         this.offscreenArrow.setX(54);
-        this.offscreenArrow.setY(36);
+        this.offscreenArrow.setY((this.hudLayout?.barH ?? 28) + 10);
         this.offscreenArrow.setText(`◄ ${mobName}`);
         this.offscreenArrow.setVisible(true);
       } else if (isRight) {
         // Offscreen to the right
         this.offscreenArrow.setX(GAME_CONFIG.WIDTH - 54);
-        this.offscreenArrow.setY(36);
+        this.offscreenArrow.setY((this.hudLayout?.barH ?? 28) + 10);
         this.offscreenArrow.setText(`${mobName} ►`);
         this.offscreenArrow.setVisible(true);
       } else if (isAbove) {

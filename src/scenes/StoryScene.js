@@ -36,6 +36,9 @@ import WeatherManager from '../engine/WeatherManager.js';
 import confetti from 'canvas-confetti';
 import ShardDrop from '../entities/ShardDrop.js';
 import { gdService } from '../engine/GdService.js';
+import { layoutHud } from '../ui/hudLayout.js';
+import { cssPerUnitOf } from '../engine/uiScale.js';
+import { useHudHeight } from '../engine/HudAnchor.js';
 import { fetchRewardsStatus } from '../gd/rewards.js';
 import { runs, bossLine, shardsLine } from '../gd/runs.js';
 import { ActiveClock, pageHidden } from '../gd/activeClock.js';
@@ -2215,54 +2218,56 @@ export default class StoryScene extends Phaser.Scene {
 
   createStoryHUD() {
     const w = GAME_CONFIG.WIDTH;
+    // One layout for every screen (ui/hudLayout.js): type sized for the screen, nothing overlapping, and the page's
+    // wallet / timer / pause buttons kept just below the bar.
+    const hud = layoutHud({ width: w, unit: cssPerUnitOf(this), variant: 'story' });
+    this.hudLayout = hud;
+    useHudHeight(this, hud.barH);
+    const { title, objective, materials, harvest } = hud.slots;
 
     // HUD Top Bar Container (Fixed to Camera)
     this.hudContainer = this.add.container(0, 0).setScrollFactor(0).setDepth(200);
 
     // Top background panel
-    const bar = this.add.rectangle(w / 2, 14, w, 28, 0x0a140a, 0.85);
+    const bar = this.add.rectangle(w / 2, hud.barH / 2, w, hud.barH, 0x0a140a, 0.9);
     bar.setStrokeStyle(1, 0x224422);
     this.hudContainer.add(bar);
 
     // Chapter name & Objective
-    this.txtChapter = this.add.text(12, 6, `CH.${this.chapterId}: ${this.chapterConfig.title}`, {
-      fontFamily: 'Press Start 2P',
-      fontSize: '7px',
+    this.txtChapter = this.add.text(title.x, title.y, `CH.${this.chapterId}: ${this.chapterConfig.title}`, {
+      ...hud.fonts.label,
       color: '#f6c026'
-    });
+    }).setOrigin(title.ox, 0.5);
     this.hudContainer.add(this.txtChapter);
 
-    this.txtObjective = this.add.text(12, 17, `OBJECTIVE: Cleanse Guardian Obelisk`, {
-      fontFamily: 'Press Start 2P',
-      fontSize: '5px',
+    this.txtObjective = this.add.text(objective.x, objective.y, `OBJECTIVE: Cleanse Guardian Obelisk`, {
+      ...hud.fonts.value,
       color: '#d0f0c0'
-    });
+    }).setOrigin(objective.ox, 0.5);
     this.hudContainer.add(this.txtObjective);
     this.updateHudObjective();
 
     // Hero Health Bar
-    this.heroHealthBar = new HeroHealthBar(this, 240, 14, this.player ? this.player.maxHealth : GAME_CONFIG.PLAYER.MAX_HEALTH);
+    this.heroHealthBar = new HeroHealthBar(this, hud.health.x, hud.health.y, this.player ? this.player.maxHealth : GAME_CONFIG.PLAYER.MAX_HEALTH, hud.healthBar);
     this.hudContainer.add(this.heroHealthBar);
 
     // Materials Counter
-    this.txtMaterials = this.add.text(w - 12, 10, '', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '6px',
+    this.txtMaterials = this.add.text(materials.x, materials.y, '', {
+      ...hud.fonts.value,
       color: '#98ff20'
-    }).setOrigin(1, 0);
+    }).setOrigin(materials.ox, 0.5);
     this.hudContainer.add(this.txtMaterials);
     this.updateHudMaterials();
 
     // Shard Harvest Counter (2 G$ per shard)
-    this.txtHarvest = this.add.text(w - 12, 22, '💎 +0 G$', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '5px',
+    this.txtHarvest = this.add.text(harvest.x, harvest.y, '💎 +0 G$', {
+      ...hud.fonts.value,
       color: '#38e1ff'
-    }).setOrigin(1, 0);
+    }).setOrigin(harvest.ox, 0.5);
     this.hudContainer.add(this.txtHarvest);
 
     // Combo Counter (Center Screen, below Boss Health Bar)
-    this.txtCombo = this.add.text(w / 2, 70, '', {
+    this.txtCombo = this.add.text(w / 2, hud.barH + 42, '', {
       fontFamily: 'Press Start 2P',
       fontSize: '9px',
       color: '#ffd700',
