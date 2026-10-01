@@ -22,12 +22,12 @@ It is built to be positioned for the next **GoodBuilders** season (application f
 
 | Topic | Decision | Why |
 |---|---|---|
-| Name | **Moonshard**; sword = "the Moonshard"; Luna Crystals → **Shards**; Daily Luna Trial → **Daily Shard Trial** | User asked for a new name; keeps the shattered-moon story |
+| Name | **Moonshard**; sword = "the Moonshard"; hero's player-visible name **Selene**; Luna Crystals → **Shards**; Daily Luna Trial → **Daily Shard Trial** | User asked for a new name; keeps the shattered-moon story |
 | Gameplay code | Port Luna Blade as-is (JS, Phaser 4.2.1, Vite), rename strings, keep scenes | "Same game"; 12.6k lines of working gameplay |
 | New code language | JavaScript (ESM) + JSDoc, server in Node 22 | Matches surrounding code; avoids a 12k-line TS migration |
 | Chain | Celo mainnet (chain 42220), G$ `0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A` (18 decimals, verified on-chain) | G$ + GoodDollar contracts live here; MiniPay is Celo-native |
 | SDKs | `@goodsdks/citizen-sdk` (Identity, Claim), `@goodsdks/engagement-sdk` + `engagement-contracts`, `viem` | Official SDKs, headless/viem. No wagmi/React |
-| Wallet | Thin `wallet.js` over EIP-1193 (`window.ethereum`; detects MiniPay via `isMiniPay`); optional Reown/WalletConnect when `VITE_REOWN_PROJECT_ID` set | Works in-wallet today; WalletConnect is opt-in config |
+| Wallet | Thin `wallet.js` over EIP-1193 (`window.ethereum`; detects MiniPay via `isMiniPay`); optional WalletConnect through `@walletconnect/ethereum-provider` when `VITE_REOWN_PROJECT_ID` is set | Works in-wallet today; WalletConnect is opt-in config |
 | Server | Express (as Luna), Postgres via `pg`; PGlite for dev/tests (same SQL) | Replaces Luna's JSON files; real transactions for vouchers/tickets |
 | Contracts | Foundry; one contract `MoonshardVault` | Foundry installed; single small audit surface |
 | Hosting (later) | Web on Vercel, API + Postgres on Railway | Already connected tooling; deploys need owner approval |
@@ -52,7 +52,8 @@ moonshard/
 │   │   ├── spoils.js      # list vouchers, redeem on MoonshardVault
 │   │   ├── runs.js        # run tickets, checkpoints, submit
 │   │   ├── session.js, api.js
-│   └── ui/  HomeHub.js, WalletPill.js, SpoilsPanel.js, ConnectSheet.js   # NEW
+│   └── ui/  GdPanel.js   # NEW: one DOM panel (connect, verify, daily claim, bounty, Spoils)
+│   (src/gd/ also has rewards.js, leaderboard.js, blessing.js, format.js, identicon.js, config.js)
 ├── server/
 │   ├── index.js, config.js
 │   ├── src/ auth.js identity.js runs.js leaderboard.js spoils.js engagement.js
@@ -79,7 +80,7 @@ States: `anonymous` (no wallet) → `connected` (wallet, not whitelisted) → `v
 3. **Home hub** (new panel on Menu): `Claim G$` · `Daily Shard Trial` · `Spoils (n)`, plus a stats chip.
 4. **Connect sheet** (non-blocking): choose injected / WalletConnect; sign a login message once (12h session).
 5. **Not verified →** "Verify you're human" opens the face-verification link (`generateFVLink`, redirect on mobile, popup on desktop), with local save state preserved and a return URL back to the game. On return the identity is re-checked.
-6. **Claim G$** calls `ClaimSDK.claim()`. On success the client posts the tx hash; the server confirms the receipt on-chain (success, `to` = UBI scheme, `from` = a wallet of that root) and issues the day's **Citizen's Blessing** (+25% Forge material drops, one free revive in Story). It does not apply to the Daily Shard Trial score, to keep ranked play fair.
+6. **Claim G$** calls `ClaimSDK.claim()`. On success the client posts the tx hash; the server confirms the receipt on-chain (success, `to` = UBI scheme, `from` = a wallet of that root) and issues the day's **Citizen's Blessing** (+25% Forge material drops, applied centrally in `Storage.addMaterials`). It does not apply to the Daily Shard Trial score, to keep ranked play fair.
 7. **Runs:** every Story chapter and Daily Shard Trial start calls `/api/runs/start`. Gameplay is unchanged. The client sends checkpoints every 10s and submits at the end.
 8. **First Story boss:** end screen offers "Claim your bounty". Server verifies the ticketed run, returns an app signature, the client submits `nonContractAppClaim`.
 9. **Next UTC day:** the cron settles the previous day; **Spoils** appear in the hub with a Redeem button.
@@ -98,6 +99,7 @@ States: `anonymous` (no wallet) → `connected` (wallet, not whitelisted) → `v
   3. Checkpoints: monotonic non-decreasing; score delta per checkpoint window ≤ cap; kills/sec ≤ 12; overall pts/sec ≤ 1500 (Luna's ceilings, kept).
   4. Shards ≤ `2*kills + 20` (Luna's rule) and ≤ per-run cap.
   5. STORY `bossCleared` requires duration ≥ chapter minimum (config), kills ≥ chapter minimum, and checkpoints covering ≥ 80% of the run.
+  6. A TRIAL run is *ranked-eligible* only if the account is verified, no flags were raised, and checkpoint coverage (last checkpoint t ÷ durationMs) ≥ 0.5. Otherwise the score is stored for the Open board only.
 - Replay verification (deterministic seed + input log) is **out of scope for v1**; the ticket model keeps the door open.
 
 ### 6.3 Leaderboard
@@ -144,7 +146,7 @@ Same look is preserved. Provenance of every asset in `public/assets` is recorded
 - **Contract:** Foundry tests for valid claim, replay, expired, wrong signer, caps, pause, relayed claim pays `to`, owner withdraw.
 - **Integration:** Anvil fork of Celo mainnet. Impersonate a whitelisted account to run `ClaimSDK.claim()`, `getWhitelistedRoot`, `nonContractAppClaim` (impersonate the admin to approve the test app), and `MoonshardVault.claim` with a funded vault. Report what ran and what did not.
 - **Client:** Playwright scripts load the game with an injected mock EIP-1193 provider pointed at the fork; screenshots of Menu/Home hub, Connect sheet, verified/unverified states, Spoils, stats page, desktop and portrait mobile.
-- Gameplay regression: the tutorial and Chapter 1 boot and run to the boss in headless Chromium without console errors.
+- Gameplay smoke: the Tutorial, Story Chapter 1 and the Daily Shard Trial boot and run in headless Chromium with no page errors, and the ticketed-run requests are observed. The boss-clear and bounty path is verified through the API/SDK flow on a Celo fork (a scripted idle player cannot beat a boss), plus the UI claim path in Playwright.
 
 ## 10. Out of scope (v1)
 
