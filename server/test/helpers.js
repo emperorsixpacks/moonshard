@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { verifyMessage } from "viem";
+import { encodeAbiParameters, encodeEventTopics, parseAbi, verifyMessage } from "viem";
 import { createDb } from "../src/db.js";
 import { createApp } from "../src/app.js";
 
@@ -8,6 +8,28 @@ export const T0 = Date.parse("2026-10-05T12:00:00.000Z");
 export const UBI = "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1";
 export const ENGAGEMENT = "0x25db74CF4E7BA120526fd87e159CF656d94bAE43";
 export const VAULT = "0x" + "0".repeat(35) + "ba5e1"; // lowercase: mixed case would trigger checksum validation
+
+// The UBI scheme's claim event, declared here on purpose instead of imported from the server: fixtures
+// built from the server's own ABI would stay self-consistent even if that ABI had a typo.
+const ubiEvents = parseAbi(["event UBIClaimed(address indexed claimer, uint256 amount)"]);
+
+/**
+ * A receipt log shaped like viem's, as the UBI scheme emits it on a real claim:
+ * UBIClaimed(address indexed claimer, uint256 amount). `address` is the emitting contract.
+ */
+export function ubiClaimedLog({ claimer, amount = 1_000_000n, address = UBI, hash = "0x" + "11".repeat(32), logIndex = 0 }) {
+  return {
+    address,
+    topics: encodeEventTopics({ abi: ubiEvents, eventName: "UBIClaimed", args: { claimer } }),
+    data: encodeAbiParameters([{ type: "uint256" }], [amount]),
+    logIndex,
+    blockNumber: 1n,
+    blockHash: "0x" + "00".repeat(32),
+    transactionHash: hash,
+    transactionIndex: 0,
+    removed: false,
+  };
+}
 
 export function fakeClock(start = T0) {
   let t = start;

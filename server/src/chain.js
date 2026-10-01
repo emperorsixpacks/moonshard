@@ -6,6 +6,11 @@ export const identityAbi = parseAbi([
   "function authenticationPeriod() view returns (uint256)",
 ]);
 
+/** UBI scheme. Emitted on every real claim(); topic0 0x89ed2473...d1304 (checked against Celo mainnet logs). */
+export const ubiAbi = parseAbi([
+  "event UBIClaimed(address indexed claimer, uint256 amount)",
+]);
+
 export const engagementAbi = parseAbi([
   "function canClaim(address app, address user) view returns (bool)",
   "event RewardClaimed(address indexed app, address indexed user, address indexed inviter, uint256 appReward, uint256 userAmount, uint256 inviterAmount)",

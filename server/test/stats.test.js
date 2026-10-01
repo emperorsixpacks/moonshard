@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeHarness, playTrial, UBI } from "./helpers.js";
+import { makeHarness, playTrial, UBI, ubiClaimedLog } from "./helpers.js";
 
 test("stats count verified players, runs, claims and cache for 60s", async () => {
   const h = await makeHarness();
@@ -11,7 +11,7 @@ test("stats count verified players, runs, claims and cache for 60s", async () =>
     const hash = "0x" + "44".repeat(32);
     h.chain.state.txs.set(hash, {
       tx: { from: a.account.address, to: UBI, input: "0x4e71d92d" },
-      receipt: { status: "success", logs: [] },
+      receipt: { status: "success", logs: [ubiClaimedLog({ claimer: a.account.address, hash })] },
       timestamp: Math.floor(h.clock() / 1000),
     });
     await h.api.post("/ubi/confirm", { txHash: hash }, { token: a.token });

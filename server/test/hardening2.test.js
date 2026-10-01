@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fakeChain, fakeClock, makeHarness, playTrial } from "./helpers.js";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { fakeChain, fakeClock, makeHarness, playTrial, UBI, ubiClaimedLog } from "./helpers.js";
 import { createDb } from "../src/db.js";
 import { createIdentityResolver } from "../src/identity.js";
 import { dayKey } from "../src/time.js";
@@ -229,5 +230,135 @@ test("H2: GET /spoils reads at most the 30 most recent spoils (and makes at most
     assert.equal(res.status, 200);
     assert.deepEqual(res.body.spoils.map((s) => s.day), days.slice(5).reverse(), "the newest 30 days, newest first");
     assert.equal(lookups, 30);
+  } finally { await h.close(); }
+});
+
+// ---------------------------------------------------------------------------------------------
+// H3. /ubi/confirm needs the real UBIClaimed event.
+//     Break caught: claim() returns false instead of reverting when there is nothing to claim, so a
+//     no-op call "succeeds" and used to earn the blessing and inflate the public UBI-claims metric.
+// ---------------------------------------------------------------------------------------------
+
+const UBI_TX = "0x" + "55".repeat(32);
+const setUbiTx = (h, { hash = UBI_TX, from, logs }) =>
+  h.chain.state.txs.set(hash, {
+    tx: { from, to: UBI, input: "0x4e71d92d" },
+    receipt: { status: "success", logs },
+    timestamp: Math.floor(h.clock() / 1000),
+  });
+const confirmUbi = (h, p, hash = UBI_TX) => h.api.post("/ubi/confirm", { txHash: hash }, { token: p.token });
+const ubiRecords = async (h) => ({
+  claims: (await h.db.query("SELECT count(*)::int AS n FROM ubi_claims")).rows[0].n,
+  blessings: (await h.db.query("SELECT count(*)::int AS n FROM blessings")).rows[0].n,
+});
+const stranger = () => privateKeyToAccount(generatePrivateKey()).address;
+
+// The three logs of a real claim() on Celo mainnet (tx 0xc89eb824...a596b), copied literally, with the
+// claimer's address swapped for the player's. No encoder and no server ABI are involved, so this pins
+// the server to what the chain really emits: topic0 0x89ed2473... for UBIClaimed(address,uint256).
+const MAINNET_CLAIMER = "1718da2d5eba538b009feafd151edd88201f06a1";
+const MAINNET_CLAIM_LOGS = [
+  {
+    address: "0x43d72ff17701b2da814620735c39c620ce0ea4a1",
+    topics: [
+      "0x89ed24731df6b066e4c5186901fffdba18cd9a10f07494aff900bdee260d1304",
+      "0x000000000000000000000000" + MAINNET_CLAIMER,
+    ],
+    data: "0x000000000000000000000000000000000000000000000006361c3c2a478040ee",
+  },
+  {
+    address: "0x62b8b11039fcfe5ab0c56e502b1c372a3d2a9c7a",
+    topics: [
+      "0x06b541ddaa720db2b10a4d0cdac39b8d360425fc073085fac19bc82614677987",
+      "0x00000000000000000000000043d72ff17701b2da814620735c39c620ce0ea4a1",
+      "0x00000000000000000000000043d72ff17701b2da814620735c39c620ce0ea4a1",
+      "0x000000000000000000000000" + MAINNET_CLAIMER,
+    ],
+    data: "0x000000000000000000000000000000000000000000000006361c3c2a478040ee0000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  },
+  {
+    address: "0x62b8b11039fcfe5ab0c56e502b1c372a3d2a9c7a",
+    topics: [
+      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+      "0x00000000000000000000000043d72ff17701b2da814620735c39c620ce0ea4a1",
+      "0x000000000000000000000000" + MAINNET_CLAIMER,
+    ],
+    data: "0x000000000000000000000000000000000000000000000006361c3c2a478040ee",
+  },
+];
+const mainnetClaimLogs = (claimer) =>
+  MAINNET_CLAIM_LOGS.map((l, i) => ({
+    ...l,
+    topics: l.topics.map((t) => t.replaceAll(MAINNET_CLAIMER, claimer.slice(2).toLowerCase())),
+    logIndex: i, blockNumber: 1n, blockHash: "0x" + "00".repeat(32), transactionHash: UBI_TX, transactionIndex: 0, removed: false,
+  }));
+
+test("H3: a claim() that succeeded but emitted no UBIClaimed event earns no blessing and no metric", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    setUbiTx(h, { from: p.account.address, logs: [] });
+    const r = await confirmUbi(h, p);
+    assert.equal(r.status, 422, JSON.stringify(r.body));
+    assert.equal(r.body.error, "no_claim_event");
+    assert.deepEqual(await ubiRecords(h), { claims: 0, blessings: 0 });
+    assert.equal((await h.api.get("/rewards/status", { token: p.token })).body.blessing, false);
+  } finally { await h.close(); }
+});
+
+test("H3: a UBIClaimed event for someone else does not count", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    setUbiTx(h, { from: p.account.address, logs: [ubiClaimedLog({ claimer: stranger() })] });
+    const r = await confirmUbi(h, p);
+    assert.equal(r.status, 422, JSON.stringify(r.body));
+    assert.equal(r.body.error, "no_claim_event");
+    assert.deepEqual(await ubiRecords(h), { claims: 0, blessings: 0 });
+  } finally { await h.close(); }
+});
+
+test("H3: a UBIClaimed event emitted by a contract other than the UBI scheme does not count", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    const lookalike = "0x" + "dead".repeat(10);
+    setUbiTx(h, { from: p.account.address, logs: [ubiClaimedLog({ claimer: p.account.address, address: lookalike })] });
+    const r = await confirmUbi(h, p);
+    assert.equal(r.status, 422, JSON.stringify(r.body));
+    assert.equal(r.body.error, "no_claim_event");
+    assert.deepEqual(await ubiRecords(h), { claims: 0, blessings: 0 });
+  } finally { await h.close(); }
+});
+
+test("H3: the three logs of a real mainnet claim are accepted (lowercase addresses, unrelated logs ignored)", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    setUbiTx(h, { from: p.account.address, logs: mainnetClaimLogs(p.account.address) });
+    const r = await confirmUbi(h, p);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.recorded, true);
+    assert.deepEqual(await ubiRecords(h), { claims: 1, blessings: 1 });
+  } finally { await h.close(); }
+});
+
+test("H3: a linked wallet may confirm when the event names the root, or names the wallet that sent the tx", async () => {
+  const h = await makeHarness();
+  try {
+    const root = await h.newPlayer({ verified: true });
+    const linked = await h.newPlayer({ verified: true, root: root.address });
+
+    // the linked wallet sends claim(); the scheme credits the root
+    setUbiTx(h, { from: linked.account.address, logs: [ubiClaimedLog({ claimer: root.account.address })] });
+    const viaRoot = await confirmUbi(h, linked);
+    assert.equal(viaRoot.status, 200, JSON.stringify(viaRoot.body));
+    assert.equal(viaRoot.body.recorded, true);
+
+    // same wallet, event naming the sender itself
+    const second = "0x" + "66".repeat(32);
+    setUbiTx(h, { hash: second, from: linked.account.address, logs: [ubiClaimedLog({ claimer: linked.account.address })] });
+    const viaSender = await confirmUbi(h, linked, second);
+    assert.equal(viaSender.status, 200, JSON.stringify(viaSender.body));
   } finally { await h.close(); }
 });
