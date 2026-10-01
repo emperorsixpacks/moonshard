@@ -388,6 +388,7 @@ test('M6: HTTP 401 calls the auth-lost handler once per run, wherever it is seen
   const res = await h.tracker.finish({ score: 10, kills: 1, shards: 0, durationMs: 30_000 });
   assert.equal(seen.length, 1);
   assert.deepEqual([seen[0].status, seen[0].code, seen[0].where], [401, 'invalid_session', 'checkpoint']);
+  assert.equal(seen[0].token, 'tok', 'the handler learns which session the rejected request carried');
   assert.deepEqual([res.ticketed, res.reason, res.status], [true, 'signed_out', 401]);
 
   // a following run can report again
@@ -395,6 +396,7 @@ test('M6: HTTP 401 calls the auth-lost handler once per run, wherever it is seen
   await h.tracker.start({ mode: 'TRIAL' });
   assert.equal(seen.length, 2);
   assert.equal(seen[1].where, 'start');
+  assert.equal(seen[1].token, 'tok');
 });
 
 test('M6: a 401 bad_ticket is about the ticket, not the session: the auth-lost handler stays quiet', async () => {

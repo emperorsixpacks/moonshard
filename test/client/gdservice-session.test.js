@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { clearSession, getToken } from '../../src/gd/session.js';
 import { isBlessed } from '../../src/gd/blessing.js';
+import { runs } from '../../src/gd/runs.js';
 import { ADDR, ADDR2, H1, deferred, reply, serverStub, startService, stubLoaders, walletStub } from './helpers/service.js';
 
 /*
@@ -226,4 +227,22 @@ test('a verified player whose API is down at load sees an unknown status, not a 
   await gd.refreshAll();
   s = gd.getStatus();
   assert.deepEqual({ offline: s.offline, status: s.status, verified: s.verified }, { offline: false, status: 'verified', verified: true });
+});
+
+/* ---- a 401 seen while recording a run (finding M6) ---- */
+
+test('a 401 the run tracker saw ends the session, like any other dead-session answer', async (t) => {
+  const { gd } = await connected(t);
+  runs.authLostHandler({ status: 401, code: 'invalid_session', where: 'submit', token: getToken() });
+  const s = gd.getStatus();
+  assert.equal(s.connected, false);
+  assert.equal(s.sessionExpired, true);
+  assert.equal(getToken(), null);
+});
+
+test('...but a 401 for an older session does not end the one the player signed in with since', async (t) => {
+  const { gd } = await connected(t);
+  runs.authLostHandler({ status: 401, code: 'invalid_session', where: 'checkpoint', token: 'OLD-TOKEN' });
+  assert.equal(gd.getStatus().connected, true);
+  assert.equal(gd.getStatus().sessionExpired, false);
 });

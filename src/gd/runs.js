@@ -87,8 +87,8 @@ export class RunTracker {
   }
 
   /**
-   * `fn({ status, code, where })` is called when the server answers 401 (once per run), so the session layer can
-   * drop a session the server no longer accepts. A 401 `bad_ticket` is about the run, not the session, and is not reported.
+   * `fn({ status, code, where, token })` is called when the server answers 401 (once per run), so the session layer can
+   * drop a session the server no longer accepts; `token` is the session the rejected request carried. A 401 `bad_ticket` is about the run, not the session, and is not reported.
    */
   setAuthLostHandler(fn) {
     this.authLostHandler = typeof fn === 'function' ? fn : null;
@@ -130,7 +130,7 @@ export class RunTracker {
       // A stale failure must not touch a newer run: this.run is already null (stop() ran first) and the state below is the new start's.
       if (epoch === this.epoch) {
         this.noRunReason = reasonFor(err);
-        this._noteError('start', err);
+        this._noteError('start', err, token);
       }
       return null;
     }
@@ -254,7 +254,7 @@ export class RunTracker {
       run.ackedT = Math.max(run.ackedT, points[points.length - 1].t);
       return { ok: true };
     } catch (err) {
-      this._noteError('checkpoint', err);
+      this._noteError('checkpoint', err, run.token);
       return { ok: false, transient: isTransient(err) };
     }
   }
@@ -268,7 +268,7 @@ export class RunTracker {
         return { ok: true, res: await attempt() };
       } catch (err) {
         last = err;
-        this._noteError('submit', err);
+        this._noteError('submit', err, run.token);
         // 409 already_submitted: the first attempt did land. Anything the server refused on purpose is final.
         if (!isTransient(err)) break;
       }
@@ -282,14 +282,14 @@ export class RunTracker {
     return t;
   }
 
-  _noteError(where, err) {
+  _noteError(where, err, token) {
     const status = Number.isInteger(err?.status) ? err.status : 0;
     const code = String(err?.message || 'error');
     this.lastError = { where, status, code, at: this.now() };
     if (status === 401 && code !== 'bad_ticket' && !this.authLostSent) {
       this.authLostSent = true;
       try {
-        this.authLostHandler?.({ status, code, where });
+        this.authLostHandler?.({ status, code, where, token });
       } catch { /* the session layer must not be able to break a run */ }
     }
   }

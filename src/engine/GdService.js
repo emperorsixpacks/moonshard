@@ -6,6 +6,7 @@ import { GD } from '../gd/config.js';
 import { detectHost, hostLanguage } from '../gd/host.js';
 import { setBlessed } from '../gd/blessing.js';
 import { pending } from '../gd/pending.js';
+import { runs } from '../gd/runs.js';
 import { explainError, shortAddress } from '../gd/format.js';
 import { storage } from './Storage.js';
 
@@ -66,6 +67,8 @@ class GdServiceManager {
     // Transactions that were sent but are not recorded by the server yet (key -> { hash, at, address }).
     this.awaiting = {};
     wallet.subscribe((w) => this.onWallet(w));
+    // A 401 seen while recording a run ends the session too, but only if it belongs to the session still in use.
+    runs.setAuthLostHandler(({ token }) => this.authLost(token));
     this.ready = this.init();
   }
 
