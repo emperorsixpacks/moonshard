@@ -11,9 +11,10 @@ export const DEFAULT_BOARD_LIMIT = 50;
 export const MAX_BOARD_LIMIT = 100;
 /** How long an all-time page is served from memory before it is computed again. */
 export const BOARD_CACHE_MS = 30_000;
+/** The HTTP route only ever fills two entries (one per view); the bound is for callers that cache other page sizes. */
 export const BOARD_CACHE_MAX_ENTRIES = 64;
 
-/** A page size as the API takes it: a positive integer, at most MAX_BOARD_LIMIT. Anything else is the default page. */
+/** A page size: a positive integer, at most MAX_BOARD_LIMIT. Anything else (zero, negative, fractional, not a number) is the default page. */
 export function pageSize(raw) {
   const n = typeof raw === "number" ? raw : /^\d+$/.test(String(raw ?? "")) ? Number(raw) : NaN;
   if (!Number.isSafeInteger(n) || n < 1) return DEFAULT_BOARD_LIMIT;
@@ -112,6 +113,8 @@ export function leaderboardRoutes(ctx) {
   // the database the same whether it is asked for once or a thousand times in 30 s. The key holds the view, so the
   // ranked board can never be answered with the open one. The daily board is not cached: an index cuts it, and a
   // player who has just finished a run expects to find the score on it.
+  // The page size is not a request parameter: a caller-chosen size would let one client spread requests over many
+  // cache keys and make every one of them a database query. HTTP always gets the default page.
   const cache = createTtlCache({ now: () => ctx.now(), ttlMs: BOARD_CACHE_MS, maxEntries: BOARD_CACHE_MAX_ENTRIES });
   ctx.leaderboardCache = cache;
 
@@ -121,15 +124,17 @@ export function leaderboardRoutes(ctx) {
     res.json({
       day,
       view,
-      entries: await dailyBoard(ctx, day, view, pageSize(req.query.limit)),
+      entries: await dailyBoard(ctx, day, view),
       prizesG: GAME.PRIZES.map((p) => formatUnits(p, 18)),
     });
   }));
 
   r.get("/leaderboard/alltime", ah(async (req, res) => {
     const view = viewOf(req);
-    const limit = pageSize(req.query.limit);
-    res.json({ view, entries: await cache.get(`alltime|${view}|${limit}`, () => allTimeBoard(ctx, view, limit)) });
+    res.json({
+      view,
+      entries: await cache.get(`alltime|${view}|${DEFAULT_BOARD_LIMIT}`, () => allTimeBoard(ctx, view, DEFAULT_BOARD_LIMIT)),
+    });
   }));
 
   return r;

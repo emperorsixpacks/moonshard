@@ -100,18 +100,21 @@ test("all-time board: same entries in the same order as the old JS implementatio
     assert.ok(all.length > 200, "premise: several rows per subject");
 
     for (const view of ["open", "ranked"]) {
+      // the function, for any page size ...
       for (const limit of [1, 7, 50, 100]) {
-        const want = legacyAllTime(all, view, limit).map(shapeRow);
-        const res = await h.api.get(`/leaderboard/alltime?view=${view}&limit=${limit}`);
-        assert.equal(res.status, 200);
-        assert.deepEqual(res.body.entries.map(shape), want, `view=${view} limit=${limit}`);
-        h.clock.advance(BOARD_CACHE_MS); // never read an earlier iteration back from the cache
+        const got = await allTimeBoard(h.ctx, view, limit);
+        assert.deepEqual(got.map(shape), legacyAllTime(all, view, limit).map(shapeRow), `view=${view} limit=${limit}`);
       }
+      // ... and the route, which serves the default page
+      h.clock.advance(BOARD_CACHE_MS); // never read an earlier iteration back from the cache
+      const res = await h.api.get(`/leaderboard/alltime?view=${view}`);
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.body.entries.map(shape), legacyAllTime(all, view, 50).map(shapeRow), `route, view=${view}`);
     }
   } finally { await h.close(); }
 });
 
-test("all-time board: the page size is capped at 100, and a bad limit falls back to 50", async () => {
+test("all-time board: the page size is capped at 100, and a bad size falls back to 50", async () => {
   const h = await makeHarness();
   try {
     await h.db.query(
@@ -119,22 +122,19 @@ test("all-time board: the page size is capped at 100, and a bad limit falls back
        SELECT '2026-09-01', '0x' || lpad(to_hex(g), 40, '0'), '0x' || lpad(to_hex(g), 40, '0'), false, false, g, 10, 60000, 'run-' || g
          FROM generate_series(1, 250) g`,
     );
-    const n = async (query) => (await h.api.get(`/leaderboard/alltime?view=open${query}`)).body.entries.length;
     assert.equal(MAX_BOARD_LIMIT, 100);
-    assert.equal(await n(""), 50);
-    assert.equal(await n("&limit=10"), 10);
-    assert.equal(await n("&limit=100"), 100);
-    assert.equal(await n("&limit=101"), 100);
-    assert.equal(await n("&limit=100000"), 100);
-    for (const bad of ["0", "-5", "abc", "1.5", "", "10abc", "1e3"]) assert.equal(await n(`&limit=${bad}`), 50, `limit=${bad}`);
-    // the cap holds for callers that do not go through HTTP, too
-    const ctx = { db: h.db, now: h.clock };
-    assert.equal((await allTimeBoard(ctx, "open", 10_000)).length, 100);
-    assert.equal((await allTimeBoard(ctx, "open", 0)).length, 50);
+    const n = async (limit) => (await allTimeBoard(h.ctx, "open", limit)).length;
+    assert.equal(await n(undefined), 50);
+    assert.equal(await n(10), 10);
+    assert.equal(await n(100), 100);
+    assert.equal(await n(101), 100);
+    assert.equal(await n(10_000_000), 100);
+    for (const bad of [0, -5, 1.5, NaN, Infinity, "abc", "", null, {}, [], "1e3", "10abc"]) assert.equal(await n(bad), 50, `limit=${String(bad)}`);
+    assert.equal(await n("25"), 25, "a numeric string is a number");
   } finally { await h.close(); }
 });
 
-test("daily board takes the same limit, capped at 100", async () => {
+test("the HTTP boards serve the default page whatever the query string says, so it cannot be used to dodge the cache", async () => {
   const h = await makeHarness();
   try {
     await h.db.query(
@@ -142,10 +142,12 @@ test("daily board takes the same limit, capped at 100", async () => {
        SELECT '2026-10-05', '0x' || lpad(to_hex(g), 40, '0'), '0x' || lpad(to_hex(g), 40, '0'), false, false, g, 10, 60000, 'run-' || g
          FROM generate_series(1, 150) g`,
     );
-    const n = async (query) => (await h.api.get(`/leaderboard/daily?view=open${query}`)).body.entries.length;
-    assert.equal(await n(""), 50);
-    assert.equal(await n("&limit=5"), 5);
-    assert.equal(await n("&limit=5000"), 100);
+    for (const route of ["/leaderboard/daily", "/leaderboard/alltime"]) {
+      for (const limit of ["5", "100", "5000", "-1", "abc"]) {
+        const res = await h.api.get(`${route}?view=open&limit=${limit}`);
+        assert.equal(res.body.entries.length, 50, `${route}?limit=${limit}`);
+      }
+    }
   } finally { await h.close(); }
 });
 
@@ -198,21 +200,6 @@ test("all-time cache never serves the ranked view to the open view or the other 
   } finally { await h.close(); }
 });
 
-test("all-time cache is keyed by page size too", async () => {
-  const h = await makeHarness();
-  try {
-    await h.db.query(
-      `INSERT INTO scores(day, subject, wallet, verified, ranked_ok, score, kills, duration_ms, run_id)
-       SELECT '2026-09-01', '0x' || lpad(to_hex(g), 40, '0'), '0x' || lpad(to_hex(g), 40, '0'), false, false, g, 10, 60000, 'run-' || g
-         FROM generate_series(1, 30) g`,
-    );
-    const n = async (limit) => (await h.api.get(`/leaderboard/alltime?view=open&limit=${limit}`)).body.entries.length;
-    assert.equal(await n(3), 3);
-    assert.equal(await n(20), 20);
-    assert.equal(await n(3), 3);
-  } finally { await h.close(); }
-});
-
 test("concurrent cold requests share one board query", async () => {
   const h = await makeHarness();
   const spy = spyOnQueries(h.db);
@@ -242,15 +229,19 @@ test("a failed board query is not cached: the next request tries again", async (
   } finally { console.error = realError; await h.close(); }
 });
 
-test("the board cache is bounded", async () => {
+test("varying the query string cannot make the all-time route run more than one query per view per 30 s", async () => {
   const h = await makeHarness();
+  const spy = spyOnQueries(h.db);
   try {
     assert.ok(h.ctx.leaderboardCache, "the cache is reachable for inspection");
     await seed(h.db, [{ day: "2026-10-05", n: 1, rankedOk: true, score: 500, runId: "run-1" }]);
-    for (let limit = 1; limit <= 100; limit++) await h.api.get(`/leaderboard/alltime?view=open&limit=${limit}`);
-    for (let limit = 1; limit <= 100; limit++) await h.api.get(`/leaderboard/alltime?view=ranked&limit=${limit}`);
-    assert.ok(h.ctx.leaderboardCache.size <= 64, `${h.ctx.leaderboardCache.size} cached pages`);
-  } finally { await h.close(); }
+    const variants = ["view=open", "view=ranked", "view=nonsense", "", "view=open&view=ranked", "view[]=open", "view=OPEN"];
+    for (let i = 0; i < 100; i++) {
+      for (const v of variants) assert.equal((await h.api.get(`/leaderboard/alltime?${v}&limit=${i + 1}&nonce=${i}`)).status, 200);
+    }
+    assert.ok(h.ctx.leaderboardCache.size <= 2, `${h.ctx.leaderboardCache.size} cached pages`);
+    assert.equal(spy.boardQueries().length, 2, "700 requests: one query for the open view, one for the ranked view");
+  } finally { spy.restore(); await h.close(); }
 });
 
 test("createTtlCache: fresh while younger than the ttl, evicts the oldest entry past maxEntries, forgets failures", async () => {
