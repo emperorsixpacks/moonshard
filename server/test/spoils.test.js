@@ -4,6 +4,7 @@ import { encodeAbiParameters, encodeEventTopics, formatUnits, getAddress, keccak
 import { makeHarness, playTrial, VAULT } from "./helpers.js";
 import { settleDay, settleDue, spoilId, spoilTypes } from "../src/spoils.js";
 import { vaultAbi } from "../src/chain.js";
+import { dayKey } from "../src/time.js";
 
 const G = (n) => BigInt(n) * 10n ** 18n;
 const NEXT_DAY_SETTLEABLE = Date.parse("2026-10-06T00:42:00.000Z");
@@ -135,15 +136,20 @@ test("already-redeemed spoils get no voucher; an RPC failure reports claimed:nul
     h.clock.set(NEXT_DAY_SETTLEABLE);
     await settleDue(h.ctx);
     const id = spoilId(VAULT, "TRIAL_PRIZE", "2026-10-05", p.address).toString();
-    h.chain.state.claimedIds.add(id);
-    const done = (await h.api.get("/spoils", { token: p.token })).body.spoils[0];
-    assert.equal(done.claimed, true);
-    assert.equal(done.voucher, null);
 
+    // The failed read comes first: a `true` answer is remembered for ever (claimed is monotonic), so once the
+    // spoil is known to be redeemed a later outage can no longer show up as claimed:null.
+    const real = h.chain.voucherClaimed;
     h.chain.voucherClaimed = async () => { throw new Error("rpc down"); };
     const down = (await h.api.get("/spoils", { token: p.token })).body.spoils[0];
     assert.equal(down.claimed, null);
     assert.equal(down.voucher, null);
+
+    h.chain.voucherClaimed = real;
+    h.chain.state.claimedIds.add(id);
+    const done = (await h.api.get("/spoils", { token: p.token })).body.spoils[0];
+    assert.equal(done.claimed, true);
+    assert.equal(done.voucher, null);
   } finally { await h.close(); }
 });
 
@@ -290,5 +296,159 @@ test("with no vault configured nothing is settled, so no spoil is bound to a vau
     const out = await settleDue(h.ctx);
     assert.equal(out.length, 1);
     assert.deepEqual((await h.db.query("SELECT id FROM spoils")).rows.map((r) => r.id), [spoilId(VAULT, "TRIAL_PRIZE", "2026-10-05", p.address).toString()]);
+  } finally { await h.close(); }
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// GET /spoils reads each spoil's redeemed status from the chain: cached, and not one call after another.
+// Break caught: up to 30 sequential eth_calls per request (and a dead RPC meant 30 timeouts in a row).
+// ---------------------------------------------------------------------------------------------------------------
+
+async function seedSpoils(h, p, n) {
+  const ids = [];
+  for (let i = 0; i < n; i++) {
+    const day = dayKey(Date.UTC(2026, 7, 1 + i));
+    const id = spoilId(VAULT, "SHARD_HARVEST", day, p.address).toString();
+    await h.db.query("INSERT INTO spoils(id, kind, day, subject, amount) VALUES ($1,'SHARD_HARVEST',$2,$3,$4)", [id, day, p.address, "2000000000000000000"]);
+    ids.push(id);
+  }
+  return ids;
+}
+
+/** Replaces the fake chain's voucherClaimed with one that counts calls, tracks how many overlap, and takes a moment. */
+function watchClaimedReads(h, delayMs = 5) {
+  const real = h.chain.voucherClaimed.bind(h.chain);
+  const seen = { calls: 0, inflight: 0, maxInflight: 0, ids: [] };
+  h.chain.voucherClaimed = async (id) => {
+    seen.calls += 1;
+    seen.ids.push(String(id));
+    seen.inflight += 1;
+    seen.maxInflight = Math.max(seen.maxInflight, seen.inflight);
+    try {
+      await new Promise((r) => setTimeout(r, delayMs));
+      return await real(id);
+    } finally { seen.inflight -= 1; }
+  };
+  return seen;
+}
+
+test("GET /spoils reads the uncached statuses in parallel, five at a time", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    await seedSpoils(h, p, 12);
+    const seen = watchClaimedReads(h);
+    const res = await h.api.get("/spoils", { token: p.token });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.spoils.length, 12);
+    assert.ok(res.body.spoils.every((s) => s.claimed === false && s.voucher), "every unredeemed spoil still gets its voucher");
+    assert.equal(seen.calls, 12);
+    assert.ok(seen.maxInflight > 1, `reads overlap (max in flight ${seen.maxInflight})`);
+    assert.ok(seen.maxInflight <= 5, `at most 5 reads at once (max in flight ${seen.maxInflight})`);
+  } finally { await h.close(); }
+});
+
+test("a redeemed spoil is remembered for ever, an unredeemed one for 10 s", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    const ids = await seedSpoils(h, p, 4);
+    h.chain.state.claimedIds.add(ids[0]);
+    h.chain.state.claimedIds.add(ids[1]);
+    const seen = watchClaimedReads(h, 0);
+    const get = async () => (await h.api.get("/spoils", { token: p.token })).body.spoils;
+    const byId = (list) => Object.fromEntries(list.map((s) => [s.id, s.claimed]));
+
+    assert.deepEqual(byId(await get()), { [ids[0]]: true, [ids[1]]: true, [ids[2]]: false, [ids[3]]: false });
+    assert.equal(seen.calls, 4);
+
+    h.clock.advance(9_000);
+    await get();
+    assert.equal(seen.calls, 4, "inside 10 s nothing is read again");
+
+    h.clock.advance(1_001);
+    await get();
+    assert.equal(seen.calls, 6, "after 10 s only the two unredeemed spoils are read again");
+    assert.deepEqual(seen.ids.slice(4).sort(), [ids[2], ids[3]].sort());
+
+    // spoil 2 is redeemed on-chain: the next read after the 10 s window sees it, and from then on it is never read again
+    h.chain.state.claimedIds.add(ids[2]);
+    h.clock.advance(10_001);
+    assert.equal(byId(await get())[ids[2]], true);
+    assert.equal(seen.calls, 8);
+    h.clock.advance(24 * 3600_000);
+    await get();
+    assert.equal(seen.calls, 9, "a day later only the one unredeemed spoil is read");
+    assert.equal(seen.ids.at(-1), ids[3]);
+  } finally { await h.close(); }
+});
+
+test("a failed status read is not remembered, and the rest of the batch is not attempted after it", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    await seedSpoils(h, p, 20);
+    let calls = 0;
+    h.chain.voucherClaimed = async () => { calls += 1; throw new Error("rpc down"); };
+    const down = await h.api.get("/spoils", { token: p.token });
+    assert.equal(down.status, 200);
+    assert.ok(down.body.spoils.every((s) => s.claimed === null && s.voucher === null));
+    assert.ok(calls <= 5, `a dead RPC costs at most one round of 5 parallel reads, not 20 (made ${calls})`);
+
+    // the outage ends: the very next request reads again (nothing was cached) and gets vouchers
+    h.chain.voucherClaimed = async () => false;
+    const up = await h.api.get("/spoils", { token: p.token });
+    assert.ok(up.body.spoils.every((s) => s.claimed === false && s.voucher));
+  } finally { await h.close(); }
+});
+
+test("the claimed-status cache is bounded: the oldest entry goes first", async () => {
+  const { createClaimedReader } = await import("../src/spoils.js");
+  const calls = [];
+  const reader = createClaimedReader({ read: async (id) => { calls.push(id); return id === "a"; }, now: () => 0, maxEntries: 3, falseTtlMs: 10_000 });
+  await reader.read(["a", "b", "c"]);
+  assert.deepEqual(calls, ["a", "b", "c"]);
+  await reader.read(["a", "b", "c"]);
+  assert.equal(calls.length, 3, "all three are cached");
+  await reader.read(["d"]); // a fourth entry pushes the oldest ("a") out
+  await reader.read(["b", "c", "d"]);
+  assert.equal(calls.length, 4, "b, c and d are still cached");
+  assert.equal((await reader.read(["a"])).get("a"), true);
+  assert.equal(calls.length, 5, "a was evicted, so it is read again");
+});
+
+test("/spoils/confirm marks the redeemed spoils claimed at once, even inside the 10 s window of an earlier read", async () => {
+  const h = await makeHarness();
+  try {
+    const a = await h.newPlayer({ verified: true });
+    await playTrial(h, a, { score: 500 });
+    h.clock.set(NEXT_DAY_SETTLEABLE);
+    await settleDue(h.ctx);
+    const seen = watchClaimedReads(h, 0);
+    const before = (await h.api.get("/spoils", { token: a.token })).body.spoils[0];
+    assert.equal(before.claimed, false);
+    assert.ok(before.voucher);
+    assert.equal(seen.calls, 1);
+
+    const id = spoilId(VAULT, "TRIAL_PRIZE", "2026-10-05", a.address);
+    const hash = "0x" + "ac".repeat(32);
+    h.chain.state.txs.set(hash, {
+      tx: { from: a.account.address, to: VAULT, input: "0x" },
+      receipt: { status: "success", logs: [{
+        address: VAULT,
+        topics: encodeEventTopics({ abi: vaultAbi, eventName: "Claimed", args: { id, to: a.account.address } }),
+        data: encodeAbiParameters([{ type: "uint256" }], [G(1000)]),
+        logIndex: 0, blockNumber: 1n, blockHash: "0x" + "00".repeat(32), transactionHash: hash, transactionIndex: 0, removed: false,
+      }] },
+      timestamp: Math.floor(h.clock() / 1000),
+    });
+    h.chain.state.claimedIds.add(id.toString());
+    assert.deepEqual((await h.api.post("/spoils/confirm", { txHash: hash }, { token: a.token })).body.recorded, [id.toString()]);
+
+    h.clock.advance(1_000); // well inside the 10 s the earlier `false` would be believed
+    const after = (await h.api.get("/spoils", { token: a.token })).body.spoils[0];
+    assert.equal(after.claimed, true);
+    assert.equal(after.voucher, null);
+    assert.equal(seen.calls, 1, "the receipt of the redemption was the proof: no new chain read");
   } finally { await h.close(); }
 });

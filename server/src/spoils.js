@@ -33,6 +33,72 @@ export const spoilId = (vault, kind, day, subject) =>
 /** A spoil row belongs to `vault` when its stored id is the one that vault would derive for it. */
 const boundToVault = (vault, row, subject) => spoilId(vault, row.kind, row.day, subject).toString() === row.id;
 
+/** How long an "unredeemed" answer is believed. A redeemed one never changes back, so it is believed for ever. */
+export const CLAIMED_FALSE_TTL_MS = 10_000;
+/** At most this many spoil ids are remembered; past that the one remembered longest ago is dropped. */
+export const CLAIMED_CACHE_MAX = 2_000;
+/** Chain reads in flight at once for one request. */
+export const CLAIMED_READ_CONCURRENCY = 5;
+
+/**
+ * Reads "has the vault paid this spoil?" for many ids, remembering the answers.
+ *
+ * `claimed` only ever goes false -> true, so `true` is kept for as long as the entry lives; `false` is believed for
+ * `falseTtlMs` and then asked again. A failed read is not remembered. The ids it is asked about are vault-bound (see
+ * spoilId), so an answer cannot leak from one vault to another. The uncached ids are read `concurrency` at a time, and
+ * the first failure ends the batch: a dead RPC would otherwise cost one timeout per id.
+ *
+ * `read(id)` resolves to a boolean. `read(ids)` below resolves to a Map of id -> true | false | null (null: not known).
+ */
+export function createClaimedReader({
+  read,
+  now,
+  falseTtlMs = CLAIMED_FALSE_TTL_MS,
+  maxEntries = CLAIMED_CACHE_MAX,
+  concurrency = CLAIMED_READ_CONCURRENCY,
+}) {
+  const cache = new Map();
+
+  function remember(id, claimed) {
+    // A Map iterates in insertion order: deleting first moves a refreshed id to the back, so the front is the oldest.
+    cache.delete(id);
+    cache.set(id, { claimed, at: now() });
+    while (cache.size > maxEntries) cache.delete(cache.keys().next().value);
+  }
+
+  return {
+    /** The chain itself proved this id redeemed (a Claimed event in a confirmed receipt). */
+    markClaimed: (id) => remember(String(id), true),
+
+    async read(ids) {
+      const out = new Map();
+      const todo = [];
+      for (const id of ids) {
+        const hit = cache.get(id);
+        if (hit && (hit.claimed || now() - hit.at < falseTtlMs)) out.set(id, hit.claimed);
+        else todo.push(id);
+      }
+      let failed = false;
+      let next = 0;
+      const worker = async () => {
+        while (!failed && next < todo.length) {
+          const id = todo[next++];
+          try {
+            const claimed = (await read(id)) === true;
+            remember(id, claimed);
+            out.set(id, claimed);
+          } catch {
+            failed = true;
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(concurrency, todo.length) }, worker));
+      for (const id of todo) if (!out.has(id)) out.set(id, null);
+      return out;
+    },
+  };
+}
+
 /**
  * Settle one UTC day into `spoils` rows. Safe to call repeatedly.
  * Ids are bound to the configured vault, so a day is only settled while there is one: spoils settled without a
@@ -89,6 +155,8 @@ export async function settleDue(ctx) {
 
 export function spoilsRoutes(ctx) {
   const r = express.Router();
+  // The chain function is looked up on every read, not captured: it is the live ctx.chain.
+  const claimedStatus = createClaimedReader({ read: (id) => ctx.chain.voucherClaimed(id), now: () => ctx.now() });
 
   r.get("/spoils", ctx.requireAuth, ah(async (req, res) => {
     const p = req.player;
@@ -102,14 +170,10 @@ export function spoilsRoutes(ctx) {
     // may have paid it already, and this one cannot know. Signing it would pay it a second time.
     const rows = vault ? all.filter((row) => boundToVault(vault, row, p.subject)) : all;
     const deadline = BigInt(Math.floor(ctx.now() / 1000) + GAME.VOUCHER_TTL_SEC);
+    const claimedById = await claimedStatus.read(rows.map((row) => row.id));
     const spoils = [];
     for (const s of rows) {
-      let claimed = null;
-      try {
-        claimed = await ctx.chain.voucherClaimed(s.id);
-      } catch {
-        claimed = null;
-      }
+      const claimed = claimedById.get(s.id) ?? null;
       let voucher = null;
       if (claimed === false && p.verified && vault && ctx.voucherAccount) {
         const message = { to: p.wallet, id: BigInt(s.id), amount: BigInt(s.amount), deadline };
@@ -144,6 +208,7 @@ export function spoilsRoutes(ctx) {
     const recorded = [];
     for (const log of logs) {
       const id = log.args.id.toString();
+      claimedStatus.markClaimed(id); // the receipt is proof that the vault paid it, whoever the spoil belongs to
       const mine = await ctx.db.query("SELECT amount FROM spoils WHERE id = $1 AND subject = $2", [id, p.subject]);
       if (mine.rows.length === 0) continue;
       const ins = await ctx.db.query(
