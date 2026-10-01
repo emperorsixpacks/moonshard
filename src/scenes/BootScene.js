@@ -217,7 +217,7 @@ export default class BootScene extends Phaser.Scene {
       const isPortrait = window.viewportManager.detectPortrait();
       const targetH = isPortrait ? 440 : 270;
       if (this.scale.height !== targetH) {
-        this.scale.resize(480, targetH);
+        this.scale.setGameSize(480, targetH); // (resize() would keep the old aspect ratio)
       }
     }
 

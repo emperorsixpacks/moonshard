@@ -1,6 +1,12 @@
 import { GAME_CONFIG } from '../config.js';
 
 /**
+ * Screens that are safe to rebuild when the phone is turned: they hold nothing the player would lose. A level in
+ * progress is never restarted by a rotation.
+ */
+const REBUILD_ON_RESHAPE = new Set(['MenuScene', 'ForgeScene', 'LeaderboardScene', 'StoryIntroScene', 'StoryEndingScene']);
+
+/**
  * Reliable portrait mode detector across standard desktop browsers,
  * mobile Chrome/Safari, and embedded WebViews (e.g. wallet mini-app).
  */
@@ -109,7 +115,9 @@ export class ViewportManager {
   syncGameScale(targetW, targetH) {
     if (!this.game || !this.game.scale) return;
     if (this.game.scale.width !== targetW || this.game.scale.height !== targetH) {
-      this.game.scale.resize(targetW, targetH);
+      // setGameSize (not resize): under the FIT scale mode only setGameSize updates the aspect ratio the picture is
+      // fitted to, so after a rotation `resize` left it squashed to the old shape.
+      this.game.scale.setGameSize(targetW, targetH);
       this.notifyScenes(targetW, targetH);
     }
   }
@@ -133,7 +141,12 @@ export class ViewportManager {
   notifyScenes(w, h) {
     if (!this.game || !this.game.scene) return;
     this.game.scene.getScenes(true).forEach(scene => {
-      if (scene && typeof scene.onViewportResize === 'function') {
+      if (!scene) return;
+      if (REBUILD_ON_RESHAPE.has(scene.scene?.key)) {
+        // These screens lay themselves out once, for the shape the game had when they started. (Their own handlers
+        // return early: by the time they run Phaser has already resized the camera, so they think nothing changed.)
+        scene.scene.restart();
+      } else if (typeof scene.onViewportResize === 'function') {
         scene.onViewportResize(w, h);
       }
     });
