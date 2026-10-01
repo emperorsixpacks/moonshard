@@ -85,8 +85,21 @@ try {
   await panelHas('NOT CONNECTED');
   await shot('panel-disconnected');
 
-  console.log('▶ connect -> verified human, claim button present');
+  console.log('▶ the verified-human gate: asking to play opens it, connecting passes it, PLAY starts the mode');
+  await page.click('#gd-close');
+  await page.evaluate(() => window.game.scene.getScene('MenuScene').scene.start('SurvivalScene')); // what a menu row does
+  await panelHas('VERIFIED HUMANS ONLY');
+  assert.equal(await page.evaluate(() => window.game.scene.isActive('SurvivalScene')), false, 'play started without a verified human');
+  await shot('gate-connect');
   await page.click('[data-act="connect"]');
+  await panelHas('PLAY ENDLESS MODE'); // this wallet is a whitelisted human on the fork
+  await shot('gate-ready');
+  await page.click('[data-act="play"]');
+  await page.waitForFunction(() => window.game.scene.isActive('SurvivalScene'), null, { timeout: 30_000 });
+  await startScene('MenuScene');
+
+  console.log('▶ verified human, claim button present');
+  await openWallet();
   await panelHas('VERIFIED HUMAN');
   await panelHas('CLAIM DAILY G$');
   await shot('panel-verified');

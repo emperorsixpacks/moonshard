@@ -53,12 +53,12 @@ GoodDollar must then approve the app (Discord `ubi.gd/GoodBuildersDiscord`, Tele
 ## 4. Web (Vercel)
 
 1. Import the repo; framework Vite; build command `npm run build`; output directory `dist`.
-2. Environment variables from `.env.example`: `VITE_API_URL` = the Railway URL; optional `VITE_REOWN_PROJECT_ID` to enable WalletConnect.
+2. Environment variables from `.env.example`: `VITE_API_URL` = the Railway URL; `VITE_VAULT_ADDRESS` = the deployed `MoonshardVault` (the app then refuses to redeem against any other address); `VITE_REOWN_PROJECT_ID` to enable WalletConnect. Because a player must be a verified human with a connected wallet before any game mode starts, WalletConnect is how people without a browser wallet (most phones outside a wallet app) get in: treat the Reown project id as required for a public launch.
 3. The build produces two pages: the game (`/`) and the public stats page (`/stats.html`).
 
 ## 5. Post-deploy checks
 
-- Open the site in a browser with a Celo-compatible wallet, connect, and confirm the panel shows your identity state.
+- Open the site in a browser with a Celo-compatible wallet and try to start a game mode: the verified-human gate should appear; connect, and confirm the panel shows your identity state and, for a verified account, offers PLAY.
 - As a verified account: claim the daily G$, play a Daily Shard Trial, and look at `/stats.html`.
 - After the next UTC day plus 45 minutes, check that Spoils appear and can be redeemed.
 - Do not make the repository public before the release gate in `docs/ATTRIBUTIONS.md` is cleared.
