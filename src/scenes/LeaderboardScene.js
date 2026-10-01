@@ -7,6 +7,7 @@ import { fetchDailyBoard, fetchAllTimeBoard, fetchConfig, getBoardView, setBoard
 import { fetchRewardsStatus } from '../gd/rewards.js';
 import { identiconDataUrl } from '../gd/identicon.js';
 import { getAddress } from '../gd/session.js';
+import { positiveNumber, prizeLabel, rewardsPillText, secondsLabel, shortAddress, spoilsPanelDetail } from '../ui/leaderboardText.js';
 
 /*
  * Positions and sizes for the two canvases (480x270 landscape, 480x440 tall), in game units.
@@ -480,9 +481,8 @@ export default class LeaderboardScene extends Phaser.Scene {
     panel.add(this.add.text(0, P.titleDy, 'DAILY SPOILS SETTLEMENT', {
       fontFamily: 'Press Start 2P', fontSize: P.title, color: '#ffd166'
     }).setOrigin(0.5));
-    const detail = 'Top-3 verified daily runs win 1000/600/300 G$ at UTC midnight.\n'
-      + 'Shards you collect are paid as G$ too (up to 100 G$/day).\n'
-      + 'Open the G$ wallet in the header to redeem your Spoils.';
+    // the amounts are the server's own (the prizes from /config or the daily board, the cap from the player's rewards); a figure it did not send is left out
+    const detail = spoilsPanelDetail({ prizes: this.dailyPrizes(), shardCapG: this.rewardsStatus?.crystalStatus?.dailyCapGd });
     panel.add(this.add.text(0, P.detailDy, detail, {
       fontFamily: 'Press Start 2P', fontSize: P.detail, color: '#a0c4a0', align: 'center', lineSpacing: P.spacing
     }).setOrigin(0.5));
@@ -522,40 +522,4 @@ function rasterise(dataUrl, size = AVATAR_PX) {
     img.onerror = () => reject(new Error('identicon failed to load'));
     img.src = dataUrl;
   });
-}
-
-/** A finite number above zero (a number or a numeric string), else null. */
-function positiveNumber(value) {
-  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
-  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
-}
-
-/** "1st Boss" and "Harvest" status line for a connected player. An amount the server did not send is left out. */
-function rewardsPillText(status) {
-  const prize = positiveNumber(status.firstBossPrizeG);
-  const bossText = status.firstBossClaimed
-    ? `CLAIMED${prize === null ? '' : ` (+${prize} G$)`}`
-    : `UNCLAIMED${prize === null ? '' : ` (${prize} G$)`}`;
-  const cap = Number(status.crystalStatus?.dailyCapGd ?? 100);
-  const earned = Number(status.crystalStatus?.gdEarned || 0).toFixed(0);
-  const isCapped = Boolean(status.crystalStatus?.isCapped);
-  const harvestText = isCapped ? `${earned} / ${cap.toFixed(0)} G$ (MAX 🔒)` : `${earned} / ${cap.toFixed(0)} G$`;
-  return `🏆 1st Boss: ${bossText}  |  💎 Harvest: ${harvestText}`;
-}
-
-function shortAddress(addr) {
-  const clean = String(addr || '').replace(/\s+/g, '');
-  if (clean.length < 10) return clean;
-  return `${clean.slice(0, 4)}…${clean.slice(-4)}`;
-}
-
-function secondsLabel(durationMs) {
-  const s = Number(durationMs) || 0;
-  return `${Math.floor(s / 1000)}s`;
-}
-
-function prizeLabel(idx, nim) {
-  const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
-  if (idx < 3) return medal && nim ? `${medal} ${nim} G$` : (medal || '🌲');
-  return '🌲';
 }
