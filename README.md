@@ -41,14 +41,15 @@ Tests:
 | Command | What it runs |
 |---|---|
 | `npm test` | client unit tests + server tests (in-memory Postgres) |
-| `npm run test:smoke` | first-visit browser check: no wallet, API down; every scene boots, the panel opens, no console errors (needs no server or chain) |
+| `npm run test:smoke` | first-visit browser check: no wallet, API down; a first visitor is stopped at the verified-human gate, every scene boots (started around the gate, as test tooling does), the panel opens, no console errors (needs no server or chain) |
+| `node test/client/browser/<name>.mjs` | real-browser checks that need no server or chain (the API is stubbed): `gate` (deep link, return from the face scan), `active-time` (paused time does not score), `survival-results`, `story-results` (what result screens say), `integration/runs-vs-real-server` (the run tracker against the real server app) |
 | `npm run test:contracts` | Foundry tests for `MoonshardVault` |
 | `npm run test:fork` | end to end on a Celo mainnet fork: real Identity, UBI, Engagement Rewards, vault, SDKs (needs network) |
 | `npm run test:browser` | Playwright against that fork, writes screenshots to `docs/screenshots/` |
 
 ## Configuration
 
-Web (`.env.example`): `VITE_API_URL`, `VITE_CELO_RPC_URL`, `VITE_GD_ENV`, `VITE_REOWN_PROJECT_ID` (optional, enables WalletConnect).
+Web (`.env.example`): `VITE_API_URL`, `VITE_CELO_RPC_URL`, `VITE_GD_ENV`, `VITE_VAULT_ADDRESS` (pins the vault the app will redeem against), `VITE_REOWN_PROJECT_ID` (WalletConnect: needed for phones without a browser wallet, since a wallet is required to play).
 
 Server (`server/.env.example`): `PORT`, `JWT_SECRET`, `CORS_ORIGINS`, `TRUST_PROXY` (number of proxies in front of the API, default 1), `DATABASE_URL` (empty = in-memory), `CELO_RPC_URL`, `CHAIN_ID`, `VAULT_ADDRESS`, `VOUCHER_SIGNER_KEY`, `APP_SIGNER_KEY`. Prize sizes, caps and anti-cheat limits live in `server/config.js` (`GAME`).
 
