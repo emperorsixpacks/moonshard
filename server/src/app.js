@@ -6,6 +6,8 @@ import { GAME } from "../config.js";
 import { errorHandler } from "./http.js";
 import { createIdentityResolver } from "./identity.js";
 import { authRoutes, makeRequireAuth } from "./auth.js";
+import { runRoutes } from "./runs.js";
+import { leaderboardRoutes } from "./leaderboard.js";
 
 /**
  * @param {{db: any, chain: any, config: any, now?: () => number}} deps
@@ -44,6 +46,8 @@ export function createApp({ db, chain, config, now = Date.now }) {
   });
   ctx.requireAuth = makeRequireAuth(ctx);
   api.use(authRoutes(ctx));
+  api.use(runRoutes(ctx));
+  api.use(leaderboardRoutes(ctx));
   // ROUTES: later tasks mount their routers here.
   app.use("/api", api);
 

@@ -110,3 +110,25 @@ export async function makeHarness(opts = {}) {
     },
   };
 }
+
+/**
+ * Plays one honest-looking Daily Shard Trial: start, post checkpoints covering ~70% of the run,
+ * then submit. Advances the fake clock. Returns the submit response ({status, body}).
+ */
+export async function playTrial(h, p, { score = 1000, kills = 20, shards = 0, durationMs = 60_000 } = {}) {
+  const run = (await h.api.post("/runs/start", { mode: "TRIAL" }, { token: p.token })).body;
+  const first = Math.round(durationMs * 0.7);
+  h.clock.advance(first);
+  const points = [];
+  for (let t = 10_000; t <= first; t += 10_000) {
+    const f = t / durationMs;
+    points.push({ t, score: Math.floor(score * f), kills: Math.floor(kills * f), shards: Math.floor(shards * f) });
+  }
+  if (points.length) await h.api.post(`/runs/${run.runId}/checkpoints`, { points }, { token: p.token });
+  h.clock.advance(durationMs - first + 500);
+  return h.api.post(
+    `/runs/${run.runId}/submit`,
+    { ticket: run.ticket, score, kills, shards, durationMs },
+    { token: p.token },
+  );
+}
