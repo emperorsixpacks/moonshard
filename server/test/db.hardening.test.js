@@ -292,7 +292,13 @@ test("pool: a real dropped idle connection no longer kills the process", async (
     const c = await pool.connect();
     c.release();
     setTimeout(() => sockets.forEach((s) => s.destroy()), 50);
-    setTimeout(() => { console.log("ALIVE " + JSON.stringify(logged)); process.exit(0); }, 700);
+    // wait for the pool to report the drop (however slowly this machine delivers it), then give a crash time to happen
+    const started = Date.now();
+    const poll = setInterval(() => {
+      if (logged.length === 0 && Date.now() - started < 8000) return;
+      clearInterval(poll);
+      setTimeout(() => { console.log("ALIVE " + JSON.stringify(logged)); process.exit(0); }, 300);
+    }, 20);
   `);
   assert.equal(r.code, 0, `the process died:\n${r.stderr.slice(0, 600)}`);
   assert.match(r.stdout, /ALIVE/);
