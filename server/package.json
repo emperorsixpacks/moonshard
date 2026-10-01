@@ -1,0 +1,22 @@
+{
+  "name": "moonshard-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Moonshard API: wallet auth, run tickets, leaderboard, G$ Spoils vouchers, Engagement Rewards attestation, stats",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.3.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.0",
+    "viem": "^2.57.2"
+  }
+}
