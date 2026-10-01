@@ -38,6 +38,8 @@ export function installPlayGate() {
     }
     // a deep link (?scene=...) arrives from the boot screen: show the menu behind the gate rather than a blank screen
     if (this.key === 'BootScene') start.call(this, 'MenuScene');
+    // the screen may already have faded out on its way to the mode: bring it back, the player is staying here
+    this.systems?.cameras?.main?.resetFX?.();
     openGate({ key: target, data, label: gateLabel(target), launch: () => goTo(this.manager, target, data) });
     return this;
   };
