@@ -223,3 +223,19 @@ test('notRecordedWhy: every reason the tracker can give has words', () => {
   assert.equal(notRecordedWhy({ ticketed: true, error: 'timeout', status: 0 }), 'Offline', 'results without a reason fall back on the status');
   assert.equal(notRecordedWhy(undefined), 'Unknown');
 });
+
+// ------------------------------------------------------------------------------- a session that ended during the run
+// Only verified humans can start a run, so "not connected" at the end of one means the session died under the player.
+
+test('a run that ends after the session died says the session ended, not "connect a wallet"', () => {
+  assert.equal(survivalLabel({ connected: false, verified: false, result: null, sessionExpired: true }), 'Session Ended — Reconnect to Compete');
+  assert.equal(survivalLabel({ connected: false, verified: false, result: null }), 'Not Ranked — Connect Wallet to Compete');
+  const shards = shardsLine({ shards: 3, rateG: 2, connected: false, verified: false, result: null, sessionExpired: true });
+  assert.match(shards.text, /session ended/i);
+  assert.match(shards.text, /reconnect/i);
+  assert.equal(shards.tone, 'warn');
+  const boss = bossLine({ connected: false, verified: false, result: null, sessionExpired: true });
+  assert.match(boss.text, /session ended/i);
+  assert.match(boss.text, /reconnect/i);
+  assert.doesNotMatch(`${shards.text} ${boss.text}`, /\d{4}/);
+});

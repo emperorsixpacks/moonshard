@@ -361,8 +361,11 @@ export function shardVerdict(result, { connected, verified }) {
  * The Shard Harvest line for an end screen: { icon, text, tone }. The daily-cap notice is left to the scene.
  * `brief` leaves out the reason Shards were not banked, for a screen that already gives it in the line above.
  */
-export function shardsLine({ shards, rateG, connected, verified, result, brief = false }) {
+export function shardsLine({ shards, rateG, connected, verified, result, brief = false, sessionExpired = false }) {
   const n = toCount(shards);
+  if (!connected && sessionExpired) {
+    return { icon: '⚡', tone: 'warn', text: 'Your session ended. Reconnect your wallet to bank Shards as G$' };
+  }
   if (!connected) {
     return { icon: '⚡', tone: 'muted', text: n > 0 ? 'Connect a wallet and verify to bank Shards as G$' : 'Connect & verify to bank Shards as G$' };
   }
@@ -388,7 +391,8 @@ export function shardsLine({ shards, rateG, connected, verified, result, brief =
 }
 
 /** The boss bounty line of the Story victory banner: { icon, text, tone }. Prints an amount only if the server gave one. */
-export function bossLine({ connected, verified, result, alreadyClaimed, rewardG }) {
+export function bossLine({ connected, verified, result, alreadyClaimed, rewardG, sessionExpired = false }) {
+  if (!connected && sessionExpired) return { icon: '⚡', tone: 'warn', text: 'Your session ended. Reconnect your wallet to claim boss bounties' };
   if (!connected) return { icon: '⚡', tone: 'muted', text: 'Connect & verify to earn boss bounties in future runs' };
   if (verified && alreadyClaimed) return { icon: '✔', tone: 'muted', text: 'First-boss bounty already claimed' };
   if (!result) return { icon: '⏳', tone: 'muted', text: 'Saving your run...' };
@@ -408,7 +412,8 @@ export function bossLine({ connected, verified, result, alreadyClaimed, rewardG 
 }
 
 /** The result line of the Survival game-over modal. `slow`: the answer has been awaited for a long time. */
-export function survivalLabel({ connected, verified, result, slow = false }) {
+export function survivalLabel({ connected, verified, result, slow = false, sessionExpired = false }) {
+  if (!connected && sessionExpired) return 'Session Ended — Reconnect to Compete';
   if (!connected) return 'Not Ranked — Connect Wallet to Compete';
   if (!result) return slow ? 'Still submitting — check the Leaderboard shortly' : 'Submitting run...';
   if (notRecorded(result)) return `Run Not Recorded (${notRecordedWhy(result)})`;

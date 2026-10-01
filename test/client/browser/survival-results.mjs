@@ -90,7 +90,12 @@ try {
   log('▶ M6: why a run was not recorded');
   api.handlers.start = async () => ({ status: 401, body: { error: 'invalid_session' } });
   await playAndDie();
-  check((await label()) === 'Run Not Recorded (Signed Out)', `start refused with 401 (saw "${await label()}")`);
+  // the 401 is reported to the session layer, which ends the session: the screen says so instead of "Signed Out"
+  check((await label()) === 'Session Ended — Reconnect to Compete', `start refused with 401 (saw "${await label()}")`);
+  check(await page.evaluate(() => window.gdService.getStatus().sessionExpired === true), 'the session layer was told the session is over');
+  // sign in again for the cases that follow (the seeded session is restored on reload)
+  await g.goto();
+  await page.waitForFunction(() => window.gdService?.getStatus().connected && window.gdService.getStatus().verified, null, { timeout: 30_000 });
   api.handlers.start = async () => ({ status: 429, body: { error: 'rate_limited' } });
   await playAndDie();
   check((await label()) === 'Run Not Recorded (Server Busy)', `start refused with 429 (saw "${await label()}")`);

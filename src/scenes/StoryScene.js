@@ -3029,6 +3029,7 @@ export default class StoryScene extends Phaser.Scene {
       verified: st.verified,
       result: this.runResult || undefined,
       brief: underBountyLine,
+      sessionExpired: st.sessionExpired,
     });
     return { text: `${line.icon} ${line.text}`, color: TONE_COLOR[line.tone] };
   }
@@ -3040,6 +3041,7 @@ export default class StoryScene extends Phaser.Scene {
       connected: st.connected,
       verified: st.verified,
       result: this.runResult || undefined,
+      sessionExpired: st.sessionExpired,
       alreadyClaimed: Boolean(this.rewardsStatus?.firstBossClaimed),
       rewardG: st.bounty?.rewardG, // the player's real share, when the server says so; no amount otherwise
     });

@@ -1291,7 +1291,7 @@ export default class SurvivalScene extends Phaser.Scene {
   }
 
   describeProof(proof, status = gdService.getStatus()) {
-    proof.label = survivalLabel({ connected: status.connected, verified: status.verified, result: proof.result, slow: proof.slow });
+    proof.label = survivalLabel({ connected: status.connected, verified: status.verified, result: proof.result, slow: proof.slow, sessionExpired: status.sessionExpired });
   }
 
   /** Settle the run with the server and bring the result screen and the local record up to date. Never throws. */
@@ -1376,6 +1376,7 @@ export default class SurvivalScene extends Phaser.Scene {
           connected: st.connected,
           verified: st.verified,
           result: proof.result,
+          sessionExpired: st.sessionExpired,
         });
         crystalLine = `${shards.icon} ${shards.text}`;
       }
