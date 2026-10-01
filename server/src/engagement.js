@@ -3,6 +3,7 @@ import { parseEventLogs, zeroAddress } from "viem";
 import { GAME } from "../config.js";
 import { HttpError, ah } from "./http.js";
 import { engagementAbi } from "./chain.js";
+import { assertRunId } from "./runs.js";
 
 const appClaimTypes = {
   AppClaim: [
@@ -51,7 +52,7 @@ export function engagementRoutes(ctx) {
     if (!ctx.appAccount) throw new HttpError(503, "engagement_not_configured");
     if (!p.verified) throw new HttpError(403, "verification_required");
 
-    const runId = String(req.body?.runId || "");
+    const runId = assertRunId(req.body?.runId);
     const { rows } = await ctx.db.query("SELECT * FROM runs WHERE run_id = $1", [runId]);
     const run = rows[0];
     if (!run || run.subject !== p.subject || run.mode !== "STORY" || run.status !== "submitted" || !run.boss_cleared) {

@@ -23,8 +23,21 @@ function sameTicket(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
+/** The ids /runs/start issues: crypto.randomUUID(), lowercase. */
+const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Throws 400 bad_run_id unless `id` is a run id the server could have issued. Checked before the id reaches the
+ * database: a NUL byte is not valid text for Postgres and used to turn a lookup into a 500.
+ * @returns {string} the id
+ */
+export function assertRunId(id) {
+  if (typeof id !== "string" || !RUN_ID.test(id)) throw new HttpError(400, "bad_run_id");
+  return id;
+}
+
 async function loadOwnedRun(ctx, req) {
-  const { rows } = await ctx.db.query("SELECT * FROM runs WHERE run_id = $1", [req.params.id]);
+  const { rows } = await ctx.db.query("SELECT * FROM runs WHERE run_id = $1", [assertRunId(req.params.id)]);
   const run = rows[0];
   if (!run || run.subject !== req.player.subject) throw new HttpError(404, "run_not_found");
   return run;
