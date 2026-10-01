@@ -19,6 +19,8 @@
     .tile { background: var(--panel); border: 2px solid var(--line); padding: 12px; }
     .tile b { display: block; font-size: 20px; color: var(--lime); margin-top: 6px; word-break: break-all; }
     .tile span { color: var(--muted); font-size: 8px; }
+    .group { font-size: 10px; margin: 20px 0 8px; color: var(--gold); }
+    .group small { color: var(--muted); font-size: 8px; }
     .chart { margin-top: 20px; background: var(--panel); border: 2px solid var(--line); padding: 12px; }
     .chart h2 { font-size: 10px; margin: 0 0 8px; color: var(--gold); }
     .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 8px; color: var(--muted); margin-bottom: 8px; }
@@ -34,11 +36,14 @@
     <h1>MOONSHARD LIVE STATS</h1>
     <p class="sub">G$ adoption through the game. Refreshes every 60 s.</p>
     <p id="err" hidden>Stats are unavailable right now.</p>
-    <div class="grid" id="tiles"></div>
+    <h2 class="group">CONFIRMED ON-CHAIN <small>each number is read from, or recorded after, a transaction receipt or the identity contract</small></h2>
+    <div class="grid" id="chain"></div>
+    <h2 class="group">REPORTED BY THE GAME <small>anyone with a wallet counts here, verified or not</small></h2>
+    <div class="grid" id="reported"></div>
     <section class="chart">
       <h2>LAST 7 DAYS</h2>
-      <div class="legend"><span><i style="background:var(--lime)"></i>Runs</span><span><i style="background:var(--cyan)"></i>Active players</span><span><i style="background:var(--gold)"></i>UBI claims</span></div>
-      <svg id="chart" viewBox="0 0 700 220" role="img" aria-label="Runs, active players and UBI claims for the last 7 days"></svg>
+      <div class="legend"><span><i style="background:var(--lime)"></i>Runs (any wallet)</span><span><i style="background:var(--cyan)"></i>Players (any wallet)</span><span><i style="background:var(--gold)"></i>UBI claims (on-chain)</span></div>
+      <svg id="chart" viewBox="0 0 700 220" role="img" aria-label="Runs and players from any wallet, and on-chain UBI claims, for the last 7 days"></svg>
     </section>
     <footer>Source: Moonshard API <code>/api/stats</code>. <a href="/">Play Moonshard</a></footer>
   </main>
@@ -47,17 +52,25 @@
     const meta = document.querySelector('meta[name="api-base"]')?.content || '';
     const base = meta.startsWith('%') ? '' : meta;
     const fmt = (n) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
-    const TILES = [
-      ['verifiedPlayers', 'VERIFIED HUMANS'],
+    // What each number is backed by is described in server/src/stats.js. "Verified humans" is everyone the identity
+    // contract has ever vouched for, so it says so; only `verifiedActiveToday` means "a verified person played today".
+    const CHAIN = [
+      ['verifiedActiveToday', 'VERIFIED PLAYERS TODAY'],
+      ['verifiedPlayers', 'VERIFIED HUMANS, EVER'],
       ['ubiClaimsTotal', 'G$ UBI CLAIMS VIA MOONSHARD'],
       ['ubiClaimsToday', 'UBI CLAIMS TODAY'],
       ['engagementClaims', 'BOSS BOUNTIES CLAIMED'],
-      ['runsToday', 'RUNS TODAY'],
-      ['activeToday', 'ACTIVE PLAYERS TODAY'],
-      ['spoilsIssuedG', 'SPOILS ISSUED (G$)'],
       ['spoilsPaidG', 'SPOILS PAID OUT (G$)'],
-      ['walletsConnected', 'WALLETS CONNECTED'],
     ];
+    const REPORTED = [
+      ['runsToday', 'RUNS TODAY'],
+      ['activeToday', 'PLAYERS WHO STARTED A RUN TODAY'],
+      ['walletsConnected', 'WALLETS CONNECTED'],
+      ['spoilsIssuedG', 'SPOILS ISSUED (G$)'],
+    ];
+    const tiles = (list, s) => list
+      .map(([k, label]) => `<div class="tile"><span>${label}</span><b>${s[k] == null ? '–' : fmt(s[k])}</b></div>`)
+      .join('');
     function bars(series) {
       const W = 700, H = 220, pad = 28, groupW = (W - pad * 2) / series.length;
       const max = Math.max(1, ...series.flatMap((d) => [d.runs, d.active, d.ubiClaims]));
@@ -80,7 +93,8 @@
         if (!res.ok) throw new Error(String(res.status));
         const s = await res.json();
         document.getElementById('err').hidden = true;
-        document.getElementById('tiles').innerHTML = TILES.map(([k, label]) => `<div class="tile"><span>${label}</span><b>${fmt(s[k])}</b></div>`).join('');
+        document.getElementById('chain').innerHTML = tiles(CHAIN, s);
+        document.getElementById('reported').innerHTML = tiles(REPORTED, s);
         document.getElementById('chart').innerHTML = bars(s.series);
       } catch {
         document.getElementById('err').hidden = false;
