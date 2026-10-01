@@ -9,6 +9,10 @@ import { authRoutes, makeRequireAuth } from "./auth.js";
 import { runRoutes } from "./runs.js";
 import { leaderboardRoutes } from "./leaderboard.js";
 import { spoilsRoutes } from "./spoils.js";
+import { ubiRoutes } from "./ubi.js";
+import { engagementRoutes } from "./engagement.js";
+import { rewardsRoutes } from "./rewards.js";
+import { statsRoutes } from "./stats.js";
 
 /**
  * @param {{db: any, chain: any, config: any, now?: () => number}} deps
@@ -50,6 +54,10 @@ export function createApp({ db, chain, config, now = Date.now }) {
   api.use(runRoutes(ctx));
   api.use(leaderboardRoutes(ctx));
   api.use(spoilsRoutes(ctx));
+  api.use(ubiRoutes(ctx));
+  api.use(engagementRoutes(ctx));
+  api.use(rewardsRoutes(ctx));
+  api.use(statsRoutes(ctx));
   // ROUTES: later tasks mount their routers here.
   app.use("/api", api);
 
