@@ -1,6 +1,5 @@
 import { apiFetch } from './api.js';
 import { getToken } from './session.js';
-import { formatG } from './format.js';
 
 /** The server takes at most this many checkpoint points per request. */
 const POINTS_PER_POST = 50;
@@ -402,7 +401,9 @@ export function bossLine({ connected, verified, result, alreadyClaimed, rewardG 
   }
   if (!verified) return { icon: '🛡', tone: 'warn', text: 'Verify you are human to claim the boss bounty' };
   const amount = Number(rewardG);
-  const worth = rewardG !== null && rewardG !== '' && Number.isFinite(amount) && amount > 0 ? `${formatG(amount)} G$` : 'your bounty';
+  const worth = rewardG !== null && rewardG !== '' && Number.isFinite(amount) && amount > 0
+    ? `${amount.toLocaleString('en-US', { maximumFractionDigits: 0 })} G$`
+    : 'your bounty';
   return { icon: '🌟', tone: 'good', text: `Boss slain! Claim ${worth} in the G$ wallet (header)` };
 }
 
