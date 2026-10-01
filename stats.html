@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="api-base" content="%VITE_API_URL%" />
+  <title>Moonshard — Live Stats</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0b130b; --panel: #111e11; --line: #2e4e2e; --ink: #cfe8cf; --muted: #8cb38c;
+      --gold: #ffd166; --lime: #98ff20; --cyan: #38e1ff;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Press Start 2P', monospace; font-size: 10px; line-height: 1.8; }
+    main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 16px; color: var(--gold); margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+    .tile { background: var(--panel); border: 2px solid var(--line); padding: 12px; }
+    .tile b { display: block; font-size: 20px; color: var(--lime); margin-top: 6px; word-break: break-all; }
+    .tile span { color: var(--muted); font-size: 8px; }
+    .chart { margin-top: 20px; background: var(--panel); border: 2px solid var(--line); padding: 12px; }
+    .chart h2 { font-size: 10px; margin: 0 0 8px; color: var(--gold); }
+    .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 8px; color: var(--muted); margin-bottom: 8px; }
+    .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 5px; }
+    svg { width: 100%; height: auto; display: block; }
+    footer { margin-top: 20px; color: var(--muted); font-size: 8px; }
+    a { color: var(--cyan); }
+    #err { color: #f59e0b; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MOONSHARD LIVE STATS</h1>
+    <p class="sub">G$ adoption through the game. Refreshes every 60 s.</p>
+    <p id="err" hidden>Stats are unavailable right now.</p>
+    <div class="grid" id="tiles"></div>
+    <section class="chart">
+      <h2>LAST 7 DAYS</h2>
+      <div class="legend"><span><i style="background:var(--lime)"></i>Runs</span><span><i style="background:var(--cyan)"></i>Active players</span><span><i style="background:var(--gold)"></i>UBI claims</span></div>
+      <svg id="chart" viewBox="0 0 700 220" role="img" aria-label="Runs, active players and UBI claims for the last 7 days"></svg>
+    </section>
+    <footer>Source: Moonshard API <code>/api/stats</code>. <a href="/">Play Moonshard</a></footer>
+  </main>
+  <script type="module">
+    const meta = document.querySelector('meta[name="api-base"]')?.content || '';
+    const base = meta.startsWith('%') ? '' : meta;
+    const fmt = (n) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    const TILES = [
+      ['verifiedPlayers', 'VERIFIED HUMANS'],
+      ['ubiClaimsTotal', 'G$ UBI CLAIMS VIA MOONSHARD'],
+      ['ubiClaimsToday', 'UBI CLAIMS TODAY'],
+      ['engagementClaims', 'BOSS BOUNTIES CLAIMED'],
+      ['runsToday', 'RUNS TODAY'],
+      ['activeToday', 'ACTIVE PLAYERS TODAY'],
+      ['spoilsIssuedG', 'SPOILS ISSUED (G$)'],
+      ['spoilsPaidG', 'SPOILS PAID OUT (G$)'],
+      ['walletsConnected', 'WALLETS CONNECTED'],
+    ];
+    function bars(series) {
+      const W = 700, H = 220, pad = 28, groupW = (W - pad * 2) / series.length;
+      const max = Math.max(1, ...series.flatMap((d) => [d.runs, d.active, d.ubiClaims]));
+      const keys = [['runs', '#98ff20'], ['active', '#38e1ff'], ['ubiClaims', '#ffd166']];
+      let out = `<line x1="${pad}" y1="${H - 24}" x2="${W - pad}" y2="${H - 24}" stroke="#2e4e2e"/>`;
+      series.forEach((d, i) => {
+        const gx = pad + i * groupW + 6;
+        keys.forEach(([k, color], j) => {
+          const h = Math.round((d[k] / max) * (H - 60));
+          const x = gx + j * ((groupW - 12) / 3);
+          out += `<rect x="${x}" y="${H - 24 - h}" width="${(groupW - 12) / 3 - 3}" height="${h}" fill="${color}"/>`;
+        });
+        out += `<text x="${pad + i * groupW + groupW / 2}" y="${H - 8}" fill="#8cb38c" font-size="9" text-anchor="middle">${d.day.slice(5)}</text>`;
+      });
+      return out;
+    }
+    async function load() {
+      try {
+        const res = await fetch(`${base}/api/stats`);
+        if (!res.ok) throw new Error(String(res.status));
+        const s = await res.json();
+        document.getElementById('err').hidden = true;
+        document.getElementById('tiles').innerHTML = TILES.map(([k, label]) => `<div class="tile"><span>${label}</span><b>${fmt(s[k])}</b></div>`).join('');
+        document.getElementById('chart').innerHTML = bars(s.series);
+      } catch {
+        document.getElementById('err').hidden = false;
+      }
+    }
+    load();
+    setInterval(load, 60_000);
+  </script>
+</body>
+</html>

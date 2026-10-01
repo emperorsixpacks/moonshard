@@ -18,6 +18,12 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: true
+    sourcemap: true,
+    rollupOptions: {
+      input: {
+        main: new URL('./index.html', import.meta.url).pathname,
+        stats: new URL('./stats.html', import.meta.url).pathname
+      }
+    }
   }
 });
