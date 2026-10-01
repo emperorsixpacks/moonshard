@@ -1,5 +1,5 @@
 import express from "express";
-import { encodePacked, formatUnits, keccak256, parseEventLogs } from "viem";
+import { encodeAbiParameters, formatUnits, keccak256, parseAbiParameters, parseEventLogs } from "viem";
 import { GAME } from "../config.js";
 import { HttpError, ah } from "./http.js";
 import { dayKey } from "./time.js";
@@ -17,11 +17,31 @@ export const spoilTypes = {
   ],
 };
 
-export const spoilId = (kind, day, subject) =>
-  BigInt(keccak256(encodePacked(["string", "string", "address"], [kind, day, subject])));
+const spoilIdParams = parseAbiParameters("address vault, string kind, string day, address subject");
 
-/** Settle one UTC day into `spoils` rows. Safe to call repeatedly. */
+/**
+ * The vault's voucher id: uint256(keccak256(abi.encode(vault, kind, day, subject))).
+ *
+ * The vault address is part of the preimage so that an id is unique per vault. Without it the id depended only on
+ * (kind, day, subject), and after a vault redeploy every spoil the old vault had already paid would be signed again for
+ * the new one, whose `claimed` set is empty. ABI encoding (typed, length-prefixed) leaves no two tuples with the same
+ * preimage, whatever the strings contain. The vault contract is unchanged: it only ever sees an opaque `id`.
+ */
+export const spoilId = (vault, kind, day, subject) =>
+  BigInt(keccak256(encodeAbiParameters(spoilIdParams, [String(vault).toLowerCase(), kind, day, subject])));
+
+/** A spoil row belongs to `vault` when its stored id is the one that vault would derive for it. */
+const boundToVault = (vault, row, subject) => spoilId(vault, row.kind, row.day, subject).toString() === row.id;
+
+/**
+ * Settle one UTC day into `spoils` rows. Safe to call repeatedly.
+ * Ids are bound to the configured vault, so a day is only settled while there is one: spoils settled without a
+ * vault would be bound to nothing and could never be redeemed from a vault deployed later. The day stays open
+ * (no `settled_days` marker) and settles, bound to the right vault, once VAULT_ADDRESS is set.
+ */
 export async function settleDay(ctx, day) {
+  const vault = ctx.config.contracts.vault;
+  if (!vault) return { day, settled: false, reason: "no_vault" };
   return ctx.db.tx(async (t) => {
     const marker = await t.query("INSERT INTO settled_days(day) VALUES ($1) ON CONFLICT DO NOTHING RETURNING day", [day]);
     if (marker.rows.length === 0) return { day, settled: false };
@@ -36,7 +56,7 @@ export async function settleDay(ctx, day) {
       await t.query(
         `INSERT INTO spoils(id, kind, day, subject, amount, rank) VALUES ($1,'TRIAL_PRIZE',$2,$3,$4,$5)
          ON CONFLICT (kind, day, subject) DO NOTHING`,
-        [spoilId("TRIAL_PRIZE", day, subject).toString(), day, subject, GAME.PRIZES[i].toString(), i + 1],
+        [spoilId(vault, "TRIAL_PRIZE", day, subject).toString(), day, subject, GAME.PRIZES[i].toString(), i + 1],
       );
     }
 
@@ -46,7 +66,7 @@ export async function settleDay(ctx, day) {
       await t.query(
         `INSERT INTO spoils(id, kind, day, subject, amount) VALUES ($1,'SHARD_HARVEST',$2,$3,$4)
          ON CONFLICT (kind, day, subject) DO NOTHING`,
-        [spoilId("SHARD_HARVEST", day, row.subject).toString(), day, row.subject, amount.toString()],
+        [spoilId(vault, "SHARD_HARVEST", day, row.subject).toString(), day, row.subject, amount.toString()],
       );
     }
     return { day, settled: true, prizes: top.rows.length, harvests: harvest.rows.length };
@@ -55,6 +75,7 @@ export async function settleDay(ctx, day) {
 
 /** Settle every day that can no longer receive submissions (ticket window + 1 min passed). */
 export async function settleDue(ctx) {
+  if (!ctx.config.contracts.vault) return []; // see settleDay
   const cutoff = dayKey(ctx.now() - GAME.TICKET_MAX_AGE_MS - 60_000);
   const { rows } = await ctx.db.query(
     `SELECT day FROM (SELECT day FROM scores UNION SELECT day FROM shard_days) d
@@ -72,11 +93,14 @@ export function spoilsRoutes(ctx) {
   r.get("/spoils", ctx.requireAuth, ah(async (req, res) => {
     const p = req.player;
     // Each listed spoil costs a chain lookup and, when unredeemed, a signature: bound the work per request.
-    const { rows } = await ctx.db.query(
+    const all = (await ctx.db.query(
       "SELECT id, kind, day, amount, rank FROM spoils WHERE subject = $1 ORDER BY day DESC, kind LIMIT $2",
       [p.subject, MAX_SPOILS_LISTED],
-    );
+    )).rows;
     const vault = ctx.config.contracts.vault;
+    // A row settled under another vault (VAULT_ADDRESS was changed since) is not this vault's to pay: the old vault
+    // may have paid it already, and this one cannot know. Signing it would pay it a second time.
+    const rows = vault ? all.filter((row) => boundToVault(vault, row, p.subject)) : all;
     const deadline = BigInt(Math.floor(ctx.now() / 1000) + GAME.VOUCHER_TTL_SEC);
     const spoils = [];
     for (const s of rows) {

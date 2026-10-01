@@ -230,7 +230,7 @@ test("H2: GET /spoils reads at most the 30 most recent spoils (and makes at most
     for (const [i, day] of days.entries()) {
       await h.db.query(
         "INSERT INTO spoils(id, kind, day, subject, amount) VALUES ($1,'SHARD_HARVEST',$2,$3,$4)",
-        [String(1000 + i), day, p.address, "2000000000000000000"],
+        [spoilId(VAULT, "SHARD_HARVEST", day, p.address).toString(), day, p.address, "2000000000000000000"], // ids bound to the vault, as settlement stores them
       );
     }
     let lookups = 0;
@@ -442,9 +442,9 @@ test("H5: one tx redeeming two of the caller's spoils records both; a relayed tx
     h.clock.set(SETTLEABLE);
     await settleDue(h.ctx);
     const day = "2026-10-05";
-    const aPrize = spoilId("TRIAL_PRIZE", day, a.address);
-    const aHarvest = spoilId("SHARD_HARVEST", day, a.address);
-    const bPrize = spoilId("TRIAL_PRIZE", day, b.address);
+    const aPrize = spoilId(VAULT, "TRIAL_PRIZE", day, a.address);
+    const aHarvest = spoilId(VAULT, "SHARD_HARVEST", day, a.address);
+    const bPrize = spoilId(VAULT, "TRIAL_PRIZE", day, b.address);
 
     // one relayed tx paying a (two vouchers) and b (one voucher)
     const hash = "0x" + "ee".repeat(32);
