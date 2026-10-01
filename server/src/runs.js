@@ -158,6 +158,9 @@ export function runRoutes(ctx) {
 
     const bossCleared = wantsBoss && flags.length === 0;
     const rankedOk = Boolean(run.verified) && flags.length === 0 && (run.mode === "STORY" || coverage >= GAME.MIN_COVERAGE_RANKED);
+    // Shards are paid out in G$, so they need the evidence a ranked score needs: no flags and checkpoints
+    // covering at least half of the run. Without it, start + submit alone would bank a full day's cap.
+    const shardsCredited = Boolean(run.verified) && flags.length === 0 && coverage >= GAME.MIN_COVERAGE_RANKED;
 
     let isNewBest = false;
     await ctx.db.tx(async (t) => {
@@ -187,7 +190,7 @@ export function runRoutes(ctx) {
         );
         isNewBest = up.rows.length > 0;
       }
-      if (shards > 0 && run.verified) {
+      if (shards > 0 && shardsCredited) {
         await t.query(
           `INSERT INTO shard_days(day, subject, shards) VALUES ($1,$2,$3)
            ON CONFLICT (day, subject) DO UPDATE SET shards = shard_days.shards + EXCLUDED.shards`,
