@@ -16,8 +16,10 @@ import { vaultAbi } from "../src/chain.js";
 import * as cfg from "../config.js";
 import * as auth from "../src/auth.js";
 
-// Second hardening pass (H1-H8). Existing test files stay as they were, except for the fixtures
-// that an item explicitly changes. Each section names the break it guards against.
+// Second hardening pass (H1-H8). Each section names the break it guards against.
+// Existing tests were only touched where a deliberate behaviour change invalidated their fixture, never
+// their assertions: runs.hardening.test.js (H1: its run now has checkpoint coverage, or no shards are
+// credited), ubi.test.js and stats.test.js (H3: their claim txs now carry a UBIClaimed log).
 
 const start = async (h, p, mode = "TRIAL") => {
   const r = await h.api.post("/runs/start", { mode }, { token: p.token });
@@ -40,8 +42,8 @@ const shardRows = async (h) => (await h.db.query("SELECT subject, shards FROM sh
 async function runWithOneCheckpoint(h, p, cpT, { shards = 10, kills = 20, durationMs = 60_000 } = {}) {
   const run = await start(h, p);
   h.clock.advance(cpT + 1_000);
-  const cp = await postPoints(h, p, run, [{ t: cpT, score: 100, kills: 2, shards: 1 }]);
-  assert.equal(cp.status, 200, JSON.stringify(cp.body));
+  const posted = await postPoints(h, p, run, [{ t: cpT, score: 100, kills: 2, shards: 1 }]);
+  assert.equal(posted.status, 200, JSON.stringify(posted.body));
   h.clock.advance(durationMs - cpT + 500);
   return submitRun(h, p, run, { score: 1000, kills, shards, durationMs });
 }
@@ -616,8 +618,15 @@ const SERVER_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
 const PLACEHOLDER_SECRET = /^JWT_SECRET=(.*)$/m.exec(readFileSync(path.join(SERVER_DIR, ".env.example"), "utf8"))[1];
 const FIX_COMMAND = "openssl rand -base64 32";
 
+// Every variable config.js reads. Blanked (not deleted) in the child: dotenv never overrides a variable that
+// exists, so this also keeps a developer's real server/.env from leaking keys or addresses into the test.
+const CONFIG_VARS = [
+  "CORS_ORIGINS", "TRUST_PROXY", "DATABASE_URL", "DATABASE_CA", "CELO_RPC_URL", "CHAIN_ID", "IDENTITY_ADDRESS",
+  "UBI_ADDRESS", "GD_TOKEN_ADDRESS", "ENGAGEMENT_ADDRESS", "VAULT_ADDRESS", "VOUCHER_SIGNER_KEY", "APP_SIGNER_KEY",
+];
+
 function childEnv(extra) {
-  const env = { ...process.env, PORT: "0", DATABASE_URL: "", ...extra };
+  const env = { ...process.env, ...Object.fromEntries(CONFIG_VARS.map((k) => [k, ""])), PORT: "0", ...extra };
   delete env.DOTENV_CONFIG_QUIET; // would hide the very output the quiet test looks for
   delete env.NODE_TEST_CONTEXT; // set by `node --test` for its own children; must not leak into ours
   return env;
