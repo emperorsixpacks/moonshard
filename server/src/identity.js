@@ -1,11 +1,30 @@
 import { IDENTITY_CACHE_MAX, IDENTITY_TTL_MS } from "../config.js";
 
 /**
+ * How long the last answer may be served when the chain cannot be read. Beyond this a lapsed or revoked
+ * verification could stay "verified" for as long as an RPC outage lasts.
+ */
+export const IDENTITY_STALE_MAX_MS = 30 * 60_000;
+
+/**
  * Maps a wallet to its "subject": the whitelisted root when verified (one human, one slot even
  * across linked wallets), else the wallet itself. Results are cached for `ttlMs`, and at most
  * `maxEntries` wallets are kept: past that, the entry fetched longest ago is dropped.
+ *
+ * Whether a wallet is verified is the chain's answer and nothing else: `chain.identity()` reports
+ * `isWhitelisted` from getWhitelistedRoot(), which the contract only answers for an account that is inside its
+ * own re-verification window (reverifyDaysOptions[authCount] days, 1 / 7 / 180 with the default schedule). The
+ * `expiresAt` it also carries is our estimate from the LONGEST step, so it can lie far in the future of the real
+ * expiry; it is passed on for information and is never an input to `verified`.
  */
-export function createIdentityResolver({ chain, db, now, ttlMs = IDENTITY_TTL_MS, maxEntries = IDENTITY_CACHE_MAX }) {
+export function createIdentityResolver({
+  chain,
+  db,
+  now,
+  ttlMs = IDENTITY_TTL_MS,
+  maxEntries = IDENTITY_CACHE_MAX,
+  staleMaxMs = IDENTITY_STALE_MAX_MS,
+}) {
   const cache = new Map();
 
   function remember(key, info) {
@@ -24,7 +43,9 @@ export function createIdentityResolver({ chain, db, now, ttlMs = IDENTITY_TTL_MS
       remember(key, info);
       return info;
     } catch (cause) {
-      if (hit) return hit.info; // serve stale rather than lock players out during an RPC blip
+      // Serve the last answer rather than lock players out during an RPC blip, but only while it is recent.
+      // `hit.at` is when the chain last answered; a failed attempt does not renew it.
+      if (hit && now() - hit.at < staleMaxMs) return hit.info;
       const err = new Error("chain unavailable", { cause });
       err.code = "CHAIN_UNAVAILABLE";
       throw err;
@@ -35,10 +56,9 @@ export function createIdentityResolver({ chain, db, now, ttlMs = IDENTITY_TTL_MS
     async resolve(wallet, host) {
       const key = String(wallet).toLowerCase();
       const info = await lookup(key);
-      const live = info.isWhitelisted && (info.expiresAt == null || info.expiresAt > now());
-      const verified = Boolean(live && info.root);
+      const verified = Boolean(info.isWhitelisted && info.root);
       const subject = verified ? info.root : key;
-      const status = verified ? "verified" : info.expired || (info.isWhitelisted && !live) ? "expired" : "unverified";
+      const status = verified ? "verified" : info.expired ? "expired" : "unverified";
       await db.query(
         `INSERT INTO users(subject, root) VALUES ($1, $2)
          ON CONFLICT (subject) DO UPDATE SET last_seen = now(), root = COALESCE(EXCLUDED.root, users.root)`,

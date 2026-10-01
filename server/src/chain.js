@@ -29,6 +29,17 @@ export function createChain(config) {
   const { identity: identityAddr, engagement: engagementAddr, vault: vaultAddr } = config.contracts;
 
   return {
+    /**
+     * `isWhitelisted` / `root` come from getWhitelistedRoot(), which the contract answers only for an account that is
+     * inside its re-verification window: THE liveness signal, and the only one the server uses.
+     *
+     * `expiresAt` (ms) is informational: last authentication + authenticationPeriod() days. authenticationPeriod() is
+     * the LONGEST step of the contract's schedule (reverifyDaysOptions: 1, 7, 180 days by default), but an account
+     * is re-verified after reverifyDaysOptions[its authCount] days, which is shorter until it has climbed the
+     * schedule. So this is the latest the account could possibly lapse, not when it will. Reading the exact value
+     * takes a third sequential RPC call (identities(root).authCount, then reverifyDaysOptions(authCount)) and
+     * does not cover accounts still whitelisted through the old identity contract, so it is not read.
+     */
     async identity(address) {
       const read = (functionName, args) =>
         client.readContract({ address: identityAddr, abi: identityAbi, functionName, args });
