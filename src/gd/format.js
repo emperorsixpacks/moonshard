@@ -15,6 +15,16 @@ const MESSAGES = {
   tx_failed: 'The transaction failed. Nothing was paid out.',
   chain_unavailable: 'The Celo network is busy. Try again in a moment.',
   timeout: 'The server is slow right now. Try again.',
+  network_error: "Can't reach the server. Check your connection and try again.",
+  bad_response: 'The server sent something unexpected. Try again in a moment.',
+  rate_limited: 'Too many requests. Wait a moment and try again.',
+  tx_not_found: "The network hasn't seen that transaction yet. It will be retried automatically.",
+  bad_tx: 'That transaction could not be checked.',
+  no_claim_event: 'That transaction was not a daily G$ claim.',
+  tx_not_today: "That claim was not made today, so it can't earn today's blessing.",
+  not_your_tx: 'That transaction was sent from a different wallet.',
+  wallet_timeout: "The wallet didn't respond. Check it for a pending prompt, then try again.",
+  vault_mismatch: "The prize vault in the server's answer does not match this app's configuration. Do not redeem; tell the team.",
   slow_down: 'Easy. Try again in a few seconds.',
   engagement_not_configured: 'Bounty claims are not enabled on this server yet.',
 };
@@ -37,12 +47,18 @@ export function formatCountdown(ms) {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-/** Human message for an Error / server code / wallet code. Never exposes stacks or long raw text. */
+/**
+ * Human message for an Error / server code / wallet code. Machine codes, stack traces and SDK internals are never
+ * shown: unknown failures get a generic line (viem's `shortMessage` is a human summary, so it is allowed).
+ */
 export function explainError(err) {
+  // contract revert reasons from the server are sentences ("Claim cooldown not reached"); codes have no spaces
   const reason = typeof err === 'string' ? '' : err?.body?.reason || err?.reason || '';
-  if (reason && reason !== 'not_claimable') return String(reason).slice(0, 120);
+  if (reason && /\s/.test(String(reason))) return String(reason).slice(0, 120);
   const code = typeof err === 'string' ? err : err?.message || '';
   if (MESSAGES[code]) return MESSAGES[code];
-  if (err?.status === 0) return MESSAGES.timeout;
-  return code && code.length < 90 ? code : 'Something went wrong. Please try again.';
+  if (err?.status === 0) return MESSAGES.network_error;
+  const short = typeof err?.shortMessage === 'string' ? err.shortMessage.trim() : '';
+  if (short) return short.slice(0, 140);
+  return 'Something went wrong. Please try again.';
 }

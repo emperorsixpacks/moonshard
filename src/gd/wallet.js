@@ -2,8 +2,14 @@ import { createPublicClient, createWalletClient, custom, http, toHex } from 'vie
 import { celo } from 'viem/chains';
 import { GD } from './config.js';
 
-const isRejection = (err) =>
-  err?.code === 4001 || err?.code === 'ACTION_REJECTED' || /reject|denied|cancel/i.test(err?.message || '');
+/** A genuine "the user said no" (EIP-1193 4001, or the wallets' standard wording), looked for through the cause chain. */
+const isRejection = (err) => {
+  for (let e = err, depth = 0; e && depth < 6; e = e.cause, depth++) {
+    if (e.code === 4001 || e.code === 'ACTION_REJECTED') return true;
+    if (/\buser (rejected|denied|cancell?ed)\b/i.test(e.message || '')) return true;
+  }
+  return false;
+};
 
 /** Wallet rejections become Error('rejected'); everything else is passed through. */
 export function normalizeError(err) {

@@ -7,6 +7,7 @@ function store() {
     if (typeof localStorage !== 'undefined') return localStorage;
   } catch { /* blocked storage (private mode / webview) */ }
   return {
+    isMemory: true, // this shim IS the memory map: never clear the memory copy after writing through it
     getItem: (k) => memory.get(k) ?? null,
     setItem: (k, v) => memory.set(k, v),
     removeItem: (k) => memory.delete(k),
@@ -15,14 +16,22 @@ function store() {
 
 export function saveSession({ token, address, host }) {
   const session = { token, address: String(address).toLowerCase(), host, expiresAt: Date.now() + TTL_MS };
-  try { store().setItem(KEY, JSON.stringify(session)); } catch { memory.set(KEY, JSON.stringify(session)); }
+  const json = JSON.stringify(session);
+  try {
+    const target = store();
+    target.setItem(KEY, json);
+    if (!target.isMemory) memory.delete(KEY); // a real store took the write: it is the single source of truth again
+  } catch {
+    memory.set(KEY, json); // storage rejected the write; this copy must beat any older value still stored
+  }
   return session;
 }
 
 export function loadSession() {
   try {
-    // `memory` also holds the session when localStorage exists but rejected the write (quota / restricted storage).
-    const raw = store().getItem(KEY) ?? memory.get(KEY) ?? null;
+    // `memory` holds the newest session when localStorage exists but rejected the write (quota / restricted
+    // storage), so it is read first: whatever storage still holds is older.
+    const raw = memory.get(KEY) ?? store().getItem(KEY) ?? null;
     if (!raw) return null;
     const s = JSON.parse(raw);
     if (!s.token || !s.address || !Number.isFinite(s.expiresAt) || s.expiresAt <= Date.now()) {

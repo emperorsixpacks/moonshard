@@ -19,11 +19,18 @@ export async function apiFetch(path, {
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: ctrl.signal,
     });
-    const json = await res.json().catch(() => ({}));
+    const json = await res.json().catch(() => null);
     if (!res.ok) {
-      const err = new Error(String(json.error || 'api_error'));
+      const body = json ?? {};
+      const err = new Error(String(body.error || 'api_error'));
       err.status = res.status;
-      err.body = json;
+      err.body = body;
+      throw err;
+    }
+    if (json === null) {
+      // 2xx with a body that is not JSON: an SPA fallback page, a captive portal or a proxy error page
+      const err = new Error('bad_response');
+      err.status = res.status;
       throw err;
     }
     return json;

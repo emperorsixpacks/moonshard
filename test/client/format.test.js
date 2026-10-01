@@ -24,7 +24,9 @@ test('formatCountdown', () => {
 test('explainError maps known codes and never leaks a stack', () => {
   assert.match(explainError('no_wallet'), /No wallet found/);
   assert.match(explainError(Object.assign(new Error('rejected'), { status: 400 })), /cancelled/i);
-  assert.match(explainError({ message: 'x', status: 0 }), /slow/i);
+  // a real timeout is "slow"; any other network failure is "can't reach" (offline devices used to be told the server was slow)
+  assert.match(explainError({ message: 'timeout', status: 0 }), /slow/i);
+  assert.match(explainError({ message: 'x', status: 0 }), /reach|connection/i);
   assert.equal(explainError({ message: 'not_claimable', body: { reason: 'Claim cooldown not reached' } }), 'Claim cooldown not reached');
   assert.equal(explainError(new Error('x'.repeat(200))), 'Something went wrong. Please try again.');
 });
