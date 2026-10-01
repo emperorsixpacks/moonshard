@@ -12,6 +12,47 @@ contract TestG is ERC20 {
     }
 }
 
+/// Token that tries to re-enter `vault.claim` with a second valid voucher while the first transfer is in flight.
+contract ReentrantToken {
+    mapping(address => uint256) public balanceOf;
+    MoonshardVault private vault;
+    address private to;
+    uint256 private id;
+    uint256 private amount;
+    uint64 private deadline;
+    bytes private sig;
+    bool private armed;
+    bool public reenterAttempted;
+    bool public reenterSucceeded;
+
+    function mint(address account, uint256 value) external {
+        balanceOf[account] += value;
+    }
+
+    function arm(MoonshardVault v, address to_, uint256 id_, uint256 amount_, uint64 deadline_, bytes calldata sig_) external {
+        vault = v;
+        to = to_;
+        id = id_;
+        amount = amount_;
+        deadline = deadline_;
+        sig = sig_;
+        armed = true;
+    }
+
+    function transfer(address recipient, uint256 value) external returns (bool) {
+        balanceOf[msg.sender] -= value;
+        balanceOf[recipient] += value;
+        if (armed) {
+            armed = false;
+            reenterAttempted = true;
+            try vault.claim(to, id, amount, deadline, sig) {
+                reenterSucceeded = true;
+            } catch {}
+        }
+        return true;
+    }
+}
+
 contract MoonshardVaultTest is Test {
     MoonshardVault vault;
     TestG token;
@@ -38,10 +79,18 @@ contract MoonshardVaultTest is Test {
         view
         returns (bytes memory)
     {
-        bytes32 structHash = keccak256(abi.encode(vault.SPOIL_TYPEHASH(), to, id, amount, deadline));
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", vault.DOMAIN_SEPARATOR(), structHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
-        return abi.encodePacked(r, s, v);
+        return _signWith(vault, pk, to, id, amount, deadline);
+    }
+
+    function _signWith(MoonshardVault v, uint256 pk, address to, uint256 id, uint256 amount, uint64 deadline)
+        internal
+        view
+        returns (bytes memory)
+    {
+        bytes32 structHash = keccak256(abi.encode(v.SPOIL_TYPEHASH(), to, id, amount, deadline));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", v.DOMAIN_SEPARATOR(), structHash));
+        (uint8 vv, bytes32 r, bytes32 ss) = vm.sign(pk, digest);
+        return abi.encodePacked(r, ss, vv);
     }
 
     function _deadline() internal view returns (uint64) {
@@ -190,5 +239,53 @@ contract MoonshardVaultTest is Test {
         bytes memory sig = _sign(signerPk, alice, 99, amount, dl);
         vm.expectRevert(MoonshardVault.OverVoucherCap.selector);
         vault.claim(alice, 99, amount, dl, sig);
+    }
+
+    // ---- gaps found by mutation testing (non-owner setCaps/pause, zero recipient, reentrancy) ----
+
+    function test_only_owner_sets_caps() public {
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", alice));
+        vault.setCaps(1 ether, 2 ether);
+        assertEq(vault.maxPerVoucher(), MAX_VOUCHER);
+    }
+
+    function test_only_owner_pauses_and_unpauses() public {
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", alice));
+        vault.pause();
+
+        vm.prank(owner);
+        vault.pause();
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", alice));
+        vault.unpause();
+        assertTrue(vault.paused());
+    }
+
+    function test_claim_to_zero_address_reverts() public {
+        uint64 dl = _deadline();
+        bytes memory sig = _signWith(vault, signerPk, address(0), 40, 100 ether, dl);
+        vm.expectRevert(MoonshardVault.ZeroAddress.selector);
+        vault.claim(address(0), 40, 100 ether, dl, sig);
+    }
+
+    function test_reentrant_token_cannot_claim_a_second_voucher_mid_transfer() public {
+        ReentrantToken rt = new ReentrantToken();
+        MoonshardVault v2 = new MoonshardVault(IERC20(address(rt)), signer, owner, MAX_VOUCHER, DAILY_CAP);
+        rt.mint(address(v2), 10_000 ether);
+        uint64 dl = _deadline();
+        bytes memory sig1 = _signWith(v2, signerPk, alice, 50, 100 ether, dl);
+        bytes memory sig2 = _signWith(v2, signerPk, alice, 51, 100 ether, dl);
+        rt.arm(v2, alice, 51, 100 ether, dl, sig2);
+
+        v2.claim(alice, 50, 100 ether, dl, sig1);
+
+        assertTrue(rt.reenterAttempted(), "token should have attempted re-entry");
+        assertFalse(rt.reenterSucceeded(), "re-entrant claim must not succeed");
+        assertTrue(v2.claimed(50));
+        assertFalse(v2.claimed(51));
+        assertEq(rt.balanceOf(alice), 100 ether);
     }
 }
