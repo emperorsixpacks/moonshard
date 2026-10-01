@@ -16,6 +16,8 @@ import { pauseService } from './engine/PauseService.js';
 import { sound } from './engine/Audio.js';
 import { GdPanel } from './ui/GdPanel.js';
 import { setupImmersiveLayout } from './engine/ImmersiveLayout.js';
+import { installHiRes } from './engine/HiRes.js';
+import { loadGameFonts } from './engine/fonts.js';
 
 // Phaser 3 Game Configuration
 const phaserConfig = {
@@ -60,6 +62,10 @@ function startGame() {
   window.game = game;
   window.__GAME__ = game;
 
+  // Render at the screen's real resolution (before any scene creates its text).
+  if (game.isBooted) installHiRes(game);
+  else game.events.once(Phaser.Core.Events.BOOT, () => installHiRes(game));
+
   // Initialize ViewportManager for dynamic portrait/landscape aspect ratio
   window.viewportManager = new ViewportManager(game);
 
@@ -99,4 +105,5 @@ setupImmersiveLayout();
 window.__gdPanel = new GdPanel();
 window.__gdPanel.mount();
 
-startGame();
+// Canvas text is drawn once, when it is created: the typefaces must be ready before any scene builds its text.
+loadGameFonts().finally(startGame);
