@@ -11,3 +11,4 @@ contracts/broadcast
 playwright-report
 test-results
 .DS_Store
+.claude/
