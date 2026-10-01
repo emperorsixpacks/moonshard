@@ -18,6 +18,7 @@ import { resolveTextStyle } from './typography.js';
 
 let renderScale = 1;
 let patched = false;
+let textPatched = false;
 
 /** The current multiplier (1 until `installHiRes` has measured the screen). */
 export const getRenderScale = () => renderScale;
@@ -27,6 +28,23 @@ const drawsToCanvas = (glWrapper) => {
   return !framebuffer || framebuffer.webGLFramebuffer === null;
 };
 
+/**
+ * New text gets a font the canvas will accept (see typography.js) and is rasterised at the current multiplier, unless
+ * the caller asked for something specific. Needed on every renderer, WebGL or not.
+ */
+function patchText() {
+  if (textPatched) return;
+  textPatched = true;
+  const sharp = (style) => ({ resolution: renderScale, ...resolveTextStyle(style) });
+  for (const Host of [Phaser.GameObjects.GameObjectFactory, Phaser.GameObjects.GameObjectCreator]) {
+    const make = Host.prototype.text;
+    Host.prototype.text = function sharpText(x, y, text, style) {
+      return make.call(this, x, y, text, sharp(style));
+    };
+  }
+}
+
+/** WebGL only: draw the canvas into a larger buffer by scaling the final viewport and scissor. */
 function patchRenderer() {
   if (patched) return;
   patched = true;
@@ -44,16 +62,6 @@ function patchRenderer() {
     if (renderScale === 1 || !drawsToCanvas(this)) return updateViewport.call(this, state, force);
     return updateViewport.call(this, { viewport: times(state.viewport) }, force);
   };
-
-  // New text gets a font the canvas will accept (see typography.js) and is rasterised at the current multiplier,
-  // unless the caller asked for something specific.
-  const sharp = (style) => ({ resolution: renderScale, ...resolveTextStyle(style) });
-  for (const Host of [Phaser.GameObjects.GameObjectFactory, Phaser.GameObjects.GameObjectCreator]) {
-    const make = Host.prototype.text;
-    Host.prototype.text = function sharpText(x, y, text, style) {
-      return make.call(this, x, y, text, sharp(style));
-    };
-  }
 }
 
 /** Re-rasterise text that already exists (the window moved to a denser screen, or was resized). */
@@ -94,9 +102,10 @@ function applyScale(game) {
 
 /**
  * Call once the game has booted. Keeps the buffer matched to the window, the orientation and the display density.
- * Does nothing on the Canvas renderer (no WebGL): the game then renders 1:1 as before.
+ * On the Canvas renderer (no WebGL) only the text fix applies: the game then renders 1:1.
  */
 export function installHiRes(game) {
+  patchText(); // the font fix applies on every renderer
   if (game.renderer?.type !== Phaser.WEBGL) return;
   patchRenderer();
   const update = () => applyScale(game);
