@@ -1,3 +1,4 @@
+import { X509Certificate } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +55,25 @@ function hostOf(head, params, env) {
   return host || env.PGHOST || "";
 }
 
+/**
+ * Node's TLS layer silently ignores a CA it cannot read, which would leave a connection failing with a vague
+ * "unable to verify the first certificate" at the first query. Say what is wrong when the server starts instead.
+ * The usual mistake is an env var whose line breaks were lost (pasted on one line, or written as \n).
+ */
+function assertCaPem(ca) {
+  const blocks = ca.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  if (blocks.length === 0) {
+    throw new Error("DATABASE_CA must be the CA certificate as PEM text (-----BEGIN CERTIFICATE----- ... -----END CERTIFICATE-----).");
+  }
+  for (const block of blocks) {
+    try {
+      new X509Certificate(block);
+    } catch {
+      throw new Error("DATABASE_CA holds a certificate that cannot be read. As PEM text it needs real line breaks: a value pasted on one line, or with \\n written out, is not valid.");
+    }
+  }
+}
+
 function isLocalHost(host) {
   const h = String(host).toLowerCase();
   return h === "" || h === "localhost" || h.endsWith(".localhost") || h === "::1" || /^127\.\d+\.\d+\.\d+$/.test(h) || h.startsWith("/");
@@ -83,9 +103,7 @@ export function pgPoolConfig(databaseUrl, { env = process.env, warn = (m) => con
   const connectionString = touched ? (search ? `${head}?${search}` : head) : text;
 
   const ca = typeof env.DATABASE_CA === "string" && env.DATABASE_CA.trim() ? env.DATABASE_CA : null;
-  if (ca && !/-----BEGIN CERTIFICATE-----/.test(ca)) {
-    throw new Error("DATABASE_CA must be the CA certificate as PEM text (-----BEGIN CERTIFICATE----- ... with real line breaks).");
-  }
+  if (ca) assertCaPem(ca);
 
   // What the operator asked for: the URL first, then the PGSSLMODE variable (as libpq reads them).
   const mode = (urlMode || env.PGSSLMODE || "").toLowerCase();

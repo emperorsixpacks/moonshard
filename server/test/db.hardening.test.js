@@ -17,7 +17,20 @@ const SERVER_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
 // its connectionParameters are what the pool's connections are built from.
 // ---------------------------------------------------------------------------------------------
 
-const CA = "-----BEGIN CERTIFICATE-----\nMIIBtestonlyNotARealCertificateButPEMShaped\n-----END CERTIFICATE-----\n";
+// A real self-signed CA certificate (public part only, valid to 2126), minted for these tests. Its key is not kept.
+const CA = `-----BEGIN CERTIFICATE-----
+MIIBzTCCAXOgAwIBAgIUV2tD1J+AaEb2MPbHR98Vx8ANK/YwCgYIKoZIzj0EAwIw
+OzE5MDcGA1UEAwwwTW9vbnNoYXJkIHVuaXQgdGVzdCBDQSAocHVibGljIGNlcnRp
+ZmljYXRlIG9ubHkpMCAXDTI2MTAwMTIyNTc1NVoYDzIxMjYwOTA3MjI1NzU1WjA7
+MTkwNwYDVQQDDDBNb29uc2hhcmQgdW5pdCB0ZXN0IENBIChwdWJsaWMgY2VydGlm
+aWNhdGUgb25seSkwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAScpi6vbUDpWUqI
+rGqkIe4Vbc9J2YOVXzvOMyQ7JWYeVEWaa1yF3wpzIgRFlXsVPzmPUMQ8+dHDZWTW
+NM5jewMjo1MwUTAdBgNVHQ4EFgQUv+I15jn2806T+NAYHFK4FtC58xMwHwYDVR0j
+BBgwFoAUv+I15jn2806T+NAYHFK4FtC58xMwDwYDVR0TAQH/BAUwAwEB/zAKBggq
+hkjOPQQDAgNIADBFAiAtXY9sTrjCsHPJvtyrJqtJMcBQAu4DfxFlbYbRJvLIoQIh
+AIa+y2+2yKrBzzl3Q/mW/oUyEn/rubAU/29uVgweEQaz
+-----END CERTIFICATE-----
+`;
 const PASSWORD = "hunter2-Zq9";
 const REMOTE = `postgres://app:${PASSWORD}@db.example.com:5432/moonshard`;
 
@@ -129,7 +142,7 @@ test("TLS: the rest of the connection string reaches pg untouched", () => {
   assert.ok(!/sslmode/.test(config.connectionString), "no TLS parameter is left for pg to merge over ssl");
 });
 
-test("TLS: a malformed URL or CA fails with a message that does not echo the secret", () => {
+test("TLS: a malformed DATABASE_URL fails with a message that does not echo the password", () => {
   for (const url of ["not a url", "postgres://u:hunter2-Zq9@[bad/d"]) {
     try {
       pgPoolConfig(url, { env: {}, warn() {} });
@@ -139,7 +152,21 @@ test("TLS: a malformed URL or CA fails with a message that does not echo the sec
       assert.match(err.message, /DATABASE_URL/);
     }
   }
-  assert.throws(() => pgPoolConfig(`${REMOTE}?sslmode=require`, { env: { DATABASE_CA: "not a certificate" }, warn() {} }), /DATABASE_CA.*PEM/s);
+});
+
+test("TLS: DATABASE_CA is checked when the server starts, not at the first query", () => {
+  const url = `${REMOTE}?sslmode=require`;
+  const config = (DATABASE_CA) => pgPoolConfig(url, { env: { DATABASE_CA }, warn() {} });
+  // readable as is: CRLF line endings, a bundle of several certificates, text around the certificate
+  for (const ok of [CA, CA.replace(/\n/g, "\r\n"), CA + CA, `issuer notes\n${CA}`]) assert.equal(config(ok).ssl.ca, ok);
+  assert.equal(config("").ssl.ca, undefined, "an empty DATABASE_CA is no CA");
+  assert.equal(config("  \n ").ssl.ca, undefined);
+  // no certificate in it
+  assert.throws(() => config("not a certificate"), /DATABASE_CA.*PEM/s);
+  // the usual mistake: the line breaks were lost on the way into the environment
+  assert.throws(() => config(CA.replace(/\n/g, "\\n")), /DATABASE_CA.*line breaks/s);
+  assert.throws(() => config(CA.replace(/\n/g, " ")), /DATABASE_CA.*line breaks/s);
+  assert.throws(() => config("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"), /DATABASE_CA.*cannot be read/s);
 });
 
 // The real thing: a Postgres stand-in that answers SSLRequest with a certificate signed by a private CA. Needs the
