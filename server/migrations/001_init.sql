@@ -40,7 +40,10 @@ CREATE TABLE runs (
   ranked_ok boolean NOT NULL DEFAULT false,
   flags text NOT NULL DEFAULT ''
 );
-CREATE INDEX runs_open ON runs(subject, mode) WHERE status = 'open';
+-- At most one open run per (subject, mode). Starting a run voids the previous open one and then inserts;
+-- under concurrency two starts can both void nothing and both insert, and this index turns that into a
+-- unique violation (23505) that /runs/start retries.
+CREATE UNIQUE INDEX runs_open ON runs(subject, mode) WHERE status = 'open';
 
 CREATE TABLE run_checkpoints (
   run_id text NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,

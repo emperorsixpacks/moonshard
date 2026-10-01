@@ -5,6 +5,8 @@ import { HttpError, ah } from "./http.js";
 import { dayKey } from "./time.js";
 import { rankOf } from "./leaderboard.js";
 
+const UNIQUE_VIOLATION = "23505"; // Postgres SQLSTATE, same code from pg and PGlite
+
 const ticketKey = (ctx) => crypto.createHash("sha256").update(`moonshard-ticket|${ctx.config.jwtSecret}`).digest();
 
 function ticketFor(ctx, run) {
@@ -57,7 +59,11 @@ export function runRoutes(ctx) {
     const seed = mode === "TRIAL" ? day : `story-${ch}`;
     const runId = crypto.randomUUID();
     const p = req.player;
-    await ctx.db.tx(async (t) => {
+    const voidThenInsert = () => ctx.db.tx(async (t) => {
+      // Queue racing starts of this (subject, mode) behind one another until this transaction ends, so that
+      // the UPDATE below always sees the previous start's committed run. Without it three or more racing
+      // starts keep colliding on the unique index and the losers of the single retry get a 500.
+      await t.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`runs.start|${p.subject}|${mode}`]);
       await t.query("UPDATE runs SET status = 'void' WHERE subject = $1 AND mode = $2 AND status = 'open'", [p.subject, mode]);
       await t.query(
         `INSERT INTO runs(run_id, subject, wallet, verified, mode, chapter, seed, day, started_at)
@@ -65,6 +71,15 @@ export function runRoutes(ctx) {
         [runId, p.subject, p.wallet, p.verified, mode, ch, seed, day, new Date(now)],
       );
     });
+    try {
+      await voidThenInsert();
+    } catch (err) {
+      // Backstop for a writer that does not take the lock: its open run landed between our void and our
+      // insert, so the unique index on open runs (subject, mode) refused ours. The transaction rolled
+      // back; run it again, and this time the void sees the winner's committed run and takes over its slot.
+      if (err?.code !== UNIQUE_VIOLATION) throw err;
+      await voidThenInsert();
+    }
     const ticket = ticketFor(ctx, { run_id: runId, subject: p.subject, mode, seed, started_at: new Date(now) });
     res.json({ runId, seed, mode, chapter: ch, startedAt: new Date(now).toISOString(), ticket });
   }));

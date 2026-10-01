@@ -472,3 +472,132 @@ test("H5: one tx redeeming two of the caller's spoils records both; a relayed tx
     assert.equal(await count(), 3);
   } finally { await h.close(); }
 });
+
+// ---------------------------------------------------------------------------------------------
+// H6. One open run per (subject, mode), even when starts race.
+//     Break caught: start = "void the open run, then insert", two statements. Two concurrent starts
+//     both void nothing, both insert, and the player holds two open tickets (on real Postgres five
+//     concurrent starts left three to five open runs).
+//     PGlite runs transactions strictly one at a time, so the race is reproduced by hand below.
+// ---------------------------------------------------------------------------------------------
+
+const VOID_STATEMENT = /^UPDATE runs SET status = 'void'/;
+
+const openRunsOf = async (h, subject, mode = "TRIAL") =>
+  (await h.db.query("SELECT run_id FROM runs WHERE subject = $1 AND mode = $2 AND status = 'open'", [subject, mode])).rows.map((r) => r.run_id);
+
+test("H6: the database allows only one open run per subject and mode", async () => {
+  const h = await makeHarness();
+  try {
+    const insert = (id, subject, mode, status) =>
+      h.db.query(
+        `INSERT INTO runs(run_id, subject, wallet, verified, mode, chapter, seed, day, started_at, status)
+         VALUES ($1,$2,$2,true,$3,NULL,'seed','2026-10-05',now(),$4)`,
+        [id, subject, mode, status],
+      );
+    await insert("r1", "0xaa", "TRIAL", "open");
+    await assert.rejects(insert("r2", "0xaa", "TRIAL", "open"), (err) => err.code === "23505");
+    // the rule is narrow: another mode, another subject, and closed runs are all unaffected
+    await insert("r3", "0xaa", "STORY", "open");
+    await insert("r4", "0xbb", "TRIAL", "open");
+    await insert("r5", "0xaa", "TRIAL", "void");
+    await insert("r6", "0xaa", "TRIAL", "submitted");
+  } finally { await h.close(); }
+});
+
+test("H6: a start that loses the race for the open slot retries once and takes over", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer();
+    // A competing start has committed its open run, but our void-UPDATE ran before it was visible.
+    await h.db.query(
+      `INSERT INTO runs(run_id, subject, wallet, verified, mode, chapter, seed, day, started_at)
+       VALUES ('rival', $1, $1, false, 'TRIAL', NULL, '2026-10-05', '2026-10-05', now())`,
+      [p.address],
+    );
+    const real = h.db.tx.bind(h.db);
+    let attempts = 0;
+    h.db.tx = (fn) => {
+      const first = ++attempts === 1;
+      return real((t) => fn({
+        query: (sql, params) => (first && VOID_STATEMENT.test(sql) ? Promise.resolve({ rows: [] }) : t.query(sql, params)),
+      }));
+    };
+    const res = await h.api.post("/runs/start", { mode: "TRIAL" }, { token: p.token });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(attempts, 2, "the first attempt hits the unique index and the whole transaction is retried once");
+    assert.deepEqual(await openRunsOf(h, p.address), [res.body.runId]);
+    const rival = await h.db.query("SELECT status FROM runs WHERE run_id = 'rival'");
+    assert.equal(rival.rows[0].status, "void");
+  } finally { await h.close(); }
+});
+
+test("H6: two starts racing at READ COMMITTED both succeed and leave exactly one open run", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer();
+    // Interleave the statements of the two starts as concurrent Postgres transactions can: both void-UPDATEs
+    // run (and match nothing) before either INSERT. Only each start's first attempt takes part in the race.
+    const query = h.db.query.bind(h.db);
+    let attempts = 0;
+    let voided = 0;
+    let release;
+    const bothVoided = new Promise((resolve) => { release = resolve; });
+    h.db.tx = async (fn) => {
+      const raced = ++attempts <= 2;
+      return fn({
+        query: async (sql, params) => {
+          const out = await query(sql, params);
+          if (raced && VOID_STATEMENT.test(sql)) {
+            if (++voided === 2) release();
+            await bothVoided;
+          }
+          return out;
+        },
+      });
+    };
+    const body = { mode: "TRIAL" };
+    const [a, b] = await Promise.all([
+      h.api.post("/runs/start", body, { token: p.token }),
+      h.api.post("/runs/start", body, { token: p.token }),
+    ]);
+    assert.deepEqual([a.status, b.status], [200, 200], JSON.stringify([a.body, b.body]));
+    assert.equal(attempts, 3, "exactly one start lost the race and retried");
+    const open = await openRunsOf(h, p.address);
+    assert.equal(open.length, 1);
+    assert.ok([a.body.runId, b.body.runId].includes(open[0]));
+  } finally { await h.close(); }
+});
+
+// The unique index plus one retry settles a two-way race, but with three or more racing starts a retrying
+// loser can collide with another retrying loser again (measured on real Postgres: 5 concurrent starts for one
+// player answered 500 to 45 of 100 requests, though the invariant still held). So each start also takes a
+// transaction-scoped advisory lock on its (subject, mode) slot before it voids, which queues racing starts
+// instead of colliding them. PGlite cannot show lock effects, so this pins the mechanism: a lock taken first,
+// keyed on the slot and on nothing broader.
+test("H6: a start locks its (subject, mode) slot before it voids the open run", async () => {
+  const h = await makeHarness();
+  try {
+    const a = await h.newPlayer();
+    const b = await h.newPlayer();
+    const real = h.db.tx.bind(h.db);
+    let seen = [];
+    h.db.tx = (fn) => real((t) => fn({ query: (sql, params) => { seen.push({ sql, params }); return t.query(sql, params); } }));
+
+    const lockKeyOf = async (p, mode, chapter) => {
+      seen = [];
+      const res = await h.api.post("/runs/start", { mode, chapter }, { token: p.token });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      const lockAt = seen.findIndex((s) => /pg_advisory_xact_lock/.test(s.sql));
+      const voidAt = seen.findIndex((s) => VOID_STATEMENT.test(s.sql));
+      assert.ok(lockAt >= 0, "no advisory lock was taken");
+      assert.ok(lockAt < voidAt, "the lock must come before the void-UPDATE");
+      return seen[lockAt].params[0];
+    };
+
+    const trialA = await lockKeyOf(a, "TRIAL");
+    assert.equal(await lockKeyOf(a, "TRIAL"), trialA, "the same slot always maps to the same lock");
+    assert.notEqual(await lockKeyOf(a, "STORY", 1), trialA, "another mode is another slot");
+    assert.notEqual(await lockKeyOf(b, "TRIAL"), trialA, "another player is another slot");
+  } finally { await h.close(); }
+});
