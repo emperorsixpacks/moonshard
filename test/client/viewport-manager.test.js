@@ -64,25 +64,36 @@ test('rotating the phone re-shapes the game the same way, both ways', async () =
   });
 });
 
-test('turning the phone rebuilds the menu-type screens for the new shape, and never restarts a level in progress', async () => {
+test('turning the phone tells every screen that is showing the new size, and restarts none of them itself', async () => {
+  // Each screen knows how to re-lay itself out (a menu closes its dialog and restarts, the forge keeps its tab, a level
+  // adapts in place), so the manager only passes the new size on. Restarting the menu-type screens from here threw away
+  // what their own handlers keep: an open dialog came back dead, the forge went back to its first tab.
   await withScreen({ portrait: false }, async ({ ViewportManager, listeners, setPortrait }) => {
     const restarted = [];
-    const resized = [];
-    const scene = (key, extra = {}) => ({ scene: { key, restart: () => restarted.push(key) }, ...extra });
+    const told = [];
+    const scene = (key) => ({
+      scene: { key, restart: () => restarted.push(key) },
+      onViewportResize: (w, h) => told.push([key, w, h]),
+    });
     const game = fakeGame({ width: 480, height: 270 });
-    game.scene.getScenes = () => [
-      scene('MenuScene', { onViewportResize: () => resized.push('menu handler') }), // returns early in the real game
-      scene('SurvivalScene', { onViewportResize: (w, h) => resized.push(['level', w, h]) }),
-      scene('ForgeScene'),
-      scene('LeaderboardScene'),
-      scene('StoryScene'),
-      scene('TutorialScene'),
-      scene('CustomScene', { onViewportResize: (w, h) => resized.push([w, h]) }),
-    ];
+    game.scene.getScenes = () => ['MenuScene', 'ForgeScene', 'LeaderboardScene', 'StoryIntroScene', 'SurvivalScene', 'StoryScene'].map(scene);
     new ViewportManager(game);
     setPortrait(true);
     listeners.resize();
-    assert.deepEqual(restarted, ['MenuScene', 'ForgeScene', 'LeaderboardScene']);
-    assert.deepEqual(resized, [['level', 480, 440], [480, 440]], 'a level adapts in place; a custom scene is told; neither is restarted');
+    assert.deepEqual(restarted, [], 'the manager never restarts a screen on its own');
+    assert.deepEqual(
+      told,
+      ['MenuScene', 'ForgeScene', 'LeaderboardScene', 'StoryIntroScene', 'SurvivalScene', 'StoryScene'].map((key) => [key, 480, 440]),
+    );
+  });
+});
+
+test('a screen without a resize handler is simply left alone', async () => {
+  await withScreen({ portrait: false }, async ({ ViewportManager, listeners, setPortrait }) => {
+    const game = fakeGame({ width: 480, height: 270 });
+    game.scene.getScenes = () => [{ scene: { key: 'BootScene', restart() { throw new Error('must not restart'); } } }];
+    new ViewportManager(game);
+    setPortrait(true);
+    assert.doesNotThrow(() => listeners.resize());
   });
 });

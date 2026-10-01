@@ -1,12 +1,6 @@
 import { GAME_CONFIG } from '../config.js';
 
 /**
- * Screens that are safe to rebuild when the phone is turned: they hold nothing the player would lose. A level in
- * progress is never restarted by a rotation.
- */
-const REBUILD_ON_RESHAPE = new Set(['MenuScene', 'ForgeScene', 'LeaderboardScene', 'StoryIntroScene', 'StoryEndingScene']);
-
-/**
  * Reliable portrait mode detector across standard desktop browsers,
  * mobile Chrome/Safari, and embedded WebViews (e.g. wallet mini-app).
  */
@@ -138,17 +132,16 @@ export class ViewportManager {
     }
   }
 
+  /**
+   * Tells every screen that is showing the new size. Each one re-lays itself out in its own way (a level adapts in
+   * place, the menu closes its dialog and restarts, the forge restarts on the same tab), so the manager never
+   * restarts one for them. A handler must compare with the size it LAID OUT for, not with its camera: by the time it
+   * is called Phaser has already resized the camera.
+   */
   notifyScenes(w, h) {
     if (!this.game || !this.game.scene) return;
     this.game.scene.getScenes(true).forEach(scene => {
-      if (!scene) return;
-      if (REBUILD_ON_RESHAPE.has(scene.scene?.key)) {
-        // These screens lay themselves out once, for the shape the game had when they started. (Their own handlers
-        // return early: by the time they run Phaser has already resized the camera, so they think nothing changed.)
-        scene.scene.restart();
-      } else if (typeof scene.onViewportResize === 'function') {
-        scene.onViewportResize(w, h);
-      }
+      if (typeof scene?.onViewportResize === 'function') scene.onViewportResize(w, h);
     });
   }
 
