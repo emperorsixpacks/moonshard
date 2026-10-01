@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
+import { legibleSize } from '../engine/uiScale.js';
 
 export default class Crate extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y) {
@@ -77,7 +78,7 @@ export default class Crate extends Phaser.Physics.Arcade.Sprite {
     // Floating text label
     const dropText = this.scene.add.text(this.x, this.y - 12, label, {
       fontFamily: 'Press Start 2P',
-      fontSize: '7px',
+      fontSize: `${legibleSize(this.scene, 7, 9)}px`,
       color: color,
       stroke: '#000',
       strokeThickness: 2

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
 import { juice } from '../engine/JuiceEffects.js';
+import { legibleSize } from '../engine/uiScale.js';
 import EnemyHealthBar from '../ui/EnemyHealthBar.js';
 
 export default class Bee extends Phaser.Physics.Arcade.Sprite {
@@ -160,7 +161,7 @@ export default class Bee extends Phaser.Physics.Arcade.Sprite {
     // Visual telegraph arrow / warning
     const warn = this.scene.add.text(this.x, this.y - 14, 'SWOOP!', {
       fontFamily: 'Press Start 2P',
-      fontSize: '7px',
+      fontSize: `${legibleSize(this.scene, 7, 9)}px`, // 7 units is ~6 px on a phone held upright
       color: '#ffcc00'
     }).setOrigin(0.5);
 

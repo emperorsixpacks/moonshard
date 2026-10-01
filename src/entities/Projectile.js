@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { sound } from '../engine/Audio.js';
+import { legibleSize } from '../engine/uiScale.js';
 
 export default class Projectile extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y, type, vx, vy, isDeflectable = false) {
@@ -117,7 +118,7 @@ export default class Projectile extends Phaser.Physics.Arcade.Sprite {
 
     const text = this.scene.add.text(this.x, this.y - 14, 'DEFLECT! ⚡', {
       fontFamily: 'Press Start 2P',
-      fontSize: '7px',
+      fontSize: `${legibleSize(this.scene, 7, 9)}px`,
       color: '#ffd700',
       stroke: '#000',
       strokeThickness: 2

@@ -3,6 +3,7 @@ import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
 import { juice } from '../engine/JuiceEffects.js';
+import { legibleSize } from '../engine/uiScale.js';
 import EnemyHealthBar from '../ui/EnemyHealthBar.js';
 
 export default class BossWizard extends Phaser.Physics.Arcade.Sprite {
@@ -184,7 +185,7 @@ export default class BossWizard extends Phaser.Physics.Arcade.Sprite {
 
     const text = this.scene.add.text(this.x, this.y - 40, 'MALAKOR UNLEASHES ARCANE SURGE!', {
       fontFamily: 'Press Start 2P',
-      fontSize: '7px',
+      fontSize: `${legibleSize(this.scene, 7, 7.5, { maxBoost: 1.3 })}px`, // a long line: grow a little, never off the screen
       color: '#c066ff',
       stroke: '#000',
       strokeThickness: 3
