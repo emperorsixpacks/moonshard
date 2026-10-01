@@ -80,6 +80,12 @@ test('shardsLine: a failed or flagged submit says the Shards were not banked, an
   assert.match(short.text, /not banked/i);
 });
 
+test('shardsLine: brief leaves out the reason, for a screen that already gives it', () => {
+  assert.equal(line({ result: offline, brief: true }).text, '3 Shards not banked');
+  assert.match(line({ result: offline }).text, /offline/i);
+  assert.match(line({ result: ok, brief: true }).text, /\+6 G\$ pending/, 'brief changes nothing for an accepted run');
+});
+
 test('shardsLine: a run the server already holds does not claim pending G$', () => {
   const l = line({ result: { ticketed: true, alreadySubmitted: true, coverage: 1 } });
   assert.doesNotMatch(l.text, /G\$ pending/i);
@@ -102,7 +108,7 @@ const boss = (over) => bossLine({ ...ME, result: ok, alreadyClaimed: false, rewa
 
 test('bossLine: anonymous players get no number and no promise about this run', () => {
   const l = boss({ ...ANON, result: unticketed });
-  assert.equal(l.text, 'Connect a wallet and verify to earn boss bounties in future runs');
+  assert.equal(l.text, 'Connect & verify to earn boss bounties in future runs');
   assert.doesNotMatch(l.text, /\d/);
 });
 

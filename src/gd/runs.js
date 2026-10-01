@@ -354,8 +354,11 @@ export function shardVerdict(result, { connected, verified }) {
   return 'credited';
 }
 
-/** The Shard Harvest line for an end screen: { icon, text, tone }. The daily-cap notice is left to the scene. */
-export function shardsLine({ shards, rateG, connected, verified, result }) {
+/**
+ * The Shard Harvest line for an end screen: { icon, text, tone }. The daily-cap notice is left to the scene.
+ * `brief` leaves out the reason Shards were not banked, for a screen that already gives it in the line above.
+ */
+export function shardsLine({ shards, rateG, connected, verified, result, brief = false }) {
   const n = toCount(shards);
   if (!connected) {
     return { icon: '⚡', tone: 'muted', text: n > 0 ? 'Connect a wallet and verify to bank Shards as G$' : 'Connect & verify to bank Shards as G$' };
@@ -373,30 +376,30 @@ export function shardsLine({ shards, rateG, connected, verified, result }) {
       return { icon: '💎', tone: 'muted', text: `Shard Harvest: ${count} • run recorded, check your G$ wallet` };
     default: {
       let why;
-      if (notRecorded(result)) why = `not recorded (${notRecordedWhy(result).toLowerCase()})`;
+      if (notRecorded(result)) why = `run not recorded (${notRecordedWhy(result).toLowerCase()})`;
       else if (flagsOf(result).length > 0 || result.rankedOk === false) why = 'run flagged';
       else why = 'too little of the run reached the server';
-      return { icon: '💎', tone: 'warn', text: `${count} not banked • ${why}` };
+      return { icon: '💎', tone: 'warn', text: brief ? `${count} not banked` : `${count} not banked • ${why}` };
     }
   }
 }
 
-/** The boss bounty line of the Story victory banner: { text, tone }. Prints an amount only if the server gave one. */
+/** The boss bounty line of the Story victory banner: { icon, text, tone }. Prints an amount only if the server gave one. */
 export function bossLine({ connected, verified, result, alreadyClaimed, rewardG }) {
-  if (!connected) return { tone: 'muted', text: 'Connect a wallet and verify to earn boss bounties in future runs' };
-  if (verified && alreadyClaimed) return { tone: 'muted', text: 'First-boss bounty already claimed' };
-  if (!result) return { tone: 'muted', text: 'Saving your run...' };
+  if (!connected) return { icon: '⚡', tone: 'muted', text: 'Connect & verify to earn boss bounties in future runs' };
+  if (verified && alreadyClaimed) return { icon: '✔', tone: 'muted', text: 'First-boss bounty already claimed' };
+  if (!result) return { icon: '⏳', tone: 'muted', text: 'Saving your run...' };
   if (notRecorded(result)) {
-    return { tone: 'warn', text: `Bounty not recorded (${notRecordedWhy(result).toLowerCase()}). Defeat the boss again to earn it` };
+    return { icon: '⚠', tone: 'warn', text: `Bounty not recorded (${notRecordedWhy(result).toLowerCase()})` };
   }
-  if (result.alreadySubmitted) return { tone: 'muted', text: 'Run recorded. Check the G$ wallet for your bounty' };
+  if (result.alreadySubmitted) return { icon: '✔', tone: 'muted', text: 'Run recorded. Check the G$ wallet for your bounty' };
   if (result.bossCleared !== true) {
-    return { tone: 'bad', text: 'Bounty not recorded: the server flagged this run. Defeat the boss again to earn it' };
+    return { icon: '⚠', tone: 'bad', text: 'Bounty not recorded: the run was flagged' };
   }
-  if (!verified) return { tone: 'warn', text: 'Verify you are human to claim the boss bounty' };
+  if (!verified) return { icon: '🛡', tone: 'warn', text: 'Verify you are human to claim the boss bounty' };
   const amount = Number(rewardG);
   const worth = rewardG !== null && rewardG !== '' && Number.isFinite(amount) && amount > 0 ? `${formatG(amount)} G$` : 'your bounty';
-  return { tone: 'good', text: `Boss slain! Claim ${worth} in the G$ wallet (header)` };
+  return { icon: '🌟', tone: 'good', text: `Boss slain! Claim ${worth} in the G$ wallet (header)` };
 }
 
 /** The result line of the Survival game-over modal. `slow`: the answer has been awaited for a long time. */
