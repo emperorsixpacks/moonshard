@@ -781,3 +781,42 @@ test("H8: duplicates in a batch are skipped, and a bad point after them is still
     assert.deepEqual((await storedCheckpoints(h, run.runId)).map((c) => c.t_ms), [10_000, 20_000]);
   } finally { await h.close(); }
 });
+
+// A retry that arrives while the original post is still being processed (a slow server is why the client
+// timed out) would read the same stored points, accept the same batch, and collide with it on the
+// (run_id, seq) key: measured on real Postgres, two concurrent posts of one batch answered 500 to a quarter
+// of the requests. So reading, validating and writing a batch happen in one transaction behind a per-run
+// advisory lock; the second post then sees the first one's points and reports them as duplicates.
+// PGlite cannot show lock effects, so this pins the mechanism.
+test("H8: a checkpoint post reads, validates and writes inside one transaction, locked per run", async () => {
+  const h = await makeHarness();
+  try {
+    const a = await h.newPlayer({ verified: true });
+    const b = await h.newPlayer({ verified: true });
+    const runA = await start(h, a);
+    const runB = await start(h, b);
+    h.clock.advance(55_000);
+
+    const real = h.db.tx.bind(h.db);
+    let seen = [];
+    h.db.tx = (fn) => real((t) => fn({ query: (sql, params) => { seen.push({ sql, params }); return t.query(sql, params); } }));
+    const lockKeyOf = async (player, run, points) => {
+      seen = [];
+      const res = await postPoints(h, player, run, points);
+      assert.ok([200, 422].includes(res.status), JSON.stringify(res.body));
+      const lockAt = seen.findIndex((s) => /pg_advisory_xact_lock/.test(s.sql));
+      assert.equal(lockAt, 0, "the run's lock must be the transaction's first statement");
+      assert.ok(seen.some((s) => /FROM run_checkpoints/.test(s.sql)), "the stored points are read under the lock");
+      return seen[lockAt].params[0];
+    };
+
+    const keyA = await lockKeyOf(a, runA, [BATCH[0], BATCH[1]]);
+    assert.ok(seen.some((s) => /INSERT INTO run_checkpoints/.test(s.sql)), "new points are written under the lock");
+    assert.equal(await lockKeyOf(a, runA, [BATCH[0], BATCH[1]]), keyA, "the same run always maps to the same lock");
+    assert.notEqual(await lockKeyOf(b, runB, [BATCH[0]]), keyA, "another run is another lock");
+
+    // a flagged batch records its flag in the same transaction, so a checkpoint and its flag land together
+    await lockKeyOf(a, runA, [cp(70_000, 900, 30, 9)]); // more than the clock tolerance ahead of the run: cp_future
+    assert.ok(seen.some((s) => /UPDATE runs SET flags/.test(s.sql)), "the flag is written under the lock");
+  } finally { await h.close(); }
+});
