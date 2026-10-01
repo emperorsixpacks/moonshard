@@ -2422,6 +2422,8 @@ export default class StoryScene extends Phaser.Scene {
   }
 
   startDialogue(lines, onComplete) {
+    // delayed calls can outlive the scene: leaving within a second of starting must not throw here
+    if (!this.physics || !this.scene?.isActive?.()) return;
     if (this.chapterIntroCard) {
       this.chapterIntroCard.destroy();
       this.chapterIntroCard = null;
