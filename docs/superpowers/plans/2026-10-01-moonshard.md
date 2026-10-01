@@ -155,14 +155,13 @@ test-results
 .DS_Store
 ```
 
-- [ ] **Step 4: Install the engagement contracts package (required by the engagement SDK) and the deps**
+- [ ] **Step 4: Install dependencies**
 
 ```bash
-npm install @goodsdks/engagement-contracts
 npm install
 ```
 
-Expected: install succeeds. If `npm` reports a peer-dependency conflict for the SDKs, retry with `npm install --legacy-peer-deps` and record that in the commit message.
+Expected: install succeeds. Notes (verified 2026-10-01): `@goodsdks/engagement-contracts` is **not** published on npm and is not needed, because `@goodsdks/engagement-sdk` bundles the Celo addresses (prod `0x25db…AE43`, dev `0xb44f…0465`). The SDK imports `react` and `wagmi` at module top level; npm installs them as peers automatically. They are only needed for the SDK's unused `useEngagementRewards` hook, and Vite tree-shakes `wagmi` (side-effect-free); do not import that hook.
 
 - [ ] **Step 5: Write the rename sweep script**
 

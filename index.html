@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0b110b" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b110b" />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#0b110b" />
+  <title>Moonshard: The High Forest | Nimiq Mini App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Retro Arcade Header -->
+    <header id="arcade-header">
+      <div class="header-brand">
+        <span class="tree-icon">🌲</span>
+        <span class="game-title">MOONSHARD</span>
+      </div>
+      
+      <div class="header-status">
+        <!-- In-Battle Timer (Header / Portrait) -->
+        <div id="header-timer-badge" class="header-timer-badge hidden" title="Battle Elapsed Time">
+          <span id="header-timer-text">TIME: 0s</span>
+        </div>
+
+        <!-- Pause Button (Header / Portrait) -->
+        <button id="btn-pause-header" class="pixel-wallet-btn pause-header-btn hidden" title="Pause Game" aria-label="Pause">
+          <span class="pause-icon">⏸</span>
+        </button>
+
+        <!-- Nimiq Wallet Connect Status Button -->
+        <button id="btn-nimiq" class="pixel-wallet-btn" title="Nimiq Wallet">
+          <span class="nimiq-bolt">⚡</span>
+          <span id="nimiq-btn-text">NIMIQ</span>
+          <span id="nimiq-dot" class="nimiq-dot offline"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Floating Landscape Header Bar (Timer, Pause, and Nimiq Status) -->
+    <div id="landscape-top-bar" class="landscape-top-bar">
+      <div id="landscape-pause-group" class="landscape-pause-group hidden">
+        <div id="landscape-timer-badge" class="landscape-timer-badge" title="Battle Elapsed Time">
+          <span id="landscape-timer-text">TIME: 0s</span>
+        </div>
+        <button id="btn-pause-landscape" class="landscape-pause-btn" title="Pause Game" aria-label="Pause">
+          <span class="pause-icon">⏸</span>
+        </button>
+      </div>
+
+      <button id="btn-nimiq-landscape" class="landscape-nimiq-btn" title="Nimiq Wallet" aria-label="Nimiq Wallet">
+        <span class="nimiq-bolt">⚡</span>
+        <span id="nimiq-btn-text-landscape">NIMIQ</span>
+        <span id="nimiq-dot-landscape" class="nimiq-dot offline"></span>
+      </button>
+    </div>
+
+    <!-- Main Game Canvas Container -->
+    <main id="game-wrapper">
+      <div id="game-container">
+        <div id="crt-overlay" class="crt-overlay"></div>
+
+        <!-- Animated Retro Loading Screen (renders immediately while bundle/assets download) -->
+        <div id="game-loader" class="game-loader">
+          <div class="loader-content">
+            <div class="loader-mascot-row">
+              <span class="loader-icon-moon">🌙</span>
+              <span class="loader-icon-blade">⚔️</span>
+              <span class="loader-icon-sprite">✨</span>
+            </div>
+            <div class="loader-game-title">MOONSHARD</div>
+            <div class="loader-progress-box">
+              <div id="loader-bar-fill" class="loader-bar-fill"></div>
+            </div>
+            <div id="loader-status-text" class="loader-status-text">🌲 AWAKENING HIGH FOREST...</div>
+            <div class="loader-tip-hint">NIMIQ RETRO ARCADE • PREPARING REALM</div>
+          </div>
+        </div>
+        <script>
+          (function() {
+            var tips = [
+              "🌲 Awakening ancient forest spirits...",
+              "⚔️ Sharpening celestial moon blades...",
+              "🌙 Gathering radiant lunar shards...",
+              "⚡ Syncing Nimiq cryptographic signatures...",
+              "✨ Sylva is preparing your satchel...",
+              "🐗 Calming wild forest boars...",
+              "🍄 Harvesting glowing spore lanterns...",
+              "🛡️ Readying the High Forest..."
+            ];
+            var tipIdx = 0;
+            var statusEl = document.getElementById('loader-status-text');
+            var barEl = document.getElementById('loader-bar-fill');
+            var progress = 14;
+            var timer = setInterval(function() {
+              if (progress < 88) {
+                progress += Math.floor(Math.random() * 8) + 4;
+                if (progress > 88) progress = 88;
+                if (barEl) barEl.style.width = progress + '%';
+              }
+              tipIdx = (tipIdx + 1) % tips.length;
+              if (statusEl) statusEl.textContent = tips[tipIdx];
+            }, 850);
+            window.__dismissGameLoader = function() {
+              clearInterval(timer);
+              if (barEl) barEl.style.width = '100%';
+              if (statusEl) statusEl.textContent = '✨ ENTERING THE HIGH FOREST...';
+              var loader = document.getElementById('game-loader');
+              if (loader) {
+                loader.classList.add('fade-out');
+                setTimeout(function() {
+                  if (loader.parentNode) loader.parentNode.removeChild(loader);
+                }, 400);
+              }
+            };
+          })();
+        </script>
+      </div>
+      
+      <!-- Virtual Touch Controls for Mobile Viewport -->
+      <div id="touch-controls" class="touch-controls hidden">
+        <div class="touch-dpad horizontal-only">
+          <button id="touch-left" class="touch-btn dpad-btn" data-key="left" aria-label="Left">◀</button>
+          <button id="touch-right" class="touch-btn dpad-btn" data-key="right" aria-label="Right">▶</button>
+        </div>
+
+        <div class="touch-actions">
+          <button id="touch-jump" class="touch-btn action-btn jump" data-key="jump" aria-label="Jump">
+            <span>JUMP</span>
+          </button>
+          <button id="touch-attack" class="touch-btn action-btn attack" data-key="attack" aria-label="Slash">
+            <span>SLASH</span>
+          </button>
+          <button id="touch-upslash" class="touch-btn action-btn upslash" data-key="upslash" aria-label="Up Attack">
+            <span>UP<br>ATTK</span>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Game Info / Settings Modal Overlay -->
+    <div id="modal-container" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="modal-title">GAME INFO</h3>
+          <button id="btn-close-modal" class="pixel-close-btn">✖</button>
+        </div>
+        <div id="modal-body" class="modal-body">
+          <!-- Dynamic Content -->
+        </div>
+      </div>
+    </div>
+
+    <!-- In-Game Pause Modal Overlay -->
+    <div id="pause-modal" class="modal-overlay hidden">
+      <div class="modal-card pause-modal-card">
+        <div class="modal-header pause-modal-header">
+          <div class="modal-title-wrap">
+            <span class="pause-header-icon">⏸</span>
+            <h3 id="pause-modal-title">GAME PAUSED</h3>
+          </div>
+          <button id="btn-close-pause" class="pixel-close-btn" aria-label="Resume">✖</button>
+        </div>
+        <div class="modal-body pause-modal-body">
+          <div id="pause-mode-desc" class="pause-mode-desc">CHAPTER 1: WHISPERING WOODS</div>
+          <div class="pause-audio-controls">
+            <button id="btn-pause-sound" class="pause-audio-toggle" type="button" title="Toggle Sound Effects">
+              <span class="audio-icon">🔊</span>
+              <span id="txt-pause-sound">SOUND: ON</span>
+            </button>
+            <button id="btn-pause-music" class="pause-audio-toggle" type="button" title="Toggle Background Music">
+              <span class="audio-icon">🎵</span>
+              <span id="txt-pause-music">MUSIC: ON</span>
+            </button>
+          </div>
+          <div class="pause-btn-group">
+            <button id="btn-pause-resume" class="pixel-modal-btn btn-resume">
+              ▶ RESUME GAME
+            </button>
+            <button id="btn-pause-retry" class="pixel-modal-btn btn-retry">
+              ↺ RETRY BATTLE
+            </button>
+            <button id="btn-pause-menu" class="pixel-modal-btn btn-menu">
+              ◄ MAIN MENU
+            </button>
+          </div>
+          <div class="pause-tip">
+            TAP RESUME OR ⏸ TO CONTINUE
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
