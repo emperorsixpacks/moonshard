@@ -37,8 +37,12 @@ import confetti from 'canvas-confetti';
 import ShardDrop from '../entities/ShardDrop.js';
 import { gdService } from '../engine/GdService.js';
 import { fetchRewardsStatus } from '../gd/rewards.js';
-import { runs } from '../gd/runs.js';
+import { runs, bossLine, shardsLine } from '../gd/runs.js';
+import { ActiveClock, pageHidden } from '../gd/activeClock.js';
 import { SHARD_RATE_GD, DAILY_SHARD_CAP_GD } from '../gd/config.js';
+
+// Colours of the reward lines on the end screens, by the tone the copy helpers (gd/runs.js) give each line.
+const TONE_COLOR = { muted: '#a0c4a0', warn: '#f59e0b', bad: '#ff7777', good: '#ffd700', shard: '#38e1ff' };
 
 
 export default class StoryScene extends Phaser.Scene {
@@ -85,7 +89,9 @@ export default class StoryScene extends Phaser.Scene {
     this.arenaGateVisual = null;
     this.skipIntroCard = Boolean(data && data.skipIntroCard);
     this.skipDialogue = Boolean(data && data.skipDialogue);
-    this.startTime = performance.now();
+    // Time played, not wall-clock time: it stops while paused or while the tab is hidden, and it is what the run's
+    // duration is reported from (see update()).
+    this.activeClock = new ActiveClock();
     this.secondsElapsed = 0;
   }
 
@@ -175,9 +181,12 @@ export default class StoryScene extends Phaser.Scene {
     this.projectiles = this.physics.add.group({ runChildUpdate: true });
     this.shardDrops = this.physics.add.group();
     this.sessionCrystalsCollected = 0;
-    this.runResult = null;
+    this.runResult = null; // what the server answered when the run was settled (see settleRun); null while it is still out
+    this.runResultPromise = null;
+    this.runRefreshPromise = null;
+    this.settledShards = 0;
+    this.runEpoch = (this.runEpoch || 0) + 1; // a settlement from an earlier life must not write into this one
     this.crystalBankResult = null;
-    this.levelStartTime = performance.now();
     fetchRewardsStatus().then((st) => {
       this.rewardsStatus = st;
       this.checkDailyHarvestCap();
@@ -2909,8 +2918,35 @@ export default class StoryScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Settle the run with the server, once per life (runs.finish is idempotent, and the scene's own guards keep a second
+   * outcome from being reported). The totals are taken at this moment: kills and shards that come later, while the scene
+   * keeps running behind the end screen, are not part of the run and are not described by it.
+   */
+  settleRun(bossCleared) {
+    this.settledShards = this.sessionCrystalsCollected || 0;
+    const epoch = this.runEpoch;
+    return runs.finish({
+      score: 0,
+      kills: this.killsCount,
+      shards: this.settledShards,
+      durationMs: Math.round(this.activeClock.ms),
+      bossCleared,
+    }).then((res) => {
+      // The first-boss bounty itself is claimed from the G$ wallet panel; refresh it so it sees this run.
+      const refreshed = gdService.refreshAll().catch(() => {});
+      // The scene is reused when a life restarts, and a slow answer can arrive after that: it belongs to the life that
+      // has ended, not to the one on screen.
+      if (epoch === this.runEpoch) {
+        this.runResult = res;
+        this.runRefreshPromise = refreshed;
+      }
+      return res;
+    });
+  }
+
   triggerChapterVictory() {
-    if (this.isVictory) return;
+    if (this.isVictory || this.isGameOver) return;
     this.isVictory = true;
     sound.playVictory();
     pauseService.hideButtons();
@@ -2927,19 +2963,7 @@ export default class StoryScene extends Phaser.Scene {
       this.chapterIntroCard = null;
     }
 
-    // Settle the run with the server. The first-boss bounty itself is claimed from the G$ wallet panel.
-    const runDurationMs = performance.now() - (this.levelStartTime || performance.now());
-    this.runResultPromise = runs.finish({
-      score: 0,
-      kills: this.killsCount,
-      shards: this.sessionCrystalsCollected || 0,
-      durationMs: runDurationMs,
-      bossCleared: true,
-    }).then((res) => {
-      this.runResult = res;
-      gdService.refreshAll().catch(() => {});
-      return res;
-    });
+    this.runResultPromise = this.settleRun(true);
 
     if (this.chapterId === 1) {
       this.startDialogue([
@@ -2979,18 +3003,47 @@ export default class StoryScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * The Shard Harvest line of an end screen, or null when there is nothing to say. It follows what the server accepted
+   * (gd/runs.js): "pending G$" only for a verified, recorded, unflagged run.
+   * `underBountyLine`: it sits under the victory banner's bounty line, which already says what a player who is not
+   * connected or verified is missing and why a run was not recorded. The death screen has no such line, so there the
+   * Shard line says it itself.
+   */
+  shardsBadge({ underBountyLine = false } = {}) {
+    if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
+      return { text: `🔒 Daily Shard Cap reached (${DAILY_SHARD_CAP_GD} G$) • Resets 00:00 UTC`, color: TONE_COLOR.warn };
+    }
+    if (!(this.settledShards > 0)) return null;
+    const st = gdService.getStatus();
+    if (underBountyLine && !(st.connected && st.verified)) return null;
+    const line = shardsLine({
+      shards: this.settledShards,
+      rateG: SHARD_RATE_GD,
+      connected: st.connected,
+      verified: st.verified,
+      result: this.runResult || undefined,
+      brief: underBountyLine,
+    });
+    return { text: `${line.icon} ${line.text}`, color: TONE_COLOR[line.tone] };
+  }
+
+  /** The reward lines of the victory banner: what the server accepted, not what the player did. */
   bountyBadge() {
     const st = gdService.getStatus();
-    const bountyG = this.rewardsStatus?.firstBossPrizeG ?? 5000;
-    if (!st.connected) return { text: `⚡ CONNECT A WALLET TO CLAIM THE ${bountyG} G$ BOSS BOUNTY`, color: '#8cb38c' };
-    if (!st.verified) return { text: '🛡 VERIFY YOU ARE HUMAN TO CLAIM THE BOSS BOUNTY', color: '#f59e0b' };
-    if (this.rewardsStatus?.firstBossClaimed) return { text: '✔ FIRST-BOSS BOUNTY ALREADY CLAIMED', color: '#a0c4a0' };
-    if (this.runResult?.bossCleared) return { text: `🌟 BOSS SLAIN! CLAIM ${bountyG} G$ IN THE G$ WALLET (HEADER)`, color: '#ffd700' };
-    if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
-      return { text: `🔒 DAILY SHARD CAP REACHED (${DAILY_SHARD_CAP_GD} G$) • RESETS 00:00 UTC`, color: '#f59e0b' };
-    }
-    if (this.sessionCrystalsCollected > 0) return { text: `💎 SHARD HARVEST: +${this.sessionCrystalsCollected * SHARD_RATE_GD} G$ PENDING`, color: '#38e1ff' };
-    return { text: '💎 SHARD HARVEST BANKED', color: '#a0c4a0' };
+    const boss = bossLine({
+      connected: st.connected,
+      verified: st.verified,
+      result: this.runResult || undefined,
+      alreadyClaimed: Boolean(this.rewardsStatus?.firstBossClaimed),
+      rewardG: st.bounty?.rewardG, // the player's real share, when the server says so; no amount otherwise
+    });
+    const shards = this.shardsBadge({ underBountyLine: true });
+    return {
+      text: `${boss.icon} ${boss.text}`.toUpperCase(),
+      color: TONE_COLOR[boss.tone],
+      shards: shards && { ...shards, text: shards.text.toUpperCase() },
+    };
   }
 
   showVictoryBanner() {
@@ -3041,21 +3094,38 @@ export default class StoryScene extends Phaser.Scene {
     }).setOrigin(0.5);
     banner.add(msg);
 
-    const initial = this.bountyBadge();
-    const rewardBadge = this.add.text(0, -boxHeight / 2 + 54, initial.text, {
+    // Bounty line, and under it the Shard Harvest line. Both start from what is known now ("Saving your run...") and
+    // are redrawn when the server's answer arrives, and again once the wallet status has been refreshed (which is where
+    // the bounty amount comes from).
+    const badgeStyle = (color) => ({
       fontFamily: 'Press Start 2P',
       fontSize: '5px',
-      color: initial.color,
+      color,
       stroke: '#000000',
       strokeThickness: 2,
-    }).setOrigin(0.5);
+      align: 'center',
+      wordWrap: { width: 372 },
+    });
+    // Anchored by their tops: the bounty line may wrap onto a second line (slow font, narrow screen), and the Shard line
+    // is stacked under whatever height it ended up with, so the two can never overlap.
+    const rewardBadge = this.add.text(0, -boxHeight / 2 + 45, '', badgeStyle('#a0c4a0')).setOrigin(0.5, 0);
+    const shardBadge = this.add.text(0, 0, '', badgeStyle(TONE_COLOR.shard)).setOrigin(0.5, 0);
     banner.add(rewardBadge);
-    this.runResultPromise?.then(() => {
+    banner.add(shardBadge);
+    const renderBadges = () => {
       if (!rewardBadge.active) return;
       const next = this.bountyBadge();
-      rewardBadge.setText(next.text);
-      rewardBadge.setColor(next.color);
-    });
+      rewardBadge.setText(next.text).setColor(next.color);
+      shardBadge.setText(next.shards?.text ?? '').setColor(next.shards?.color ?? TONE_COLOR.muted);
+      shardBadge.setY(rewardBadge.y + rewardBadge.height + 1);
+    };
+    renderBadges();
+    this.runResultPromise
+      ?.then(() => {
+        renderBadges();
+        return this.runRefreshPromise;
+      })
+      .then(renderBadges);
 
 
     let actionTaken = false;
@@ -3136,17 +3206,17 @@ export default class StoryScene extends Phaser.Scene {
 
     if (nextCh) {
       // Advance to next chapter
-      createBtn(0, -6, 280, 26, 0x1d5828, 0x76ee76, '#ffffff', `ADVANCE TO CHAPTER ${nextCh} ➔`, doAdvance);
+      createBtn(0, 0, 280, 26, 0x1d5828, 0x76ee76, '#ffffff', `ADVANCE TO CHAPTER ${nextCh} ➔`, doAdvance);
       // Secondary options: Retry Chapter or Main Menu
-      createBtn(-78, 30, 140, 24, 0x223322, 0x55aa55, '#88ee88', '↺ RETRY', doRetry);
-      createBtn(78, 30, 140, 24, 0x332818, 0xee9933, '#ffcc77', '◄ MAIN MENU', doMenu);
+      createBtn(-78, 36, 140, 24, 0x223322, 0x55aa55, '#88ee88', '↺ RETRY', doRetry);
+      createBtn(78, 36, 140, 24, 0x332818, 0xee9933, '#ffcc77', '◄ MAIN MENU', doMenu);
     } else {
       // Replay Chapter or Main Menu
-      createBtn(-80, 8, 150, 28, 0x223322, 0x55aa55, '#88ee88', '↺ REPLAY CHAPTER', doRetry);
-      createBtn(80, 8, 150, 28, 0x332818, 0xee9933, '#ffcc77', '◄ MAIN MENU', doMenu);
+      createBtn(-80, 14, 150, 28, 0x223322, 0x55aa55, '#88ee88', '↺ REPLAY CHAPTER', doRetry);
+      createBtn(80, 14, 150, 28, 0x332818, 0xee9933, '#ffcc77', '◄ MAIN MENU', doMenu);
     }
 
-    const hintY = nextCh ? 56 : 42;
+    const hintY = nextCh ? 62 : 48;
     const hintText = this.add.text(0, hintY, '▶ SELECT AN OPTION TO CONTINUE ◀', {
       fontFamily: 'Press Start 2P',
       fontSize: '6px',
@@ -3208,7 +3278,10 @@ export default class StoryScene extends Phaser.Scene {
   }
 
   handlePlayerGameOver() {
-    if (this.isGameOver) return;
+    // One outcome per run. Once the shrine is cleansed (isVictory) a stray hazard or projectile that finishes the hero
+    // off is not a defeat: it would submit the same ticket a second time as "boss not cleared" and stack a game-over
+    // screen on the victory banner.
+    if (this.isGameOver || this.isVictory) return;
     this.isGameOver = true;
     sound.stopBGM();
     sound.playGameOver();
@@ -3219,14 +3292,7 @@ export default class StoryScene extends Phaser.Scene {
       this.player.die();
     }
 
-    const runDurationMs = performance.now() - (this.levelStartTime || performance.now());
-    runs.finish({
-      score: 0,
-      kills: this.killsCount,
-      shards: this.sessionCrystalsCollected || 0,
-      durationMs: runDurationMs,
-      bossCleared: false,
-    }).then(() => gdService.refreshAll().catch(() => {}));
+    this.runResultPromise = this.settleRun(false);
 
     if (typeof window !== 'undefined' && window.touchController) {
       window.touchController.hide();
@@ -3257,18 +3323,28 @@ export default class StoryScene extends Phaser.Scene {
       color: '#ff4444'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
 
-    let crystalBonus = '';
-    if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
-      crystalBonus = ` • 🔒 Daily Shard Cap (${DAILY_SHARD_CAP_GD} G$)`;
-    } else if (this.sessionCrystalsCollected > 0) {
-      crystalBonus = ` • 💎 +${this.sessionCrystalsCollected * SHARD_RATE_GD} G$ Pending`;
-    }
-    const subtitle = this.add.text(w / 2, h / 2 - 22, `Chapter ${this.chapterId}: ${this.chapterConfig.title}${crystalBonus}`, {
+    const subtitle = this.add.text(w / 2, h / 2 - 22, `Chapter ${this.chapterId}: ${this.chapterConfig.title}`, {
       fontFamily: 'Press Start 2P',
       fontSize: '6px',
       color: '#ffaaaa'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
 
+    // What happened to this life's Shards. It starts from what is known now and is redrawn when the server's answer
+    // arrives: "pending G$" is only promised to a verified player whose run the server recorded without flags.
+    const rewardLine = this.add.text(w / 2, h / 2 - 16, '', {
+      fontFamily: 'Press Start 2P',
+      fontSize: '5px',
+      color: TONE_COLOR.muted,
+      align: 'center',
+      wordWrap: { width: 340 },
+    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(501);
+    const renderReward = () => {
+      if (!rewardLine.active) return;
+      const next = this.shardsBadge();
+      rewardLine.setText(next?.text ?? '').setColor(next?.color ?? TONE_COLOR.muted);
+    };
+    renderReward();
+    this.runResultPromise.then(renderReward);
 
     const hintText = this.add.text(w / 2, h / 2 + 42, '▶ TAP RETRY OR MAIN MENU TO CONTINUE ◀', {
       fontFamily: 'Press Start 2P',
@@ -3296,6 +3372,7 @@ export default class StoryScene extends Phaser.Scene {
       box.destroy();
       title.destroy();
       subtitle.destroy();
+      rewardLine.destroy();
       hintText.destroy();
       retryBtn.destroy();
       retryLabel.destroy();
@@ -3325,7 +3402,7 @@ export default class StoryScene extends Phaser.Scene {
 
     // Retry Button
     const rx = w / 2 - 78;
-    const ry = h / 2 + 10;
+    const ry = h / 2 + 14; // a few pixels lower than before, to make room for the Shard line above the buttons
     const retryBtn = this.add.rectangle(rx, ry, 140, 28, 0x5a1818)
       .setStrokeStyle(1.5, 0xff7777)
       .setScrollFactor(0)
@@ -3343,7 +3420,7 @@ export default class StoryScene extends Phaser.Scene {
 
     // Menu Button
     const mx = w / 2 + 78;
-    const my = h / 2 + 10;
+    const my = h / 2 + 14;
     const menuBtn = this.add.rectangle(mx, my, 140, 28, 0x382414)
       .setStrokeStyle(1.5, 0xf59e0b)
       .setScrollFactor(0)
@@ -3399,7 +3476,9 @@ export default class StoryScene extends Phaser.Scene {
     this.input.keyboard.on('keydown', onKeyDown);
   }
 
-  update() {
+  update(_time, delta) {
+    // Played time advances through dialogue (the scene is live) but not behind the pause screen or in a hidden tab.
+    this.activeClock.tick(delta, { paused: pauseService.isPaused, hidden: pageHidden() });
     runs.update({ score: 0, kills: this.killsCount, shards: this.sessionCrystalsCollected || 0 });
     if (this.inDialogue) {
       if (this.player && this.player.body) {
@@ -3409,7 +3488,7 @@ export default class StoryScene extends Phaser.Scene {
     }
 
     if (!this.isVictory && !this.isGameOver && this.player && !this.player.isDead) {
-      const sec = Math.floor((performance.now() - this.startTime) / 1000);
+      const sec = this.activeClock.seconds;
       if (sec !== this.secondsElapsed) {
         this.secondsElapsed = sec;
         pauseService.updateTimer(this.secondsElapsed);
