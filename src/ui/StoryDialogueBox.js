@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import { sound } from '../engine/Audio.js';
 import { GAME_CONFIG } from '../config.js';
+import { cssPerUnitOf, isTallCanvas } from '../engine/uiScale.js';
+
+const half = (n) => Math.round(n * 2) / 2;
 
 const SPEAKER_CONFIGS = {
   LUNA: {
@@ -89,7 +92,16 @@ export default class StoryDialogueBox extends Phaser.GameObjects.Container {
   constructor(scene) {
     const w = scene.cameras?.main?.width || scene.scale?.width || GAME_CONFIG.WIDTH;
     const h = scene.cameras?.main?.height || scene.scale?.height || GAME_CONFIG.HEIGHT;
-    super(scene, w / 2, h - 54);
+    // Room for the longest lines (about 200 characters, three lines in landscape and four in the narrower portrait
+    // measure), and type that stays readable wherever the game is shown small (an upright phone shows a unit at 0.8 CSS px).
+    const tall = isTallCanvas(scene);
+    const unit = cssPerUnitOf(scene);
+    const bodyPx = Math.max(12.5, half(13 / unit));
+    const labelPx = Math.max(12.5, half(12 / unit));
+    const promptPx = Math.max(11.5, half(11 / unit));
+    const boxH = tall ? 124 : 82;
+    const bottomGap = 23;
+    super(scene, w / 2, h - bottomGap - boxH / 2);
     scene.add.existing(this);
 
     this.scene = scene;
@@ -104,12 +116,11 @@ export default class StoryDialogueBox extends Phaser.GameObjects.Container {
     this.setDepth(600);
 
     const boxW = 444;
-    const boxH = 62;
     this.boxW = boxW;
     this.boxH = boxH;
 
     // Dark backdrop overlay behind dialogue to dim the world slightly
-    this.dimOverlay = scene.add.rectangle(-w / 2, -h + 54, w, h, 0x000000, 0.35)
+    this.dimOverlay = scene.add.rectangle(-w / 2, -this.y, w, h, 0x000000, 0.35)
       .setOrigin(0, 0)
       .setInteractive();
     this.add(this.dimOverlay);
@@ -139,22 +150,23 @@ export default class StoryDialogueBox extends Phaser.GameObjects.Container {
     this.add(this.portraitIcon);
 
     // Speaker Nameplate Container (top-left above text)
-    this.nameplateBg = scene.add.rectangle(-boxW / 2 + 62, -boxH / 2, 130, 15, 0x032830, 0.95)
+    this.nameplateBg = scene.add.rectangle(-boxW / 2 + 62, -boxH / 2, 130, labelPx + 5, 0x032830, 0.95)
       .setOrigin(0, 0.5);
     this.nameplateBg.setStrokeStyle(1, 0x00b4d8);
     this.add(this.nameplateBg);
 
+    this.labelPx = labelPx;
     this.nameplateText = scene.add.text(-boxW / 2 + 70, -boxH / 2, 'SELENE', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '5.5px',
+      fontFamily: 'VT323',
+      fontSize: `${labelPx}px`,
       color: '#48cae4'
     }).setOrigin(0, 0.5);
     this.add(this.nameplateText);
 
     // Dialogue Body Text
-    this.dialogueText = scene.add.text(-boxW / 2 + 64, -boxH / 2 + 15, '', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '5.5px',
+    this.dialogueText = scene.add.text(-boxW / 2 + 64, -boxH / 2 + labelPx + 4, '', {
+      fontFamily: 'VT323',
+      fontSize: `${bodyPx}px`,
       color: '#e0f0f5',
       lineSpacing: 4,
       wordWrap: { width: boxW - 85 }
@@ -162,9 +174,9 @@ export default class StoryDialogueBox extends Phaser.GameObjects.Container {
     this.add(this.dialogueText);
 
     // Prompt to advance [TAP TO CONTINUE ▼]
-    this.promptArrow = scene.add.text(boxW / 2 - 12, boxH / 2 - 8, 'TAP TO CONTINUE ▼', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '5px',
+    this.promptArrow = scene.add.text(boxW / 2 - 12, boxH / 2 - promptPx / 2 - 3, 'TAP TO CONTINUE ▼', {
+      fontFamily: 'VT323',
+      fontSize: `${promptPx}px`,
       color: '#ffd166',
       stroke: '#000000',
       strokeThickness: 2
@@ -173,26 +185,30 @@ export default class StoryDialogueBox extends Phaser.GameObjects.Container {
 
     this.arrowTween = scene.tweens.add({
       targets: this.promptArrow,
-      y: boxH / 2 - 5,
+      y: boxH / 2 - promptPx / 2,
       duration: 400,
       yoyo: true,
       loop: -1
     });
 
     // Skip Button in upper right (prominent pill button)
-    this.skipBtnBg = scene.add.rectangle(boxW / 2 - 38, -boxH / 2 + 4, 64, 16, 0x162c1e, 0.95);
+    this.skipBtnBg = scene.add.rectangle(boxW / 2 - 38, -boxH / 2 + 4, 64, labelPx + 6, 0x162c1e, 0.95);
     this.skipBtnBg.setStrokeStyle(1.5, 0x48e4b6);
     this.skipBtnBg.setOrigin(0.5, 0.5);
     this.add(this.skipBtnBg);
 
     this.btnSkip = scene.add.text(boxW / 2 - 38, -boxH / 2 + 4, 'SKIP ⏭', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '5.5px',
+      fontFamily: 'VT323',
+      fontSize: `${labelPx}px`,
       color: '#ffd166',
       stroke: '#000000',
       strokeThickness: 2
     }).setOrigin(0.5, 0.5);
     this.add(this.btnSkip);
+    // size the button to its label, keeping its right edge where it was
+    const skipW = Math.max(64, Math.ceil(this.btnSkip.width) + 16);
+    this.skipBtnBg.setSize(skipW, labelPx + 6);
+    this.skipBtnBg.x = this.btnSkip.x = boxW / 2 - 6 - skipW / 2;
 
     // Set scrollFactor 0 on all children so Phaser hit testing does not suffer camera scroll offsets
     this.each((child) => {
@@ -218,10 +234,7 @@ export default class StoryDialogueBox extends Phaser.GameObjects.Container {
     // 1. Phaser scene pointer listener: receives all canvas taps with raw viewport coords (0 to 480, 0 to 270)
     this.scenePointerListener = (pointer) => {
       if (!this.active || !this.visible) return;
-      // Skip button bounding area (with generous touch padding for mobile thumbs)
-      const curH = scene.cameras?.main?.height || scene.scale?.height || GAME_CONFIG.HEIGHT;
-      const isSkip = (pointer.x >= 350 && pointer.x <= 475 && pointer.y >= curH - 120 && pointer.y <= curH - 55);
-      triggerAction(isSkip);
+      triggerAction(this.isSkipAt(pointer.x, pointer.y));
     };
     scene.input.on('pointerdown', this.scenePointerListener);
 
@@ -238,8 +251,7 @@ export default class StoryDialogueBox extends Phaser.GameObjects.Container {
         const curH = scene.cameras?.main?.height || scene.scale?.height || GAME_CONFIG.HEIGHT;
         const touchX = (clientX - rect.left) * (curW / rect.width);
         const touchY = (clientY - rect.top) * (curH / rect.height);
-        const isSkip = (touchX >= 350 && touchX <= 475 && touchY >= curH - 120 && touchY <= curH - 55);
-        triggerAction(isSkip);
+        triggerAction(this.isSkipAt(touchX, touchY));
       };
       canvas.addEventListener('pointerdown', this.canvasPointerListener);
       canvas.addEventListener('touchstart', this.canvasPointerListener, { passive: true });
@@ -284,6 +296,13 @@ export default class StoryDialogueBox extends Phaser.GameObjects.Container {
     window.addEventListener('keydown', this.onKeyDown);
   }
 
+  /** True when a tap at (x, y) game units lands on the SKIP button, with generous padding for thumbs. */
+  isSkipAt(x, y) {
+    const cx = this.x + this.skipBtnBg.x;
+    const cy = this.y + this.skipBtnBg.y;
+    return Math.abs(x - cx) <= this.skipBtnBg.width / 2 + 16 && Math.abs(y - cy) <= this.skipBtnBg.height / 2 + 18;
+  }
+
   startDialogue(lines, onComplete) {
     if (typeof window !== 'undefined' && window.touchController) {
       window.touchController.hide();
@@ -310,8 +329,7 @@ export default class StoryDialogueBox extends Phaser.GameObjects.Container {
     this.nameplateBg.setFillStyle(speaker.bgColor, 0.95);
     this.nameplateBg.setStrokeStyle(1, speaker.borderColor);
 
-    const textWidth = Math.max(120, speaker.name.length * 6.5 + 16);
-    this.nameplateBg.setSize(textWidth, 16);
+    this.nameplateBg.setSize(Math.max(100, Math.ceil(this.nameplateText.width) + 18), this.labelPx + 5);
 
     // Update Portrait
     if (speaker.spriteKey) {

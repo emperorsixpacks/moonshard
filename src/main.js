@@ -17,6 +17,7 @@ import { sound } from './engine/Audio.js';
 import { GdPanel } from './ui/GdPanel.js';
 import { setupImmersiveLayout } from './engine/ImmersiveLayout.js';
 import { installHiRes } from './engine/HiRes.js';
+import { installHudAnchor } from './engine/HudAnchor.js';
 import { loadGameFonts } from './engine/fonts.js';
 
 // Phaser 3 Game Configuration
@@ -68,6 +69,7 @@ function startGame() {
 
   // Initialize ViewportManager for dynamic portrait/landscape aspect ratio
   window.viewportManager = new ViewportManager(game);
+  installHudAnchor(game);
 
   // Initialize Virtual Touch Controls & Header Actions
   window.touchController = new TouchController(game);
