@@ -5,6 +5,8 @@ import { HttpError, ah } from "./http.js";
 import { dayKey } from "./time.js";
 import { rankOf } from "./leaderboard.js";
 
+const UNIQUE_VIOLATION = "23505"; // Postgres SQLSTATE, same code from pg and PGlite
+
 const ticketKey = (ctx) => crypto.createHash("sha256").update(`moonshard-ticket|${ctx.config.jwtSecret}`).digest();
 
 function ticketFor(ctx, run) {
@@ -35,8 +37,9 @@ function assertOpen(ctx, run) {
 }
 
 const int = (v) => (Number.isFinite(Number(v)) && v !== null && v !== "" && typeof v !== "boolean" ? Math.trunc(Number(v)) : NaN);
-const addFlag = (ctx, runId, flags) =>
-  ctx.db.query(
+/** `db` is anything with query(): the pool, or the transaction handle when the flag must commit with other writes. */
+const addFlag = (db, runId, flags) =>
+  db.query(
     "UPDATE runs SET flags = CASE WHEN flags = '' THEN $2 ELSE flags || ',' || $2 END WHERE run_id = $1",
     [runId, flags.join(",")],
   );
@@ -57,7 +60,11 @@ export function runRoutes(ctx) {
     const seed = mode === "TRIAL" ? day : `story-${ch}`;
     const runId = crypto.randomUUID();
     const p = req.player;
-    await ctx.db.tx(async (t) => {
+    const voidThenInsert = () => ctx.db.tx(async (t) => {
+      // Queue racing starts of this (subject, mode) behind one another until this transaction ends, so that
+      // the UPDATE below always sees the previous start's committed run. Without it three or more racing
+      // starts keep colliding on the unique index and the losers of the single retry get a 500.
+      await t.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`runs.start|${p.subject}|${mode}`]);
       await t.query("UPDATE runs SET status = 'void' WHERE subject = $1 AND mode = $2 AND status = 'open'", [p.subject, mode]);
       await t.query(
         `INSERT INTO runs(run_id, subject, wallet, verified, mode, chapter, seed, day, started_at)
@@ -65,6 +72,15 @@ export function runRoutes(ctx) {
         [runId, p.subject, p.wallet, p.verified, mode, ch, seed, day, new Date(now)],
       );
     });
+    try {
+      await voidThenInsert();
+    } catch (err) {
+      // Backstop for a writer that does not take the lock: its open run landed between our void and our
+      // insert, so the unique index on open runs (subject, mode) refused ours. The transaction rolled
+      // back; run it again, and this time the void sees the winner's committed run and takes over its slot.
+      if (err?.code !== UNIQUE_VIOLATION) throw err;
+      await voidThenInsert();
+    }
     const ticket = ticketFor(ctx, { run_id: runId, subject: p.subject, mode, seed, started_at: new Date(now) });
     res.json({ runId, seed, mode, chapter: ch, startedAt: new Date(now).toISOString(), ticket });
   }));
@@ -76,45 +92,61 @@ export function runRoutes(ctx) {
     if (!Array.isArray(points) || points.length === 0 || points.length > 50) throw new HttpError(400, "bad_points");
 
     const elapsed = ctx.now() - new Date(run.started_at).getTime();
-    const lastRow = (
-      await ctx.db.query(
-        "SELECT seq, t_ms, score, kills, shards FROM run_checkpoints WHERE run_id = $1 ORDER BY seq DESC LIMIT 1",
-        [run.run_id],
-      )
-    ).rows[0];
-    let seq = lastRow ? lastRow.seq : 0;
-    let prev = lastRow || { t_ms: 0, score: 0, kills: 0, shards: 0 };
-    const accepted = [];
-    const reason = new Set();
+    const { accepted, duplicates, reason } = await ctx.db.tx(async (t) => {
+      // One post per run at a time. A retry that arrives while the original is still being processed would
+      // otherwise read the same stored points, accept the same batch and collide with it on (run_id, seq).
+      // Queued behind the original it sees those points and counts them as duplicates. Inside this
+      // transaction use `t` only: a second pool connection could deadlock against the queue of waiters.
+      await t.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`runs.checkpoints|${run.run_id}`]);
 
-    for (const pt of points) {
-      const t = int(pt?.t), score = int(pt?.score), kills = int(pt?.kills), shards = int(pt?.shards ?? 0);
-      if ([t, score, kills, shards].some((x) => !Number.isInteger(x) || x < 0)) { reason.add("cp_malformed"); break; }
-      if (t <= prev.t_ms) { reason.add("cp_time"); break; }
-      if (t > elapsed + GAME.CLOCK_TOLERANCE_MS) { reason.add("cp_future"); break; }
-      if (score < prev.score || kills < prev.kills || shards < prev.shards) { reason.add("cp_regress"); break; }
-      // No run can ever bank more than this, and an unbounded value would overflow the integer column.
-      if (shards > GAME.MAX_SHARDS_PER_RUN) { reason.add("cp_shards"); break; }
-      const dt = (t - prev.t_ms) / 1000;
-      if (score - prev.score > GAME.MAX_PTS_PER_SEC * dt + GAME.CHECKPOINT_SLACK_PTS) { reason.add("cp_score_rate"); break; }
-      if (kills - prev.kills > GAME.MAX_KILLS_PER_SEC * dt + 5) { reason.add("cp_kill_rate"); break; }
-      if (seq + 1 > GAME.MAX_CHECKPOINTS) { reason.add("cp_limit"); break; }
-      seq += 1;
-      accepted.push([run.run_id, seq, t, score, kills, shards]);
-      prev = { t_ms: t, score, kills, shards };
-    }
+      // At most MAX_CHECKPOINTS rows. All of them are needed: a re-sent point can be any stored one.
+      const stored = (
+        await t.query(
+          "SELECT seq, t_ms, score, kills, shards FROM run_checkpoints WHERE run_id = $1 ORDER BY seq",
+          [run.run_id],
+        )
+      ).rows;
+      // A client that timed out may re-send a batch the server already processed. A point that is exactly
+      // a stored one is skipped silently; anything else that fails the checks below is still flagged.
+      const known = new Set(stored.map((c) => `${c.t_ms}|${c.score}|${c.kills}|${c.shards}`));
+      const lastRow = stored[stored.length - 1];
+      let seq = lastRow ? lastRow.seq : 0;
+      let prev = lastRow || { t_ms: 0, score: 0, kills: 0, shards: 0 };
+      const fresh = [];
+      const reason = new Set();
+      let duplicates = 0;
 
-    for (const row of accepted) {
-      await ctx.db.query(
-        "INSERT INTO run_checkpoints(run_id, seq, t_ms, score, kills, shards) VALUES ($1,$2,$3,$4,$5,$6)",
-        row,
-      );
-    }
+      for (const pt of points) {
+        const t = int(pt?.t), score = int(pt?.score), kills = int(pt?.kills), shards = int(pt?.shards ?? 0);
+        if ([t, score, kills, shards].some((x) => !Number.isInteger(x) || x < 0)) { reason.add("cp_malformed"); break; }
+        if (known.has(`${t}|${score}|${kills}|${shards}`)) { duplicates += 1; continue; }
+        if (t <= prev.t_ms) { reason.add("cp_time"); break; }
+        if (t > elapsed + GAME.CLOCK_TOLERANCE_MS) { reason.add("cp_future"); break; }
+        if (score < prev.score || kills < prev.kills || shards < prev.shards) { reason.add("cp_regress"); break; }
+        // No run can ever bank more than this, and an unbounded value would overflow the integer column.
+        if (shards > GAME.MAX_SHARDS_PER_RUN) { reason.add("cp_shards"); break; }
+        const dt = (t - prev.t_ms) / 1000;
+        if (score - prev.score > GAME.MAX_PTS_PER_SEC * dt + GAME.CHECKPOINT_SLACK_PTS) { reason.add("cp_score_rate"); break; }
+        if (kills - prev.kills > GAME.MAX_KILLS_PER_SEC * dt + 5) { reason.add("cp_kill_rate"); break; }
+        if (seq + 1 > GAME.MAX_CHECKPOINTS) { reason.add("cp_limit"); break; }
+        seq += 1;
+        fresh.push([run.run_id, seq, t, score, kills, shards]);
+        prev = { t_ms: t, score, kills, shards };
+      }
+
+      for (const row of fresh) {
+        await t.query(
+          "INSERT INTO run_checkpoints(run_id, seq, t_ms, score, kills, shards) VALUES ($1,$2,$3,$4,$5,$6)",
+          row,
+        );
+      }
+      if (reason.size) await addFlag(t, run.run_id, [...reason]);
+      return { accepted: fresh.length, duplicates, reason };
+    });
     if (reason.size) {
-      await addFlag(ctx, run.run_id, [...reason]);
-      return res.status(422).json({ error: "bad_checkpoint", reason: [...reason], accepted: accepted.length });
+      return res.status(422).json({ error: "bad_checkpoint", reason: [...reason], accepted, duplicates });
     }
-    res.json({ ok: true, accepted: accepted.length });
+    res.json({ ok: true, accepted, duplicates });
   }));
 
   r.post("/runs/:id/submit", ctx.requireAuth, ah(async (req, res) => {
@@ -158,6 +190,9 @@ export function runRoutes(ctx) {
 
     const bossCleared = wantsBoss && flags.length === 0;
     const rankedOk = Boolean(run.verified) && flags.length === 0 && (run.mode === "STORY" || coverage >= GAME.MIN_COVERAGE_RANKED);
+    // Shards are paid out in G$, so they need the evidence a ranked score needs: no flags and checkpoints
+    // covering at least half of the run. Without it, start + submit alone would bank a full day's cap.
+    const shardsCredited = Boolean(run.verified) && flags.length === 0 && coverage >= GAME.MIN_COVERAGE_RANKED;
 
     let isNewBest = false;
     await ctx.db.tx(async (t) => {
@@ -187,7 +222,7 @@ export function runRoutes(ctx) {
         );
         isNewBest = up.rows.length > 0;
       }
-      if (shards > 0 && run.verified) {
+      if (shards > 0 && shardsCredited) {
         await t.query(
           `INSERT INTO shard_days(day, subject, shards) VALUES ($1,$2,$3)
            ON CONFLICT (day, subject) DO UPDATE SET shards = shard_days.shards + EXCLUDED.shards`,

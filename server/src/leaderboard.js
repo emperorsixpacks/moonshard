@@ -16,14 +16,19 @@ const toEntry = (r, i) => ({
   ...(r.day ? { day: r.day } : {}),
 });
 
-export async function dailyBoard(ctx, day, view = "ranked", limit = 50) {
+/** Raw board rows, `subject` included. Internal: HTTP entries are built with toEntry, which leaves it out. */
+async function dailyRows(ctx, day, view, limit) {
   const filter = view === "ranked" ? "AND ranked_ok" : "";
   const { rows } = await ctx.db.query(
     `SELECT subject, wallet, verified, ranked_ok, score, kills, duration_ms, run_id
        FROM scores WHERE day = $1 ${filter} ORDER BY ${ORDER} LIMIT $2`,
     [day, limit],
   );
-  return rows.map(toEntry);
+  return rows;
+}
+
+export async function dailyBoard(ctx, day, view = "ranked", limit = 50) {
+  return (await dailyRows(ctx, day, view, limit)).map(toEntry);
 }
 
 export async function allTimeBoard(ctx, view = "ranked", limit = 50) {
@@ -36,11 +41,14 @@ export async function allTimeBoard(ctx, view = "ranked", limit = 50) {
   return rows.slice(0, limit).map(toEntry);
 }
 
+/**
+ * 1-based position of `subject` on the day's board, or null if it is not within the first 1000 rows.
+ * Matched on subject, not wallet: one wallet can own two rows in a day (played unverified as itself,
+ * then as the root it was later linked to).
+ */
 export async function rankOf(ctx, day, subject, view) {
-  const board = await dailyBoard(ctx, day, view, 1000);
-  const { rows } = await ctx.db.query("SELECT wallet FROM scores WHERE day = $1 AND subject = $2", [day, subject]);
-  if (!rows[0]) return null;
-  const idx = board.findIndex((e) => e.wallet === rows[0].wallet);
+  const rows = await dailyRows(ctx, day, view, 1000);
+  const idx = rows.findIndex((r) => r.subject === subject);
   return idx === -1 ? null : idx + 1;
 }
 

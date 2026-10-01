@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { formatUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { GAME } from "../config.js";
@@ -14,12 +15,32 @@ import { engagementRoutes } from "./engagement.js";
 import { rewardsRoutes } from "./rewards.js";
 import { statsRoutes } from "./stats.js";
 
+const perIpLimiter = (windowMs, limit) =>
+  rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    handler: (_req, res) => res.status(429).json({ error: "rate_limited" }),
+  });
+
 /**
  * @param {{db: any, chain: any, config: any, now?: () => number}} deps
  */
 export function createApp({ db, chain, config, now = Date.now }) {
   const app = express();
+  // Behind N reverse proxies, req.ip is only the real client when Express knows to read it from
+  // X-Forwarded-For; otherwise every player shares the proxy's address and the per-IP limiters below
+  // would behave as one global limit.
+  app.set("trust proxy", config.trustProxy ?? false);
   app.use(cors({ origin: config.corsOrigins === "*" ? true : config.corsOrigins }));
+  // After CORS (so a 429 stays readable to a cross-origin page; preflights are answered above and never
+  // counted) and before the body parser (so a throttled client costs no JSON parsing).
+  if (config.rateLimit?.enabled) {
+    const { windowMs, general, auth } = config.rateLimit;
+    app.use("/api", perIpLimiter(windowMs, general));
+    app.use("/api/auth", perIpLimiter(windowMs, auth));
+  }
   app.use(express.json({ limit: "64kb" }));
 
   const ctx = {

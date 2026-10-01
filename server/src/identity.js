@@ -1,18 +1,27 @@
-import { IDENTITY_TTL_MS } from "../config.js";
+import { IDENTITY_CACHE_MAX, IDENTITY_TTL_MS } from "../config.js";
 
 /**
  * Maps a wallet to its "subject": the whitelisted root when verified (one human, one slot even
- * across linked wallets), else the wallet itself. Results are cached for `ttlMs`.
+ * across linked wallets), else the wallet itself. Results are cached for `ttlMs`, and at most
+ * `maxEntries` wallets are kept: past that, the entry fetched longest ago is dropped.
  */
-export function createIdentityResolver({ chain, db, now, ttlMs = IDENTITY_TTL_MS }) {
+export function createIdentityResolver({ chain, db, now, ttlMs = IDENTITY_TTL_MS, maxEntries = IDENTITY_CACHE_MAX }) {
   const cache = new Map();
+
+  function remember(key, info) {
+    // A Map iterates in insertion order. Deleting first moves a refreshed key to the back, so the
+    // front is always the entry fetched longest ago.
+    cache.delete(key);
+    cache.set(key, { at: now(), info });
+    while (cache.size > maxEntries) cache.delete(cache.keys().next().value);
+  }
 
   async function lookup(key) {
     const hit = cache.get(key);
     if (hit && now() - hit.at < ttlMs) return hit.info;
     try {
       const info = await chain.identity(key);
-      cache.set(key, { at: now(), info });
+      remember(key, info);
       return info;
     } catch (cause) {
       if (hit) return hit.info; // serve stale rather than lock players out during an RPC blip

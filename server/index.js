@@ -1,11 +1,14 @@
 import { config } from "./config.js";
+import { assertSecureConfig } from "./src/boot.js";
 import { createDb } from "./src/db.js";
 import { createChain } from "./src/chain.js";
 import { createApp } from "./src/app.js";
 import { startSettlementCron } from "./src/cron.js";
 
-if (!config.jwtSecret) {
-  console.error("[moonshard] JWT_SECRET is required");
+try {
+  assertSecureConfig(config);
+} catch (err) {
+  console.error(`[moonshard] refusing to start: ${err.message}`);
   process.exit(1);
 }
 

@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeHarness, playTrial, UBI } from "./helpers.js";
+import { makeHarness, playTrial, UBI, ubiClaimedLog } from "./helpers.js";
 
 const HASH = "0x" + "11".repeat(32);
 
 function setClaimTx(h, p, over = {}) {
   h.chain.state.txs.set(HASH, {
     tx: { from: p.account.address, to: UBI, input: "0x4e71d92d" },
-    receipt: { status: "success", logs: [] },
+    // a real claim() emits UBIClaimed(claimer, amount) from the scheme
+    receipt: { status: "success", logs: [ubiClaimedLog({ claimer: p.account.address, hash: HASH })] },
     timestamp: Math.floor(h.clock() / 1000),
     ...over,
   });

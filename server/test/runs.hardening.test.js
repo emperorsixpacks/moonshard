@@ -37,6 +37,14 @@ test("a ticket submitted twice concurrently is recorded once: one 200, one 409, 
     const p = await h.newPlayer({ verified: true });
     const run = await start(h, p);
     h.clock.advance(61_000);
+    // Shards are only credited to runs with checkpoint coverage (hardening H1), so give this one some.
+    // Posted before the barrier is installed: the checkpoint handler reads the run row too.
+    const cp = await h.api.post(
+      `/runs/${run.runId}/checkpoints`,
+      { points: [{ t: 20_000, score: 300, kills: 13, shards: 10 }, { t: 40_000, score: 650, kills: 27, shards: 20 }] },
+      { token: p.token },
+    );
+    assert.equal(cp.status, 200, JSON.stringify(cp.body));
     holdAfterRunRead(h, 2);
     const body = { ticket: run.ticket, score: 1000, kills: 40, shards: 30, durationMs: 60_000 };
     const [a, b] = await Promise.all([
