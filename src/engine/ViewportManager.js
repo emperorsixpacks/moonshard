@@ -2,7 +2,7 @@ import { GAME_CONFIG } from '../config.js';
 
 /**
  * Reliable portrait mode detector across standard desktop browsers,
- * mobile Chrome/Safari, and embedded WebViews (e.g. Nimiq Pay mini-app).
+ * mobile Chrome/Safari, and embedded WebViews (e.g. wallet mini-app).
  */
 export function isPortraitMode() {
   if (typeof window === 'undefined') return false;

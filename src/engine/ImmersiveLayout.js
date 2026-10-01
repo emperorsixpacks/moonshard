@@ -1,8 +1,8 @@
 /**
- * Immersive layout helper for embeddable webviews (Nimiq Pay mini app, mobile
+ * Immersive layout helper for embeddable webviews (wallet mini apps (MiniPay and similar), mobile
  * browsers, in-app browser tabs).
  *
- * Host chrome — the Nimiq app header / "site address" bar and the phone's
+ * Host chrome — the wallet app header / "site address" bar and the phone's
  * system bars (Android 3-button navigation, iOS home indicator) — can overlap
  * the document. We measure the true visible region and publish it as CSS
  * custom properties:

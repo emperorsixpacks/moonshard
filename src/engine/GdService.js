@@ -6,6 +6,7 @@ import { GD } from '../gd/config.js';
 import { detectHost, hostLanguage } from '../gd/host.js';
 import { fetchRewardsStatus } from '../gd/rewards.js';
 import { setBlessed } from '../gd/blessing.js';
+import { pending } from '../gd/pending.js';
 import { explainError, shortAddress } from '../gd/format.js';
 import { storage } from './Storage.js';
 
@@ -29,6 +30,14 @@ class GdServiceManager {
     this.host = detectHost();
     this.language = hostLanguage();
     this.claimSDK = null;
+    this.pending = pending;
+    // Lazy chunks: the GoodDollar SDKs are only fetched when a wallet action needs them (tests swap these).
+    this.loaders = {
+      ubi: () => import('../gd/ubi.js'),
+      identity: () => import('../gd/identity.js'),
+      engagement: () => import('../gd/engagement.js'),
+      spoils: () => import('../gd/spoils.js'),
+    };
     this.s = {
       sessionAddress: null, status: 'anonymous', verified: false, offline: false, needsReconnect: false,
       busy: null, rewards: null, ubi: null, bounty: null, spoils: [], vault: null,
@@ -137,6 +146,7 @@ class GdServiceManager {
     if (force || this.s.offline) {
       await this.fetchIdentity(force).catch((err) => { if (err?.status === 401) this.dropSession(); });
     }
+    await this.pending.retryAll().catch(() => {});
     const rewards = await fetchRewardsStatus();
     this.s.rewards = rewards;
     setBlessed(rewards?.blessing);
@@ -163,7 +173,7 @@ class GdServiceManager {
       return;
     }
     try {
-      const { prepareUbi, ubiStatus } = await import('../gd/ubi.js');
+      const { prepareUbi, ubiStatus } = await this.loaders.ubi();
       this.claimSDK = await prepareUbi(wallet);
       this.s.ubi = await ubiStatus(this.claimSDK);
     } catch (err) {
@@ -225,20 +235,29 @@ class GdServiceManager {
   verifyHuman() {
     return this.run('verify', async () => {
       await this.ensureWallet();
-      const { faceVerificationLink } = await import('../gd/identity.js');
+      const { faceVerificationLink } = await this.loaders.identity();
       window.location.href = await faceVerificationLink(wallet);
       return {};
     });
   }
 
+  /**
+   * After an on-chain success the player has been paid, so nothing below may turn it into an error: the server
+   * confirmation is queued and retried if it fails, and the follow-up refresh never throws.
+   */
+  async afterPaid(kind, hash) {
+    const confirm = await this.pending.confirm(kind, hash);
+    await this.refreshAll().catch(() => {});
+    return { hash, confirmPending: !confirm.confirmed && confirm.queued };
+  }
+
   claimUbi() {
     return this.run('ubi', async () => {
       await this.ensureWallet();
-      const { claimUbi, prepareUbi } = await import('../gd/ubi.js');
+      const { claimUbi, prepareUbi } = await this.loaders.ubi();
       this.claimSDK = this.claimSDK || (await prepareUbi(wallet));
-      const r = await claimUbi({ claimSDK: this.claimSDK, api: apiFetch, token: getToken() });
-      await this.refreshAll();
-      return r;
+      const { hash } = await claimUbi({ claimSDK: this.claimSDK });
+      return this.afterPaid('ubi', hash);
     });
   }
 
@@ -247,10 +266,9 @@ class GdServiceManager {
       const runId = this.s.bounty?.pendingRunId;
       if (!runId) throw new Error('boss_not_cleared');
       await this.ensureWallet();
-      const { claimBounty } = await import('../gd/engagement.js');
-      const r = await claimBounty({ wallet, api: apiFetch, token: getToken(), runId });
-      await this.refreshAll();
-      return r;
+      const { claimBounty } = await this.loaders.engagement();
+      const { hash } = await claimBounty({ wallet, api: apiFetch, token: getToken(), runId });
+      return this.afterPaid('engagement', hash);
     });
   }
 
@@ -259,10 +277,9 @@ class GdServiceManager {
       const spoil = this.s.spoils.find((x) => x.id === spoilId);
       if (!spoil?.voucher || !this.s.vault) throw new Error('not_claimable');
       await this.ensureWallet();
-      const { redeemSpoil } = await import('../gd/spoils.js');
-      const r = await redeemSpoil({ wallet, api: apiFetch, token: getToken(), vault: this.s.vault.address, voucher: spoil.voucher });
-      await this.refreshAll();
-      return r;
+      const { redeemSpoil } = await this.loaders.spoils();
+      const { hash } = await redeemSpoil({ wallet, vault: this.s.vault.address, voucher: spoil.voucher });
+      return this.afterPaid('spoil', hash);
     });
   }
 }

@@ -5634,12 +5634,12 @@ In `src/style.css` delete every rule block whose selector starts with `.connect-
 - [ ] **Step 10: Verify nothing Nimiq-flavoured is left, then build and test**
 
 ```bash
-grep -rnE "Nimiq|nimiq|\bNIM\b|__lunaGate|0\.001|dailyCapNim|nimEarned|firstBossClaimResult" src index.html && echo "LEFTOVERS ABOVE" || echo "clean"
+grep -rnE "Nimiq|nimiq|\bNIM\b|__lunaGate|dailyCapNim|nimEarned|firstBossClaimResult|valueNim" src index.html && echo "LEFTOVERS ABOVE" || echo "clean"
 npm run build
 npm test
 ```
 
-Expected: `clean`; build succeeds; all client and server tests pass. (The Forge scene's internal tab key `'nim'`/`tabNim` is a lowercase identifier and is fine.)
+Expected: `clean`; build succeeds; all client and server tests pass. (The Forge scene's internal tab key `'nim'`/`tabNim` is a lowercase identifier and is fine. `0.001` is deliberately not in the pattern: `Audio.js` uses it as a gain floor.)
 
 - [ ] **Step 11: Commit**
 

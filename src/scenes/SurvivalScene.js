@@ -21,12 +21,13 @@ import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
 import { getTodaySeedString, generateDailySurvivalSpec } from '../engine/PRNG.js';
 import { pauseService } from '../engine/PauseService.js';
-import { nimiqService } from '../engine/NimiqService.js';
+import { gdService } from '../engine/GdService.js';
 import { juice } from '../engine/JuiceEffects.js';
 import confetti from 'canvas-confetti';
 import ShardDrop from '../entities/ShardDrop.js';
-import { bankCrystalHarvest, fetchRewardsStatus } from '../nimiq/rewards.js';
-import { getAddress } from '../nimiq/session.js';
+import { fetchRewardsStatus } from '../gd/rewards.js';
+import { runs } from '../gd/runs.js';
+import { SHARD_RATE_GD, DAILY_SHARD_CAP_GD } from '../gd/config.js';
 
 
 export default class SurvivalScene extends Phaser.Scene {
@@ -82,6 +83,8 @@ export default class SurvivalScene extends Phaser.Scene {
     this.crystalBankResult = null;
     this.rewardsStatus = null;
     this.isDailyHarvestCapped = false;
+    runs.start({ mode: 'TRIAL' });
+    this.events.once('shutdown', () => runs.stop());
     fetchRewardsStatus().then((st) => {
       this.rewardsStatus = st;
       this.checkDailyHarvestCap();
@@ -860,7 +863,7 @@ export default class SurvivalScene extends Phaser.Scene {
       this.checkSpawnQueue();
     }
 
-    // Shard Drop (0.001 NIM each) - rare drops!
+    // Shard drop (2 G$ each, paid after UTC midnight) - rare drops!
     if (this.shardDrops && enemy) {
       const isBoss = mobType === 'boss_gorgok';
       const eliteTypes = ['bog_lurker', 'dread_bat', 'crypt_wraith', 'basalt_golem', 'void_stalker', 'hornet_guard', 'skeleton_warrior', 'cinder_drake', 'astral_shade', 'mirelurker'];
@@ -891,7 +894,7 @@ export default class SurvivalScene extends Phaser.Scene {
         this,
         this.player.x,
         this.player.y - 40,
-        'DAILY NIM CAP REACHED (0.1 MAX)! 🔒',
+        `DAILY SHARD CAP REACHED (${DAILY_SHARD_CAP_GD} G$)! 🔒`,
         '#f59e0b',
         18,
         2500
@@ -1025,7 +1028,7 @@ export default class SurvivalScene extends Phaser.Scene {
     }).setScrollFactor(0).setDepth(201);
 
     // Shard Harvest Counter
-    this.txtHarvest = this.add.text(12, 28, '💎 +0.000 NIM', {
+    this.txtHarvest = this.add.text(12, 28, '💎 +0 G$', {
       fontFamily: 'Press Start 2P',
       fontSize: '5.5px',
       color: '#38e1ff'
@@ -1073,26 +1076,24 @@ export default class SurvivalScene extends Phaser.Scene {
   }
 
   checkDailyHarvestCap() {
-    const earned = Number(this.rewardsStatus?.crystalStatus?.nimEarned || 0);
-    const cap = Number(this.rewardsStatus?.crystalStatus?.dailyCapNim ?? 0.1);
-    const sessionEarned = (this.sessionCrystalsCollected || 0) * 0.001;
-    const totalToday = earned + sessionEarned;
-    this.isDailyHarvestCapped = totalToday >= cap || Boolean(this.rewardsStatus?.crystalStatus?.isCapped);
+    const st = this.rewardsStatus?.crystalStatus;
+    const earned = Number(st?.gdEarned || 0);
+    const cap = Number(st?.dailyCapGd ?? DAILY_SHARD_CAP_GD);
+    const sessionEarned = (this.sessionCrystalsCollected || 0) * SHARD_RATE_GD;
+    this.isDailyHarvestCapped = earned + sessionEarned >= cap || Boolean(st?.isCapped);
     this.updateCrystalHarvestHud();
   }
 
   updateCrystalHarvestHud() {
     if (!this.txtHarvest) return;
-    const cap = Number(this.rewardsStatus?.crystalStatus?.dailyCapNim ?? 0.1);
-    const earnedToday = Number(this.rewardsStatus?.crystalStatus?.nimEarned || 0);
-    const sessionEarned = (this.sessionCrystalsCollected || 0) * 0.001;
-    const totalToday = earnedToday + sessionEarned;
-
-    if (totalToday >= cap || this.rewardsStatus?.crystalStatus?.isCapped) {
-      this.txtHarvest.setText(`💎 ${cap.toFixed(3)} NIM (MAX 🔒)`);
+    const st = this.rewardsStatus?.crystalStatus;
+    const cap = Number(st?.dailyCapGd ?? DAILY_SHARD_CAP_GD);
+    const sessionEarned = (this.sessionCrystalsCollected || 0) * SHARD_RATE_GD;
+    if (Number(st?.gdEarned || 0) + sessionEarned >= cap || st?.isCapped) {
+      this.txtHarvest.setText(`💎 ${cap} G$ (MAX 🔒)`);
       this.txtHarvest.setColor('#f59e0b');
     } else {
-      this.txtHarvest.setText(`💎 +${sessionEarned.toFixed(3)} NIM`);
+      this.txtHarvest.setText(`💎 +${sessionEarned} G$`);
       this.txtHarvest.setColor('#ffd700');
     }
   }
@@ -1269,27 +1270,43 @@ export default class SurvivalScene extends Phaser.Scene {
       notConnected: false,
     };
 
-    try {
-      const status = nimiqService.getStatus();
-      if (!status.connected) {
-        proof.notConnected = true;
-        proof.label = 'Run Not Verified — Sign In to Compete';
-        return proof;
+    const status = gdService.getStatus();
+    if (!status.connected) {
+      proof.notConnected = true;
+      proof.label = 'Not Ranked — Connect Wallet to Compete';
+      runs.stop();
+    } else {
+      try {
+        const res = await Promise.race([
+          runs.finish({
+            score: runData.score,
+            kills: runData.kills,
+            shards: this.sessionCrystalsCollected || 0,
+            durationMs: runData.duration * 1000,
+          }),
+          new Promise((resolve) => setTimeout(() => resolve({ ticketed: true, error: 'timeout', status: 0 }), 9000)),
+        ]);
+        if (!res.ticketed) {
+          proof.offline = true;
+          proof.label = 'Run Not Recorded (Offline)';
+        } else if (res.error) {
+          proof.offline = res.status === 0;
+          proof.label = proof.offline ? 'Run Not Recorded (Offline)' : `Run Not Recorded — ${res.error}`;
+        } else if (res.rankedOk) {
+          proof.verified = true;
+          proof.rank = res.rank?.ranked;
+          proof.isNewBest = res.isNewBest;
+          proof.label = `Ranked — #${res.rank?.ranked}${res.isNewBest ? ' (New Best)' : ''}`;
+        } else {
+          proof.rank = res.rank?.open;
+          proof.label = status.verified
+            ? `Open Board #${res.rank?.open ?? '-'} — run not ranked`
+            : `Open Board #${res.rank?.open ?? '-'} — verify to compete for G$`;
+        }
+      } catch (err) {
+        proof.offline = true;
+        proof.label = 'Run Not Recorded (Offline)';
       }
-      const res = await Promise.race([
-        nimiqService.signScoreProof(runData.score, 'SURVIVAL', {
-          durationMs: runData.duration * 1000,
-          kills: runData.kills,
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error('Server unreachable — run not verified on-chain'), { timedOut: true })), 9000)),
-      ]);
-      proof.verified = true;
-      proof.rank = res.rank;
-      proof.isNewBest = res.isNewBest;
-      proof.label = `Verified On-Chain — Rank #${res.rank}${res.isNewBest ? ' (New Best)' : ''}`;
-    } catch (err) {
-      proof.offline = err.timedOut || String(err?.message || '').includes('Server unreachable');
-      proof.label = proof.offline ? 'Run Not Verified (Offline)' : `Run Not Verified — ${err?.message || 'error'}`;
     }
 
     // Save locally either way; keep the server result for review.
@@ -1300,20 +1317,6 @@ export default class SurvivalScene extends Phaser.Scene {
       rank: proof.rank || null,
       status: proof.label,
     });
-
-    // Bank Shards collected during the Endless run
-    if (this.sessionCrystalsCollected > 0 && getAddress()) {
-      try {
-        const bankRes = await bankCrystalHarvest({
-          crystalsCollected: this.sessionCrystalsCollected,
-          durationMs: runData.duration * 1000,
-          kills: runData.kills,
-        });
-        proof.crystalBankResult = bankRes;
-      } catch (err) {
-        console.warn('[rewards] crystal bank error', err?.message);
-      }
-    }
 
     return proof;
   }
@@ -1346,15 +1349,18 @@ export default class SurvivalScene extends Phaser.Scene {
       color: '#ffffff'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
 
+    const st = gdService.getStatus();
     let crystalLine = '';
     if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
-      crystalLine = '🔒 Daily Limit Reached (0.1 NIM Max) • No More NIM Today (Resets 00:00 UTC)';
+      crystalLine = `🔒 Daily Shard Cap Reached (${DAILY_SHARD_CAP_GD} G$ Max) • Resets 00:00 UTC`;
+    } else if (this.sessionCrystalsCollected > 0 && st.verified) {
+      crystalLine = `💎 Shard Harvest: +${this.sessionCrystalsCollected * SHARD_RATE_GD} G$ pending (${this.sessionCrystalsCollected} Shards)`;
     } else if (this.sessionCrystalsCollected > 0) {
-      crystalLine = `💎 Shard Harvest: +${(this.sessionCrystalsCollected * 0.001).toFixed(3)} NIM Banked (${this.sessionCrystalsCollected} Crystals)`;
-    } else if (getAddress()) {
-      crystalLine = '💎 Shard Harvest: 0 Crystals';
+      crystalLine = '🛡 Verify you are human to bank your Shards as G$';
+    } else if (st.verified) {
+      crystalLine = '💎 Shard Harvest: 0 Shards';
     } else {
-      crystalLine = '⚡ Connect Wallet to Bank NIM Harvests';
+      crystalLine = '⚡ Connect & verify to bank Shards as G$';
     }
 
     const details = this.add.text(w / 2, h / 2 - 14, [
@@ -1498,6 +1504,13 @@ export default class SurvivalScene extends Phaser.Scene {
 
   update() {
     if (this.isGameOver) return;
+    // The survival time bonus is only added to totalScore at game over, so include it live; otherwise the
+    // closing checkpoint of a very long run would carry the whole bonus in one window and trip the server's rate check.
+    runs.update({
+      score: this.totalScore + this.secondsSurvived * GAME_CONFIG.SURVIVAL.PTS_PER_SECOND,
+      kills: this.killCount.total,
+      shards: this.sessionCrystalsCollected || 0,
+    });
 
     // Update survival timer
     const elapsedSec = Math.floor((performance.now() - this.startTime) / 1000);

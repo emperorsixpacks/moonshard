@@ -23,10 +23,12 @@ export async function ubiStatus(claimSDK) {
   return { entitlementG: formatUnits(ent.amount, 18), canClaim, nextClaimAt };
 }
 
-/** Claims on-chain, then asks the server to confirm the tx (grants today's Citizen's Blessing). */
-export async function claimUbi({ claimSDK, api, token }) {
+/**
+ * Claims on-chain. The server confirmation (which grants today's Citizen's Blessing) is done by the caller
+ * through the pending-confirmation queue, so a flaky network can never turn a paid claim into an error.
+ */
+export async function claimUbi({ claimSDK }) {
   const receipt = await claimSDK.claim();
-  const hash = receipt.transactionHash;
-  const confirm = await api('/ubi/confirm', { method: 'POST', token, body: { txHash: hash } });
-  return { hash, confirm };
+  if (receipt.status && receipt.status !== 'success') throw new Error('tx_failed');
+  return { hash: receipt.transactionHash };
 }

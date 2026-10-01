@@ -35,8 +35,10 @@ import { juice } from '../engine/JuiceEffects.js';
 import WeatherManager from '../engine/WeatherManager.js';
 import confetti from 'canvas-confetti';
 import ShardDrop from '../entities/ShardDrop.js';
-import { claimFirstStoryBossReward, bankCrystalHarvest, fetchRewardsStatus } from '../nimiq/rewards.js';
-import { getAddress } from '../nimiq/session.js';
+import { gdService } from '../engine/GdService.js';
+import { fetchRewardsStatus } from '../gd/rewards.js';
+import { runs } from '../gd/runs.js';
+import { SHARD_RATE_GD, DAILY_SHARD_CAP_GD } from '../gd/config.js';
 
 
 export default class StoryScene extends Phaser.Scene {
@@ -173,13 +175,15 @@ export default class StoryScene extends Phaser.Scene {
     this.projectiles = this.physics.add.group({ runChildUpdate: true });
     this.shardDrops = this.physics.add.group();
     this.sessionCrystalsCollected = 0;
-    this.firstBossClaimResult = null;
+    this.runResult = null;
     this.crystalBankResult = null;
     this.levelStartTime = performance.now();
     fetchRewardsStatus().then((st) => {
       this.rewardsStatus = st;
       this.checkDailyHarvestCap();
     }).catch(() => {});
+    runs.start({ mode: 'STORY', chapter: this.chapterId });
+    this.events.once('shutdown', () => runs.stop());
 
     // Build the Level Geometry & Spawns
     this.buildChapterLevel();
@@ -2240,8 +2244,8 @@ export default class StoryScene extends Phaser.Scene {
     this.hudContainer.add(this.txtMaterials);
     this.updateHudMaterials();
 
-    // Shard Harvest Counter (0.001 NIM per crystal)
-    this.txtHarvest = this.add.text(w - 12, 22, '💎 +0.000 NIM', {
+    // Shard Harvest Counter (2 G$ per shard)
+    this.txtHarvest = this.add.text(w - 12, 22, '💎 +0 G$', {
       fontFamily: 'Press Start 2P',
       fontSize: '5px',
       color: '#38e1ff'
@@ -2264,26 +2268,24 @@ export default class StoryScene extends Phaser.Scene {
   }
 
   checkDailyHarvestCap() {
-    const earned = Number(this.rewardsStatus?.crystalStatus?.nimEarned || 0);
-    const cap = Number(this.rewardsStatus?.crystalStatus?.dailyCapNim ?? 0.1);
-    const sessionEarned = (this.sessionCrystalsCollected || 0) * 0.001;
-    const totalToday = earned + sessionEarned;
-    this.isDailyHarvestCapped = totalToday >= cap || Boolean(this.rewardsStatus?.crystalStatus?.isCapped);
+    const st = this.rewardsStatus?.crystalStatus;
+    const earned = Number(st?.gdEarned || 0);
+    const cap = Number(st?.dailyCapGd ?? DAILY_SHARD_CAP_GD);
+    const sessionEarned = (this.sessionCrystalsCollected || 0) * SHARD_RATE_GD;
+    this.isDailyHarvestCapped = earned + sessionEarned >= cap || Boolean(st?.isCapped);
     this.updateHudHarvest();
   }
 
   updateHudHarvest() {
     if (!this.txtHarvest) return;
-    const cap = Number(this.rewardsStatus?.crystalStatus?.dailyCapNim ?? 0.1);
-    const earnedToday = Number(this.rewardsStatus?.crystalStatus?.nimEarned || 0);
-    const sessionEarned = (this.sessionCrystalsCollected || 0) * 0.001;
-    const totalToday = earnedToday + sessionEarned;
-
-    if (totalToday >= cap || this.rewardsStatus?.crystalStatus?.isCapped) {
-      this.txtHarvest.setText(`💎 ${cap.toFixed(3)} NIM (MAX 🔒)`);
+    const st = this.rewardsStatus?.crystalStatus;
+    const cap = Number(st?.dailyCapGd ?? DAILY_SHARD_CAP_GD);
+    const sessionEarned = (this.sessionCrystalsCollected || 0) * SHARD_RATE_GD;
+    if (Number(st?.gdEarned || 0) + sessionEarned >= cap || st?.isCapped) {
+      this.txtHarvest.setText(`💎 ${cap} G$ (MAX 🔒)`);
       this.txtHarvest.setColor('#f59e0b');
     } else {
-      this.txtHarvest.setText(`💎 +${sessionEarned.toFixed(3)} NIM`);
+      this.txtHarvest.setText(`💎 +${sessionEarned} G$`);
       this.txtHarvest.setColor('#ffd700');
     }
   }
@@ -2519,7 +2521,7 @@ export default class StoryScene extends Phaser.Scene {
       }
       this.updateHudMaterials();
 
-      // Shard Drop (0.001 NIM each) - rare drops!
+      // Shard drop (2 G$ each, paid after UTC midnight) - rare drops!
       if (this.shardDrops) {
         const isBoss = enemy.mobType && enemy.mobType.startsWith('boss');
         const eliteTypes = ['bog_lurker', 'dread_bat', 'crypt_wraith', 'basalt_golem', 'void_stalker', 'hornet_guard', 'skeleton_warrior', 'cinder_drake', 'astral_shade', 'mirelurker'];
@@ -2563,7 +2565,7 @@ export default class StoryScene extends Phaser.Scene {
         this,
         this.player.x,
         this.player.y - 40,
-        'DAILY NIM CAP REACHED (0.1 MAX)! 🔒',
+        `DAILY SHARD CAP REACHED (${DAILY_SHARD_CAP_GD} G$)! 🔒`,
         '#f59e0b',
         18,
         2500
@@ -2925,46 +2927,19 @@ export default class StoryScene extends Phaser.Scene {
       this.chapterIntroCard = null;
     }
 
-    // Settle NIM rewards (First Boss Bounty + Daily Shards)
+    // Settle the run with the server. The first-boss bounty itself is claimed from the G$ wallet panel.
     const runDurationMs = performance.now() - (this.levelStartTime || performance.now());
-    const bossNames = {
-      1: 'Boss Gorgok',
-      2: 'Boss Wizard',
-      3: 'Boss Skeleton',
-      4: 'Boss Demon',
-      5: 'Boss NightBorne',
-    };
-    const bName = bossNames[this.chapterId] || 'Chapter Boss';
-
-    if (getAddress()) {
-      // 1. Bank crystal harvest
-      if (this.sessionCrystalsCollected > 0) {
-        bankCrystalHarvest({
-          crystalsCollected: this.sessionCrystalsCollected,
-          durationMs: runDurationMs,
-          kills: this.killsCount,
-        }).then((res) => {
-          this.crystalBankResult = res;
-        }).catch(() => {});
-      }
-
-      // 2. Claim first story boss bounty (10 NIM) if not yet claimed
-      if (!this.rewardsStatus || !this.rewardsStatus.firstBossClaimed) {
-        claimFirstStoryBossReward({
-          chapterId: this.chapterId,
-          bossName: bName,
-          durationMs: runDurationMs,
-          kills: this.killsCount,
-        }).then((claimRes) => {
-          this.firstBossClaimResult = claimRes;
-          if (this.rewardsStatus) this.rewardsStatus.firstBossClaimed = true;
-        }).catch((err) => {
-          if (err?.status === 409 && this.rewardsStatus) {
-            this.rewardsStatus.firstBossClaimed = true;
-          }
-        });
-      }
-    }
+    this.runResultPromise = runs.finish({
+      score: 0,
+      kills: this.killsCount,
+      shards: this.sessionCrystalsCollected || 0,
+      durationMs: runDurationMs,
+      bossCleared: true,
+    }).then((res) => {
+      this.runResult = res;
+      gdService.refreshAll().catch(() => {});
+      return res;
+    });
 
     if (this.chapterId === 1) {
       this.startDialogue([
@@ -3002,6 +2977,20 @@ export default class StoryScene extends Phaser.Scene {
         this.showVictoryBanner();
       });
     }
+  }
+
+  bountyBadge() {
+    const st = gdService.getStatus();
+    const bountyG = this.rewardsStatus?.firstBossPrizeG ?? 5000;
+    if (!st.connected) return { text: `⚡ CONNECT A WALLET TO CLAIM THE ${bountyG} G$ BOSS BOUNTY`, color: '#8cb38c' };
+    if (!st.verified) return { text: '🛡 VERIFY YOU ARE HUMAN TO CLAIM THE BOSS BOUNTY', color: '#f59e0b' };
+    if (this.rewardsStatus?.firstBossClaimed) return { text: '✔ FIRST-BOSS BOUNTY ALREADY CLAIMED', color: '#a0c4a0' };
+    if (this.runResult?.bossCleared) return { text: `🌟 BOSS SLAIN! CLAIM ${bountyG} G$ IN THE G$ WALLET (HEADER)`, color: '#ffd700' };
+    if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
+      return { text: `🔒 DAILY SHARD CAP REACHED (${DAILY_SHARD_CAP_GD} G$) • RESETS 00:00 UTC`, color: '#f59e0b' };
+    }
+    if (this.sessionCrystalsCollected > 0) return { text: `💎 SHARD HARVEST: +${this.sessionCrystalsCollected * SHARD_RATE_GD} G$ PENDING`, color: '#38e1ff' };
+    return { text: '💎 SHARD HARVEST BANKED', color: '#a0c4a0' };
   }
 
   showVictoryBanner() {
@@ -3052,35 +3041,21 @@ export default class StoryScene extends Phaser.Scene {
     }).setOrigin(0.5);
     banner.add(msg);
 
-    // NIM Rewards Status Pill
-    let rewardText = '';
-    let rewardColor = '#ffd700';
-    if (this.firstBossClaimResult && this.firstBossClaimResult.ok) {
-      rewardText = '🌟 FIRST BOSS SLAIN: +10 NIM TRANSMITTED TO WALLET!';
-      rewardColor = '#ffd700';
-    } else if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
-      rewardText = '🔒 DAILY LIMIT REACHED (0.1 NIM/DAY) • NO MORE NIM TODAY (RESETS 00:00 UTC)';
-      rewardColor = '#f59e0b';
-    } else if (this.sessionCrystalsCollected > 0) {
-      const nim = (this.sessionCrystalsCollected * 0.001).toFixed(3);
-      rewardText = `💎 SHARD HARVEST: +${nim} NIM QUEUED TO WALLET`;
-      rewardColor = '#38e1ff';
-    } else if (!getAddress()) {
-      rewardText = '⚡ CONNECT WALLET TO CLAIM 10 NIM & DAILY HARVEST';
-      rewardColor = '#8cb38c';
-    } else {
-      rewardText = '💎 SHARD HARVEST BANKED';
-      rewardColor = '#a0c4a0';
-    }
-
-    const rewardBadge = this.add.text(0, -boxHeight / 2 + 54, rewardText, {
+    const initial = this.bountyBadge();
+    const rewardBadge = this.add.text(0, -boxHeight / 2 + 54, initial.text, {
       fontFamily: 'Press Start 2P',
       fontSize: '5px',
-      color: rewardColor,
+      color: initial.color,
       stroke: '#000000',
       strokeThickness: 2,
     }).setOrigin(0.5);
     banner.add(rewardBadge);
+    this.runResultPromise?.then(() => {
+      if (!rewardBadge.active) return;
+      const next = this.bountyBadge();
+      rewardBadge.setText(next.text);
+      rewardBadge.setColor(next.color);
+    });
 
 
     let actionTaken = false;
@@ -3244,16 +3219,14 @@ export default class StoryScene extends Phaser.Scene {
       this.player.die();
     }
 
-    if (this.sessionCrystalsCollected > 0 && getAddress()) {
-      const runDurationMs = performance.now() - (this.levelStartTime || performance.now());
-      bankCrystalHarvest({
-        crystalsCollected: this.sessionCrystalsCollected,
-        durationMs: runDurationMs,
-        kills: this.killsCount,
-      }).then((res) => {
-        this.crystalBankResult = res;
-      }).catch(() => {});
-    }
+    const runDurationMs = performance.now() - (this.levelStartTime || performance.now());
+    runs.finish({
+      score: 0,
+      kills: this.killsCount,
+      shards: this.sessionCrystalsCollected || 0,
+      durationMs: runDurationMs,
+      bossCleared: false,
+    }).then(() => gdService.refreshAll().catch(() => {}));
 
     if (typeof window !== 'undefined' && window.touchController) {
       window.touchController.hide();
@@ -3286,9 +3259,9 @@ export default class StoryScene extends Phaser.Scene {
 
     let crystalBonus = '';
     if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
-      crystalBonus = ' • 🔒 Daily Cap Reached (0.1 NIM Max)';
+      crystalBonus = ` • 🔒 Daily Shard Cap (${DAILY_SHARD_CAP_GD} G$)`;
     } else if (this.sessionCrystalsCollected > 0) {
-      crystalBonus = ` • 💎 +${(this.sessionCrystalsCollected * 0.001).toFixed(3)} NIM Saved`;
+      crystalBonus = ` • 💎 +${this.sessionCrystalsCollected * SHARD_RATE_GD} G$ Pending`;
     }
     const subtitle = this.add.text(w / 2, h / 2 - 22, `Chapter ${this.chapterId}: ${this.chapterConfig.title}${crystalBonus}`, {
       fontFamily: 'Press Start 2P',
@@ -3427,6 +3400,7 @@ export default class StoryScene extends Phaser.Scene {
   }
 
   update() {
+    runs.update({ score: 0, kills: this.killsCount, shards: this.sessionCrystalsCollected || 0 });
     if (this.inDialogue) {
       if (this.player && this.player.body) {
         this.player.setVelocityX(0);

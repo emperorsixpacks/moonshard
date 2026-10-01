@@ -5,7 +5,7 @@ const vaultAbi = parseAbi([
 ]);
 
 /** Redeem a server-signed voucher on MoonshardVault (the voucher pays `voucher.to`). */
-export async function redeemSpoil({ wallet, api, token, vault, voucher }) {
+export async function redeemSpoil({ wallet, vault, voucher }) {
   const { walletClient, publicClient } = wallet.clients();
   const { request } = await publicClient.simulateContract({
     account: walletClient.account,
@@ -17,6 +17,5 @@ export async function redeemSpoil({ wallet, api, token, vault, voucher }) {
   const hash = await walletClient.writeContract(request);
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status !== 'success') throw new Error('tx_failed');
-  await api('/spoils/confirm', { method: 'POST', token, body: { txHash: hash } }).catch(() => {});
-  return { hash };
+  return { hash }; // the caller confirms it with the server (pending-confirmation queue)
 }

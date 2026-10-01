@@ -1,12 +1,12 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
-import { nimiqService } from '../engine/NimiqService.js';
+import { gdService } from '../engine/GdService.js';
 import { pauseService } from '../engine/PauseService.js';
-import { fetchDailyBoard, fetchAllTimeBoard, fetchPayoutStatus, fetchConfig } from '../nimiq/leaderboard.js';
-import { fetchRewardsStatus } from '../nimiq/rewards.js';
-import { identiconDataUrl } from '../nimiq/identicon.js';
-import { getAddress } from '../nimiq/session.js';
+import { fetchDailyBoard, fetchAllTimeBoard, fetchConfig, getBoardView, setBoardView } from '../gd/leaderboard.js';
+import { fetchRewardsStatus } from '../gd/rewards.js';
+import { identiconDataUrl } from '../gd/identicon.js';
+import { getAddress } from '../gd/session.js';
 
 
 export default class LeaderboardScene extends Phaser.Scene {
@@ -46,7 +46,7 @@ export default class LeaderboardScene extends Phaser.Scene {
       this.input.keyboard.on('keydown-ESC', () => this.scene.start('MenuScene'));
     }
 
-    this.loadingText = this.add.text(w / 2, h / 2, 'LOADING ON-CHAIN SCORES…', {
+    this.loadingText = this.add.text(w / 2, h / 2, 'LOADING SCORES…', {
       fontFamily: 'Press Start 2P',
       fontSize: '6px',
 
@@ -54,16 +54,14 @@ export default class LeaderboardScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(25);
 
     try {
-      const [daily, alltime, payout, cfg, rewards] = await Promise.all([
+      const [daily, alltime, cfg, rewards] = await Promise.all([
         fetchDailyBoard(),
         fetchAllTimeBoard(),
-        fetchPayoutStatus(),
         fetchConfig(),
         fetchRewardsStatus().catch(() => null),
       ]);
       this.daily = daily;
       this.alltime = alltime;
-      this.payout = payout;
       this.cfg = cfg;
       this.rewardsStatus = rewards;
       this.loadingText?.destroy();
@@ -102,6 +100,14 @@ export default class LeaderboardScene extends Phaser.Scene {
 
     mkTab('alltime', 'ALL-TIME', w / 2 - 58);
     mkTab('daily', 'DAILY', w / 2 + 58);
+
+    const toggle = this.add.text(w - 14, y - 5, getBoardView() === 'ranked' ? 'VIEW: VERIFIED ▸' : 'VIEW: OPEN ▸', {
+      fontFamily: 'Press Start 2P', fontSize: '4.5px', color: '#38e1ff',
+    }).setOrigin(1, 0.5).setDepth(30).setInteractive({ useHandCursor: true });
+    toggle.on('pointerdown', () => {
+      setBoardView(getBoardView() === 'ranked' ? 'open' : 'ranked');
+      this.scene.restart();
+    });
   }
 
   setActiveTab(tab) {
@@ -122,12 +128,11 @@ export default class LeaderboardScene extends Phaser.Scene {
     const h = this.cameras?.main?.height || this.scale?.height || GAME_CONFIG.HEIGHT;
     const isPortrait = h > 300;
     const isDaily = this.activeTab === 'daily';
-    const board = isDaily ? (this.daily || { entries: [], prizeNim: [] }) : (this.alltime || { entries: [] });
+    const board = isDaily ? (this.daily || { entries: [], prizesG: [] }) : (this.alltime || { entries: [] });
 
     if (isDaily && this.cfg) {
-      const prizes = Array.isArray(this.cfg.dailyPrizeNim) ? this.cfg.dailyPrizeNim : [3, 2, 1];
-      const pool = prizes.reduce((a, b) => a + b, 0);
-      this.addToLayer(w / 2, 48, `🏆 DAILY POOL: ${pool} NIM • 1st: ${prizes[0]} | 2nd: ${prizes[1]} | 3rd: ${prizes[2]} NIM`, '4.8px', '#ffd166', 2);
+      const prizes = Array.isArray(this.cfg.prizesG) ? this.cfg.prizesG : ['1000', '600', '300'];
+      this.addToLayer(w / 2, 48, `🏆 DAILY PRIZES: 1st ${prizes[0]} | 2nd ${prizes[1]} | 3rd ${prizes[2]} G$ • verified humans only`, '4.8px', '#ffd166', 2);
     }
 
     const headerY = isDaily ? 62 : 56;
@@ -143,7 +148,7 @@ export default class LeaderboardScene extends Phaser.Scene {
       name: shortAddress(e.wallet),
       score: e.score,
       time: secondsLabel(e.durationMs),
-      prize: prizeLabel(i, isDaily ? board.prizeNim?.[i] : null),
+      prize: prizeLabel(i, isDaily && getBoardView() === 'ranked' ? board.prizesG?.[i] : null),
       isPlayer: e.wallet === myWallet,
       wallet: e.wallet,
     }));
@@ -154,7 +159,7 @@ export default class LeaderboardScene extends Phaser.Scene {
 
     if (rows.length === 0) {
       this.addToLayer(w / 2, isPortrait ? 180 : 130, isDaily ? 'NO VERIFIED RUNS TODAY' : 'NO VERIFIED RUNS YET', '7px', '#8cb38c');
-      this.addToLayer(w / 2, isPortrait ? 200 : 148, 'Play a Trial and your signed score appears here.', '4.5px', '#a0b8a0');
+      this.addToLayer(w / 2, isPortrait ? 200 : 148, 'Play a Trial and your verified score appears here.', '4.5px', '#a0b8a0');
     } else {
       rows.slice(0, maxRows).forEach((row, idx) => {
         const y = rowStartY + idx * rowSpacing;
@@ -167,7 +172,7 @@ export default class LeaderboardScene extends Phaser.Scene {
         this.addToLayer(w / 2 - 180, y - 3, `${idx + 1}.`, '6px',
           idx === 0 ? '#ffd700' : (idx === 1 ? '#e0e0e0' : (idx === 2 ? '#cd7f32' : '#888')));
 
-        // Nimiq Identicon avatar thumbnail
+        // Identicon avatar thumbnail
         if (row.wallet) {
           const texKey = `identicon_${row.wallet}`;
           if (this.textures && this.textures.exists(texKey)) {
@@ -228,15 +233,17 @@ export default class LeaderboardScene extends Phaser.Scene {
 
   renderPlayerStatus(w, h, myWallet, isDaily) {
     const isPortrait = h > 300;
-    const status = nimiqService.getStatus();
+    const status = gdService.getStatus();
     let line;
     if (!myWallet) {
-      line = '⚡ Not connected — connect your wallet to sign and verify your runs.';
+      line = '⚡ Not connected — tap to connect a wallet and join the board.';
+    } else if (!status.verified) {
+      line = `🛡 ${status.shortAddress} — verify you are human to compete for G$ prizes (tap).`;
     } else {
       const myRow = (isDaily ? this.daily : this.alltime)?.entries?.find((e) => e.wallet === myWallet);
       line = myRow
-        ? `⚡ ${status.shortAddress} — you're rank #${myRow.rank}${myRow.rank <= 3 ? ' 🏆' : ''}`
-        : `⚡ ${status.shortAddress} — signed in. Play a Trial to claim a spot.`;
+        ? `✔ ${status.shortAddress} — you're rank #${myRow.rank}${myRow.rank <= 3 ? ' 🏆' : ''}`
+        : `✔ ${status.shortAddress} — verified. Play a Trial to claim a spot.`;
     }
     const statusY = isPortrait ? h - 74 : 207;
     const lineObj = this.add.text(w / 2, statusY, line, {
@@ -248,17 +255,17 @@ export default class LeaderboardScene extends Phaser.Scene {
     }).setOrigin(0.5);
     lineObj.setInteractive({ useHandCursor: true });
     lineObj.on('pointerdown', () => {
-      if (!myWallet && window.__lunaGate) window.__lunaGate.show().then(() => {});
+      window.__gdPanel?.open();
     });
     this.boardLayer.add(lineObj);
 
     // If connected, show player's personal rewards status pill
     if (myWallet && this.rewardsStatus) {
-      const bossText = this.rewardsStatus.firstBossClaimed ? 'CLAIMED (+10 NIM)' : 'UNCLAIMED (10 NIM)';
-      const cap = Number(this.rewardsStatus.crystalStatus?.dailyCapNim ?? 0.1);
-      const earned = Number(this.rewardsStatus.crystalStatus?.nimEarned || 0).toFixed(3);
+      const bossText = this.rewardsStatus.firstBossClaimed ? `CLAIMED (+${this.rewardsStatus.firstBossPrizeG} G$)` : `UNCLAIMED (${this.rewardsStatus.firstBossPrizeG} G$)`;
+      const cap = Number(this.rewardsStatus.crystalStatus?.dailyCapGd ?? 100);
+      const earned = Number(this.rewardsStatus.crystalStatus?.gdEarned || 0).toFixed(0);
       const isCapped = Boolean(this.rewardsStatus.crystalStatus?.isCapped);
-      const harvestText = isCapped ? `${earned} / ${cap.toFixed(3)} NIM (MAX 🔒)` : `${earned} / ${cap.toFixed(3)} NIM`;
+      const harvestText = isCapped ? `${earned} / ${cap.toFixed(0)} G$ (MAX 🔒)` : `${earned} / ${cap.toFixed(0)} G$`;
       const rewardsPill = `🏆 1st Boss: ${bossText}  |  💎 Harvest: ${harvestText}`;
       this.addToLayer(w / 2, isPortrait ? h - 60 : 218, rewardsPill, '4.2px', isCapped ? '#f59e0b' : '#ffd700', 1);
     }
@@ -266,12 +273,7 @@ export default class LeaderboardScene extends Phaser.Scene {
 
   renderSpoilsStatus(w, h) {
     const isPortrait = h > 300;
-    const counts = this.payout?.counts || {};
-    const signer = this.payout?.signerConfigured;
-    const text = signer
-      ? `Payout worker online — ${counts.completed || 0} settled, ${counts.pending || 0} pending`
-      : `Payout worker offline — daily spoils staged for settlement`;
-    this.addToLayer(w / 2, isPortrait ? h - 46 : 229, text, '4.5px', '#8cb38c', 2);
+    this.addToLayer(w / 2, isPortrait ? h - 46 : 229, 'Spoils settle after UTC midnight — redeem them in the G$ wallet (header).', '4.5px', '#8cb38c', 2);
   }
 
   renderBottomBar(w, h) {
@@ -367,9 +369,9 @@ export default class LeaderboardScene extends Phaser.Scene {
     this.add.text(w / 2, 172, 'DAILY SPOILS SETTLEMENT', {
       fontFamily: 'Press Start 2P', fontSize: '5px', color: '#ffd166'
     }).setOrigin(0.5).setDepth(301);
-    const detail = 'Top-3 verified daily runs are paid 3/2/1 NIM on-chain at UTC midnight\n'
-      + 'by the Moonshard payout worker. No manual claims — the worker settles\n'
-      + 'winners automatically once a funded signer is configured.';
+    const detail = 'Top-3 verified daily runs win 1000/600/300 G$ at UTC midnight.\n'
+      + 'Shards you collect are paid as G$ too (up to 100 G$/day).\n'
+      + 'Open the G$ wallet in the header to redeem your Spoils.';
     this.add.text(w / 2, 196, detail, {
       fontFamily: 'Press Start 2P', fontSize: '4px', color: '#a0c4a0', align: 'center', lineSpacing: 3
     }).setOrigin(0.5).setDepth(301);
@@ -400,6 +402,6 @@ function secondsLabel(durationMs) {
 
 function prizeLabel(idx, nim) {
   const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
-  if (idx < 3) return medal && nim ? `${medal} ${nim} NIM` : (medal || '🌲');
+  if (idx < 3) return medal && nim ? `${medal} ${nim} G$` : (medal || '🌲');
   return '🌲';
 }

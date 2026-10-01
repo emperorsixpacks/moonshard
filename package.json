@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Moonshard: The High Forest — a pixel action-platformer powered by GoodDollar (G$) on Celo",
+  "description": "Moonshard: The High Forest \u2014 a pixel action-platformer powered by GoodDollar (G$) on Celo",
   "scripts": {
     "dev": "vite",
     "dev:all": "concurrently -k -n api,web -c green,cyan \"npm run dev --prefix server\" \"vite\"",
@@ -11,15 +11,15 @@
     "preview": "vite preview",
     "test": "node --test \"test/client/**/*.test.js\" && npm test --prefix server",
     "test:contracts": "cd contracts && forge test -vv",
-    "start:server": "npm start --prefix server"
+    "start:server": "npm start --prefix server",
+    "test:fork": "node scripts/fork/e2e.mjs",
+    "test:browser": "node scripts/fork/browser.mjs",
+    "test:smoke": "node scripts/smoke.mjs"
   },
   "license": "MIT",
   "dependencies": {
     "@goodsdks/citizen-sdk": "^1.2.7",
     "@goodsdks/engagement-sdk": "^1.0.4",
-    "@nimiq/hub-api": "^1.15.0",
-    "@nimiq/identicons": "^1.6.2",
-    "@nimiq/mini-app-sdk": "^0.1.0",
     "@walletconnect/ethereum-provider": "^2.25.0",
     "canvas-confetti": "^1.9.4",
     "phaser": "^4.2.1",
@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "concurrently": "^10.0.5",
+    "playwright": "^1.63.0",
     "vite": "^8.3.0"
   }
 }

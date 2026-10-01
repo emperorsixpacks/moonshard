@@ -11,12 +11,11 @@ import TutorialScene from './scenes/TutorialScene.js';
 import ForgeScene from './scenes/ForgeScene.js';
 import LeaderboardScene from './scenes/LeaderboardScene.js';
 import { TouchController } from './ui/TouchControls.js';
-import { nimiqService } from './engine/NimiqService.js';
+import { gdService } from './engine/GdService.js';
 import { pauseService } from './engine/PauseService.js';
 import { sound } from './engine/Audio.js';
-import { ConnectGate } from './ui/ConnectGate.js';
-import { getAddress } from './nimiq/session.js';
-import { setupImmersiveLayout } from './nimiq/immersive.js';
+import { GdPanel } from './ui/GdPanel.js';
+import { setupImmersiveLayout } from './engine/ImmersiveLayout.js';
 
 // Phaser 3 Game Configuration
 const phaserConfig = {
@@ -66,7 +65,7 @@ function startGame() {
 
   // Initialize Virtual Touch Controls & Header Actions
   window.touchController = new TouchController(game);
-  window.nimiqService = nimiqService;
+  window.gdService = gdService;
   window.pauseService = pauseService;
   window.sound = sound;
 
@@ -90,17 +89,14 @@ function startGame() {
   console.log('🌲 Moonshard: The High Forest initialized successfully!');
 }
 
-// Nimiq Pay host language, applied to the document for correct copy/layout.
-document.documentElement.lang = nimiqService.getStatus().language || 'en';
+// Host language, applied to the document for correct copy/layout.
+document.documentElement.lang = gdService.getStatus().language || 'en';
 
-// Keep the canvas inside the visible area of embedded webviews — Nimiq app
-// header/address bar on top + phone system nav bars on the edges.
+// Keep the canvas inside the visible area of embedded webviews (wallet header + system bars).
 setupImmersiveLayout();
 
-const urlParams = new URLSearchParams(window.location.search);
-if (getAddress() || urlParams.get('skipGate') === 'true' || urlParams.get('scene')) {
-  startGame();
-} else {
-  window.__lunaGate = new ConnectGate();
-  window.__lunaGate.show().then(() => startGame());
-}
+// The wallet panel is available from the first frame; connecting is always optional.
+window.__gdPanel = new GdPanel();
+window.__gdPanel.mount();
+
+startGame();

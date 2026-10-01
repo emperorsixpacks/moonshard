@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
-import { nimiqService } from '../engine/NimiqService.js';
+import { gdService } from '../engine/GdService.js';
 import { pauseService } from '../engine/PauseService.js';
 
 export default class MenuScene extends Phaser.Scene {
@@ -84,10 +84,14 @@ export default class MenuScene extends Phaser.Scene {
       letterSpacing: 2
     }).setOrigin(0.5).setDepth(11);
 
-    // Connection status badge (tap to connect after skipping the gate)
-    const status = nimiqService.getStatus();
-    const statusBadge = status.connected ? `⚡ ${status.shortAddress}` : (status.offline ? '⚡ API OFFLINE' : '⚡ NOT CONNECTED');
-    const badge = this.add.text(w / 2, titleY + (isTall ? 14 : 12), statusBadge, {
+    // Wallet status badge: tap to open the G$ wallet panel
+    const badgeText = (st) => {
+      if (!st.connected) return '⚡ TAP TO CONNECT • EARN G$';
+      if (st.status === 'verified') return st.ubi?.canClaim ? '💚 DAILY G$ READY — TAP TO CLAIM' : `✔ VERIFIED • ${st.shortAddress}`;
+      if (st.status === 'expired') return '🛡 RE-VERIFY TO KEEP EARNING G$';
+      return `🛡 ${st.shortAddress} • VERIFY TO EARN G$`;
+    };
+    const badge = this.add.text(w / 2, titleY + (isTall ? 14 : 12), badgeText(gdService.getStatus()), {
       fontFamily: 'Press Start 2P',
       fontSize: isTall ? '5.5px' : '4.5px',
       color: '#a0c4a0',
@@ -95,9 +99,9 @@ export default class MenuScene extends Phaser.Scene {
       strokeThickness: 2
     }).setOrigin(0.5).setDepth(11);
     badge.setInteractive({ useHandCursor: true });
-    badge.on('pointerdown', () => {
-      if (!status.connected && window.__lunaGate) window.__lunaGate.show().then(() => {});
-    });
+    badge.on('pointerdown', () => window.__gdPanel?.open());
+    const stopWatching = gdService.subscribe((st) => { if (badge.active) badge.setText(badgeText(st)); });
+    this.events.once('shutdown', stopWatching);
 
     // Pulse animation on title
     this.tweens.add({
@@ -130,7 +134,7 @@ export default class MenuScene extends Phaser.Scene {
       },
       {
         text: '🏆 3. ENDLESS MODE',
-        desc: 'Endless Arena • On-Chain Leaderboard',
+        desc: 'Endless Arena • Verified Leaderboard',
         action: () => this.scene.start('SurvivalScene'),
         shouldFade: true
       },

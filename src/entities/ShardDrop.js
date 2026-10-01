@@ -1,15 +1,16 @@
 import Phaser from 'phaser';
+import { SHARD_RATE_GD, DAILY_SHARD_CAP_GD } from '../gd/config.js';
 import { sound } from '../engine/Audio.js';
 
 export default class ShardDrop extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y, valueNim = 0.001) {
+  constructor(scene, x, y, valueGd = SHARD_RATE_GD) {
     ShardDrop.ensureTexture(scene);
     super(scene, x, y, 'shard');
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    this.valueNim = valueNim;
+    this.valueGd = valueGd;
     this.isCollected = false;
 
     this.setDepth(190);
@@ -112,7 +113,7 @@ export default class ShardDrop extends Phaser.Physics.Arcade.Sprite {
 
     // Float notification text
     const isCapped = Boolean(this.scene && this.scene.isDailyHarvestCapped);
-    const floatLabel = isCapped ? 'DAILY CAP (0.1 NIM MAX) 🔒' : '+0.001 NIM 💎';
+    const floatLabel = isCapped ? `DAILY CAP (${DAILY_SHARD_CAP_GD} G$) 🔒` : `+${SHARD_RATE_GD} G$ 💎`;
     const floatColor = isCapped ? '#fbbf24' : '#38e1ff';
     const floatStroke = isCapped ? '#3b2200' : '#002233';
 

@@ -1,6 +1,6 @@
 import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
-import { nimiqService } from '../engine/NimiqService.js';
+import { gdService } from '../engine/GdService.js';
 
 export class TouchController {
   constructor(game) {
@@ -25,7 +25,7 @@ export class TouchController {
     }
     this.initTouchButtons();
     this.initHeaderButtons();
-    this.initNimiqIntegration();
+    this.initWalletButton();
     this.initViewportListener();
   }
 
@@ -108,7 +108,7 @@ export class TouchController {
     document.addEventListener(
       'touchmove',
       (e) => {
-        if (e.target.closest('#nimiq-modal-body') || e.target.closest('.modal-body')) {
+        if (e.target.closest('#gd-panel') || e.target.closest('.modal-body')) {
           return;
         }
         e.preventDefault();
@@ -356,40 +356,27 @@ export class TouchController {
     }
   }
 
-  initNimiqIntegration() {
-    const btnNimiq = document.getElementById('btn-nimiq');
-    const txtNimiq = document.getElementById('nimiq-btn-text');
-    const dotNimiq = document.getElementById('nimiq-dot');
+  initWalletButton() {
+    const btn = document.getElementById('btn-wallet');
+    const txt = document.getElementById('wallet-btn-text');
+    const dot = document.getElementById('wallet-dot');
+    const btnLand = document.getElementById('btn-wallet-landscape');
+    const txtLand = document.getElementById('wallet-btn-text-landscape');
+    const dotLand = document.getElementById('wallet-dot-landscape');
 
-    const btnNimiqLand = document.getElementById('btn-nimiq-landscape');
-    const txtNimiqLand = document.getElementById('nimiq-btn-text-landscape');
-    const dotNimiqLand = document.getElementById('nimiq-dot-landscape');
+    const open = () => window.__gdPanel?.open();
+    if (btn) btn.addEventListener('click', open);
+    if (btnLand) btnLand.addEventListener('click', open);
 
-    const openAltar = () => {
-      if (nimiqService.getStatus().connected) return;
-      if (window.__lunaGate) window.__lunaGate.show().then(() => {});
-    };
-
-    if (btnNimiq) btnNimiq.addEventListener('click', openAltar);
-    if (btnNimiqLand) btnNimiqLand.addEventListener('click', openAltar);
-
-    // Subscribe to Nimiq status changes to update header indicator
-    nimiqService.subscribe((status) => {
-      const updateBadge = (txt, dot) => {
-        if (!txt || !dot) return;
-        if (status.connected) {
-          dot.classList.remove('offline');
-          dot.classList.add('online');
-          txt.textContent = status.shortAddress || 'CONNECTED';
-        } else {
-          dot.classList.remove('online');
-          dot.classList.add('offline');
-          txt.textContent = 'NIMIQ';
-        }
+    gdService.subscribe((status) => {
+      const paint = (label, indicator) => {
+        if (!label || !indicator) return;
+        indicator.classList.toggle('online', status.verified);
+        indicator.classList.toggle('offline', !status.verified);
+        label.textContent = status.connected ? (status.verified ? 'G$ ✔' : status.shortAddress || 'G$') : 'G$';
       };
-
-      updateBadge(txtNimiq, dotNimiq);
-      updateBadge(txtNimiqLand, dotNimiqLand);
+      paint(txt, dot);
+      paint(txtLand, dotLand);
     });
   }
 

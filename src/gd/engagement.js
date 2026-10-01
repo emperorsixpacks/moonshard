@@ -16,6 +16,5 @@ export async function claimBounty({ wallet, api, token, runId }) {
   const receipt = await sdk.nonContractAppClaim(att.app, att.inviter, validUntilBlock, userSignature, att.appSignature, (h) => { hash = h; });
   hash = hash ?? receipt.transactionHash;
   if (receipt.status !== 'success') throw new Error('tx_failed');
-  await api('/engagement/confirm', { method: 'POST', token, body: { txHash: hash } }).catch(() => {});
-  return { hash };
+  return { hash }; // the caller confirms it with the server (pending-confirmation queue)
 }
