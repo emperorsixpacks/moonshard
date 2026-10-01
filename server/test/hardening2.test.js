@@ -5,6 +5,7 @@ import { fakeChain, fakeClock, makeHarness, playTrial, UBI, ubiClaimedLog } from
 import { createDb } from "../src/db.js";
 import { createIdentityResolver } from "../src/identity.js";
 import { dayKey } from "../src/time.js";
+import { rankOf } from "../src/leaderboard.js";
 import * as cfg from "../config.js";
 import * as auth from "../src/auth.js";
 
@@ -362,3 +363,46 @@ test("H3: a linked wallet may confirm when the event names the root, or names th
     assert.equal(viaSender.status, 200, JSON.stringify(viaSender.body));
   } finally { await h.close(); }
 });
+
+// ---------------------------------------------------------------------------------------------
+// H4. rankOf matches by subject, not by wallet.
+//     Break caught: wallet W plays unverified (subject W), is later whitelisted as a linked wallet of
+//     root R and plays again (subject R). Both score rows carry wallet W, so matching on the wallet
+//     returned the first row's position for whichever subject was asked about.
+// ---------------------------------------------------------------------------------------------
+
+for (const { name, first, second, want } of [
+  { name: "the unverified row is ahead", first: 5000, second: 3000, want: { root: 2, wallet: 1 } },
+  { name: "the verified row is ahead", first: 2000, second: 4000, want: { root: 1, wallet: 2 } },
+]) {
+  test(`H4: one wallet with two score rows in a day ranks each subject by its own row (${name})`, async () => {
+    const h = await makeHarness();
+    try {
+      const root = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
+      const w = await h.newPlayer(); // unverified at first: plays as subject W
+      assert.equal((await playTrial(h, w, { score: first })).status, 200);
+      h.chain.whitelist(w.account.address, root); // W becomes a non-root linked wallet of root R ...
+      h.ctx.identity.invalidate(w.address);
+      const again = await playTrial(h, w, { score: second }); // ... and now plays as subject R
+      assert.equal(again.status, 200, JSON.stringify(again.body));
+
+      const rows = (await h.db.query("SELECT subject, wallet FROM scores ORDER BY subject")).rows;
+      assert.deepEqual(rows.map((r) => r.wallet), [w.address, w.address], "scenario: two rows, one wallet");
+      assert.deepEqual(rows.map((r) => r.subject).sort(), [root, w.address].sort(), "scenario: two subjects");
+
+      assert.equal(again.body.rank.open, want.root, "rank reported by submit");
+      assert.equal(again.body.rank.ranked, 1);
+      const day = "2026-10-05";
+      assert.equal(await rankOf(h.ctx, day, root, "open"), want.root);
+      assert.equal(await rankOf(h.ctx, day, w.address, "open"), want.wallet);
+      assert.equal(await rankOf(h.ctx, day, root, "ranked"), 1);
+      assert.equal(await rankOf(h.ctx, day, w.address, "ranked"), null, "the unverified row is not on the ranked board");
+
+      // the HTTP board never exposes the subject (the root address)
+      const board = await h.api.get("/leaderboard/daily?view=open");
+      assert.equal(board.body.entries.length, 2);
+      for (const e of board.body.entries) assert.equal("subject" in e, false);
+      assert.equal(JSON.stringify(board.body).includes(root), false, "the root address must not appear in the public board");
+    } finally { await h.close(); }
+  });
+}
