@@ -127,6 +127,24 @@ test('start() with a response that has no run id or ticket yields no run, with r
   assert.deepEqual(await h.tracker.finish({ score: 1, kills: 0, shards: 0, durationMs: 9_000 }), { ticketed: false, reason: 'rejected' });
 });
 
+test('M3: with nothing to settle, every finish() gets the same unticketed answer until the next start()', async () => {
+  const h = makeHarness({ token: null });
+  assert.equal(await h.tracker.start({ mode: 'TRIAL' }), null);
+  const first = await h.tracker.finish({ score: 1, kills: 0, shards: 0, durationMs: 9_000 });
+  const second = await h.tracker.finish({ score: 2, kills: 1, shards: 0, durationMs: 9_000 });
+  assert.deepEqual([first, second], [{ ticketed: false, reason: 'not_connected' }, { ticketed: false, reason: 'not_connected' }]);
+  assert.equal(await h.tracker.start({ mode: 'TRIAL' }), null);
+  assert.deepEqual(await h.tracker.finish({}), { ticketed: false, reason: 'not_connected' }, 'a new start() begins a new answer');
+});
+
+test('finish() never throws, and a failure of our own is not blamed on the network', async () => {
+  const h = makeHarness();
+  await h.tracker.start({ mode: 'TRIAL' });
+  h.tracker._post = () => { throw new RangeError('bug in _post'); }; // not an API failure: the API errors are caught inside
+  const res = await h.tracker.finish({ score: 1, kills: 0, shards: 0, durationMs: 9_000 });
+  assert.deepEqual([res.ticketed, res.error, res.reason], [true, 'bug in _post', 'server_error']);
+});
+
 test('finish() never throws, even when the API throws synchronously', async () => {
   const h = makeHarness({ tracker: { api: (path) => { if (path.endsWith('/submit')) throw new TypeError('boom'); return Promise.resolve({ runId: 'r1', ticket: 'tk', seed: 's', ok: true }); } } });
   await h.tracker.start({ mode: 'TRIAL' });
@@ -318,6 +336,28 @@ test('M6: a closing checkpoint that fails twice is reported, recorded in lastErr
   assert.equal(res.checkpointFailed, true);
   assert.equal(submitsOf(h).length, 1);
   assert.deepEqual([h.tracker.lastError.where, h.tracker.lastError.status, h.tracker.lastError.code], ['checkpoint', 0, 'timeout']);
+});
+
+test('M6: the boss bounty needs 80% coverage: a 40 s run with checkpoints at 10, 20, 30 s is saved by the retry, and shown as short without it', async () => {
+  const run40 = async (failures) => {
+    const h = makeHarness();
+    await h.tracker.start({ mode: 'STORY', chapter: 1 });
+    for (let i = 0; i < 3; i += 1) {
+      h.advance(10_000);
+      h.tracker.update({ score: 0, kills: i + 2, shards: 0 });
+      await h.tick();
+    }
+    h.advance(10_000);
+    if (failures) h.failNext(/\/checkpoints$/, 0, 'timeout', failures);
+    const res = await h.tracker.finish({ score: 0, kills: 6, shards: 0, durationMs: 40_000, bossCleared: true });
+    return { h, res, lastAcked: Math.max(...pointsOf(h).map((p) => p.t)) };
+  };
+  const retried = await run40(1);
+  assert.equal(retried.res.coverage, 1, 'with the retry the closing checkpoint at 40 s reaches the server: coverage 100%');
+  assert.equal(retried.res.checkpointFailed, undefined);
+  const lost = await run40(2);
+  assert.equal(lost.res.coverage, 0.75, '30 s of 40 s is below the 0.8 the server demands for a boss clear');
+  assert.equal(lost.res.checkpointFailed, true, 'and the result says so, so the screen can explain it');
 });
 
 test('M6: a closing checkpoint refused by the server (422) is not retried', async () => {

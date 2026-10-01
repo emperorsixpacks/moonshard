@@ -40,6 +40,12 @@ test('shardVerdict: coverage under one half is not credited even when nothing wa
   assert.equal(shardVerdict({ ...ok, coverage: 0.5 }, ME), 'credited');
 });
 
+test('shardVerdict: when the server says whether it credited the Shards, that wins over our reading of its rules', () => {
+  assert.equal(shardVerdict({ ...ok, shardsCredited: false }, ME), 'not_credited');
+  assert.equal(shardVerdict({ ...ok, coverage: 0.2, shardsCredited: true }, ME), 'credited');
+  assert.equal(shardVerdict({ ...ok, shardsCredited: true }, UNVERIFIED), 'not_credited', 'but never for a player who is not verified here');
+});
+
 test('shardVerdict: a run the server already holds cannot be judged from here', () => {
   assert.equal(shardVerdict({ ticketed: true, alreadySubmitted: true, coverage: 1 }, ME), 'unknown');
 });
