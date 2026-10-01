@@ -31,8 +31,8 @@ export function ubiRoutes(ctx) {
     if (day !== dayKey(ctx.now())) throw new HttpError(422, "tx_not_today");
 
     // claim() returns false instead of reverting when there is nothing to claim, so a successful tx proves
-    // nothing. The scheme emits UBIClaimed(claimer, amount) only when it actually pays out; the claimer is the
-    // whitelisted root, which is the tx sender unless the sender is one of the human's linked wallets.
+    // nothing. The scheme emits UBIClaimed(claimer, amount) only when it actually pays out. Accept the claimer
+    // being the tx sender or the player's root: they are one address unless the sender is a linked wallet.
     const claimers = new Set([from, p.subject]);
     const paidOut = parseEventLogs({ abi: ubiAbi, eventName: "UBIClaimed", logs: receipt.logs ?? [] })
       .some((l) => l.address.toLowerCase() === ubi && claimers.has(l.args.claimer.toLowerCase()));
