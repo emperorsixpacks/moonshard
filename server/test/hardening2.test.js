@@ -682,3 +682,102 @@ test("H7: loading the config prints nothing (dotenv runs quiet)", async () => {
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, "");
 });
+
+// ---------------------------------------------------------------------------------------------
+// H8. Checkpoint posts are idempotent.
+//     Break caught: a client re-sends a batch after a timeout that the server in fact processed. The
+//     repeated points hit `t <= previous`, were flagged cp_time, and the run lost its ranking and the
+//     boss bounty over a network hiccup.
+// ---------------------------------------------------------------------------------------------
+
+const cp = (t, score, kills, shards) => ({ t, score, kills, shards });
+const BATCH = [10_000, 20_000, 30_000, 40_000, 50_000].map((t, i) => cp(t, (i + 1) * 100, (i + 1) * 3, i + 1));
+const storedCheckpoints = async (h, runId) =>
+  (await h.db.query("SELECT t_ms, score, kills, shards FROM run_checkpoints WHERE run_id = $1 ORDER BY seq", [runId])).rows;
+const flagsOf = async (h, runId) => (await h.db.query("SELECT flags FROM runs WHERE run_id = $1", [runId])).rows[0].flags;
+
+test("H8: re-sending a processed batch is 200 with nothing stored twice, no flag, and the run still ranks", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    const run = await start(h, p);
+    h.clock.advance(55_000);
+    const first = await postPoints(h, p, run, BATCH);
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.deepEqual(first.body, { ok: true, accepted: 5, duplicates: 0 });
+
+    const again = await postPoints(h, p, run, BATCH);
+    assert.equal(again.status, 200, JSON.stringify(again.body));
+    assert.deepEqual(again.body, { ok: true, accepted: 0, duplicates: 5 });
+    assert.equal((await storedCheckpoints(h, run.runId)).length, 5);
+    assert.equal(await flagsOf(h, run.runId), "");
+
+    h.clock.advance(10_500);
+    const res = await submitRun(h, p, run, { score: 600, kills: 20, shards: 6, durationMs: 60_000 });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.flags, []);
+    assert.equal(res.body.rankedOk, true);
+  } finally { await h.close(); }
+});
+
+test("H8: a batch that overlaps stored points stores only the new ones, in order", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    const run = await start(h, p);
+    h.clock.advance(55_000);
+    assert.equal((await postPoints(h, p, run, BATCH.slice(0, 3))).status, 200);
+    // the client never saw that reply, so it re-sends the last two points together with two new ones
+    const overlap = await postPoints(h, p, run, BATCH.slice(1));
+    assert.equal(overlap.status, 200, JSON.stringify(overlap.body));
+    assert.deepEqual(overlap.body, { ok: true, accepted: 2, duplicates: 2 });
+    assert.deepEqual((await storedCheckpoints(h, run.runId)).map((c) => c.t_ms), [10_000, 20_000, 30_000, 40_000, 50_000]);
+    // an old point on its own (below the latest stored time) is a duplicate too, not a time regression
+    const old = await postPoints(h, p, run, [BATCH[0]]);
+    assert.deepEqual(old.body, { ok: true, accepted: 0, duplicates: 1 });
+    assert.equal(await flagsOf(h, run.runId), "");
+  } finally { await h.close(); }
+});
+
+test("H8: points that are not exact copies of a stored one are still flagged", async () => {
+  const stored = cp(10_000, 100, 3, 1);
+  const cases = [
+    ["same time, different score", [cp(10_000, 150, 3, 1)], 0],
+    ["same time, different kills", [cp(10_000, 100, 4, 1)], 0],
+    ["same time, different shards", [cp(10_000, 100, 3, 2)], 0],
+    ["an earlier time that was never stored", [cp(5_000, 50, 1, 0)], 0],
+    ["the same new point twice in one batch", [cp(20_000, 200, 6, 2), cp(20_000, 200, 6, 2)], 1],
+  ];
+  for (const [label, points, wantAccepted] of cases) {
+    const h = await makeHarness();
+    try {
+      const p = await h.newPlayer({ verified: true });
+      const run = await start(h, p);
+      h.clock.advance(30_000);
+      assert.equal((await postPoints(h, p, run, [stored])).status, 200);
+      const res = await postPoints(h, p, run, points);
+      assert.equal(res.status, 422, `${label}: ${JSON.stringify(res.body)}`);
+      assert.equal(res.body.error, "bad_checkpoint", label);
+      assert.ok(res.body.reason.includes("cp_time"), `${label}: ${JSON.stringify(res.body)}`);
+      assert.equal(res.body.accepted, wantAccepted, label);
+      assert.ok((await flagsOf(h, run.runId)).includes("cp_time"), label);
+    } finally { await h.close(); }
+  }
+});
+
+test("H8: duplicates in a batch are skipped, and a bad point after them is still flagged", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    const run = await start(h, p);
+    h.clock.advance(40_000);
+    assert.equal((await postPoints(h, p, run, [BATCH[0]])).status, 200);
+    // stored copy, a new valid point, then a point whose score goes backwards
+    const res = await postPoints(h, p, run, [BATCH[0], BATCH[1], cp(30_000, 50, 9, 2)]);
+    assert.equal(res.status, 422, JSON.stringify(res.body));
+    assert.ok(res.body.reason.includes("cp_regress"));
+    assert.equal(res.body.accepted, 1);
+    assert.equal(res.body.duplicates, 1);
+    assert.deepEqual((await storedCheckpoints(h, run.runId)).map((c) => c.t_ms), [10_000, 20_000]);
+  } finally { await h.close(); }
+});

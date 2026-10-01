@@ -91,20 +91,27 @@ export function runRoutes(ctx) {
     if (!Array.isArray(points) || points.length === 0 || points.length > 50) throw new HttpError(400, "bad_points");
 
     const elapsed = ctx.now() - new Date(run.started_at).getTime();
-    const lastRow = (
+    // At most MAX_CHECKPOINTS rows. All of them are needed: a re-sent point can be any stored one.
+    const stored = (
       await ctx.db.query(
-        "SELECT seq, t_ms, score, kills, shards FROM run_checkpoints WHERE run_id = $1 ORDER BY seq DESC LIMIT 1",
+        "SELECT seq, t_ms, score, kills, shards FROM run_checkpoints WHERE run_id = $1 ORDER BY seq",
         [run.run_id],
       )
-    ).rows[0];
+    ).rows;
+    // A client that timed out may re-send a batch the server already processed. A point that is exactly
+    // a stored one is skipped silently; anything else that fails the checks below is still flagged.
+    const known = new Set(stored.map((c) => `${c.t_ms}|${c.score}|${c.kills}|${c.shards}`));
+    const lastRow = stored[stored.length - 1];
     let seq = lastRow ? lastRow.seq : 0;
     let prev = lastRow || { t_ms: 0, score: 0, kills: 0, shards: 0 };
     const accepted = [];
     const reason = new Set();
+    let duplicates = 0;
 
     for (const pt of points) {
       const t = int(pt?.t), score = int(pt?.score), kills = int(pt?.kills), shards = int(pt?.shards ?? 0);
       if ([t, score, kills, shards].some((x) => !Number.isInteger(x) || x < 0)) { reason.add("cp_malformed"); break; }
+      if (known.has(`${t}|${score}|${kills}|${shards}`)) { duplicates += 1; continue; }
       if (t <= prev.t_ms) { reason.add("cp_time"); break; }
       if (t > elapsed + GAME.CLOCK_TOLERANCE_MS) { reason.add("cp_future"); break; }
       if (score < prev.score || kills < prev.kills || shards < prev.shards) { reason.add("cp_regress"); break; }
@@ -127,9 +134,9 @@ export function runRoutes(ctx) {
     }
     if (reason.size) {
       await addFlag(ctx, run.run_id, [...reason]);
-      return res.status(422).json({ error: "bad_checkpoint", reason: [...reason], accepted: accepted.length });
+      return res.status(422).json({ error: "bad_checkpoint", reason: [...reason], accepted: accepted.length, duplicates });
     }
-    res.json({ ok: true, accepted: accepted.length });
+    res.json({ ok: true, accepted: accepted.length, duplicates });
   }));
 
   r.post("/runs/:id/submit", ctx.requireAuth, ah(async (req, res) => {
