@@ -1,4 +1,5 @@
 import { GAME_CONFIG } from '../config.js';
+import { isBlessed } from '../gd/blessing.js';
 
 const STORAGE_KEY = 'MOONSHARD_SAVE_V1';
 
@@ -22,7 +23,7 @@ const DEFAULT_STATE = {
   },
   dailyRecords: {}, // keyed by date string
   highScore: 0,
-  nimiqAccount: null,
+  walletAccount: null,
   settings: {
     soundMuted: false,
     musicMuted: false,
@@ -58,9 +59,15 @@ class StorageManager {
   }
 
   addMaterials({ bark = 0, amber = 0, iron = 0 }) {
-    this.data.inventory.bark += bark;
-    this.data.inventory.amber += amber;
-    this.data.inventory.iron += iron;
+    // Citizen's Blessing: +25% drops, with the fractional part carried so four single drops yield five.
+    const mult = isBlessed() ? 1.25 : 1;
+    const carry = (this.blessCarry ||= { bark: 0, amber: 0, iron: 0 });
+    for (const [key, base] of Object.entries({ bark, amber, iron })) {
+      const exact = base * mult + carry[key];
+      const whole = Math.floor(exact + 1e-9);
+      carry[key] = exact - whole;
+      this.data.inventory[key] += whole;
+    }
     this.save();
     return this.data.inventory;
   }
@@ -177,12 +184,12 @@ class StorageManager {
     return this.data.dailyRecords[dateStr] || null;
   }
 
-  getNimiqAccount() {
-    return this.data.nimiqAccount || null;
+  getWalletAccount() {
+    return this.data.walletAccount || null;
   }
 
-  setNimiqAccount(account) {
-    this.data.nimiqAccount = account;
+  setWalletAccount(account) {
+    this.data.walletAccount = account;
     this.save();
   }
 
