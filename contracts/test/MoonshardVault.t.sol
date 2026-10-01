@@ -226,6 +226,39 @@ contract MoonshardVaultTest is Test {
         assertEq(vault.owner(), alice);
     }
 
+    // renounceOwnership() is inherited from Ownable and would let one mistaken (or phished) owner transaction
+    // remove pause, withdraw, setSigner and setCaps for ever. Ownership can only move with transferOwnership +
+    // acceptOwnership, which cannot end with no owner.
+    function test_renounce_ownership_reverts_for_the_owner() public {
+        vm.prank(owner);
+        vm.expectRevert(MoonshardVault.RenounceDisabled.selector);
+        vault.renounceOwnership();
+        assertEq(vault.owner(), owner, "owner unchanged");
+    }
+
+    function test_renounce_ownership_reverts_for_everyone_else_too() public {
+        vm.prank(alice);
+        vm.expectRevert(MoonshardVault.RenounceDisabled.selector);
+        vault.renounceOwnership();
+        assertEq(vault.owner(), owner, "owner unchanged");
+    }
+
+    function test_admin_powers_survive_a_renounce_attempt() public {
+        vm.startPrank(owner);
+        vm.expectRevert(MoonshardVault.RenounceDisabled.selector);
+        vault.renounceOwnership();
+        // all four owner powers still work
+        vault.pause();
+        vault.unpause();
+        vault.setSigner(alice);
+        vault.setCaps(1 ether, 2 ether);
+        vault.withdraw(owner, 1 ether);
+        vm.stopPrank();
+        assertEq(vault.owner(), owner);
+        assertEq(vault.signer(), alice);
+        assertEq(token.balanceOf(owner), 1 ether);
+    }
+
     function test_constructor_rejects_zero_token_or_signer() public {
         vm.expectRevert(MoonshardVault.ZeroAddress.selector);
         new MoonshardVault(IERC20(address(0)), signer, owner, 1, 1);

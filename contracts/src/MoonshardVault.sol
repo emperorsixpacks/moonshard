@@ -38,6 +38,7 @@ contract MoonshardVault is Ownable2Step, Pausable, ReentrancyGuard, EIP712 {
     error BadSignature();
     error OverVoucherCap();
     error OverDailyCap();
+    error RenounceDisabled();
 
     constructor(IERC20 token_, address signer_, address owner_, uint256 maxPerVoucher_, uint256 dailyCap_)
         Ownable(owner_)
@@ -87,6 +88,13 @@ contract MoonshardVault is Ownable2Step, Pausable, ReentrancyGuard, EIP712 {
         maxPerVoucher = newMaxPerVoucher;
         dailyCap = newDailyCap;
         emit CapsChanged(newMaxPerVoucher, newDailyCap);
+    }
+
+    /// @notice Disabled. `Ownable.renounceOwnership` would leave the vault with no owner, and with it no way to
+    ///         pause, rotate the signer, change the caps or withdraw. Hand the vault to a new owner with
+    ///         `transferOwnership` + `acceptOwnership` instead; that two-step flow cannot end with no owner.
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
     }
 
     function pause() external onlyOwner {
