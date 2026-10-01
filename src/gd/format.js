@@ -4,6 +4,7 @@ const MESSAGES = {
   wrong_chain: 'Switch your wallet to the Celo network to continue.',
   no_account: 'Your wallet has no account available.',
   wallet_error: 'Your wallet could not complete that. Check it for a pending prompt, then try again.',
+  signature_required: "This wallet can't sign messages (MiniPay), so the boss bounty isn't available here.",
   wallet_mismatch: 'The connected wallet differs from the signed-in one. Switch accounts or reconnect.',
   unauthorized: 'Please connect your wallet first.',
   invalid_session: 'Your session expired. Reconnect your wallet.',

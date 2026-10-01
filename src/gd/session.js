@@ -13,8 +13,8 @@ function store() {
   };
 }
 
-export function saveSession({ token, address, host }) {
-  const session = { token, address: String(address).toLowerCase(), host, expiresAt: Date.now() + TTL_MS };
+export function saveSession({ token, address, host, unsigned = false }) {
+  const session = { token, address: String(address).toLowerCase(), host, unsigned: Boolean(unsigned), expiresAt: Date.now() + TTL_MS };
   try { store().setItem(KEY, JSON.stringify(session)); } catch { memory.set(KEY, JSON.stringify(session)); }
   return session;
 }
@@ -29,7 +29,7 @@ export function loadSession() {
       clearSession();
       return null;
     }
-    return s;
+    return { ...s, unsigned: Boolean(s.unsigned) };
   } catch {
     return null;
   }

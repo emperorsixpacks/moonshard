@@ -22,9 +22,9 @@ test('signIn fetches a nonce, signs the message, verifies and stores the session
     getState: () => ({ address: '0xabc' }),
     signMessage: async (m) => `sig(${m.length})`,
   };
-  const res = await signIn({ wallet, host: 'minipay', api });
+  const res = await signIn({ wallet, host: 'goodwallet', api });
   assert.equal(res.verified, true);
-  assert.equal(calls[1][1].host, 'minipay');
+  assert.equal(calls[1][1].host, 'goodwallet');
   assert.equal(calls[1][1].address, '0xabc');
   assert.equal(calls[1][1].message, loginMessage('cd'.repeat(32), '2026-10-05T12:00:00.000Z'));
   assert.equal(getToken(), 'jwt');
