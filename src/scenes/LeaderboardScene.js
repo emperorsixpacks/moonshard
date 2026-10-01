@@ -138,9 +138,10 @@ export default class LeaderboardScene extends Phaser.Scene {
     const headerY = isDaily ? 62 : 56;
     const headerBand = this.add.rectangle(w / 2, headerY, 390, 14, 0x142014).setStrokeStyle(1, 0x2e4e2e);
     this.boardLayer.add(headerBand);
-    this.addToLayer(w / 2 - 180, headerY - 3, isDaily
-      ? 'RANK   WARRIOR         TIME   SCORE      HONORS'
-      : 'RANK   WARRIOR         TIME   SCORE      LEGEND', '5.5px', '#8cb38c');
+    // One label per column, centred over the same x positions the rows use (a single long string centred at
+    // x = w/2 - 180 ran off the left edge of the screen).
+    [['RANK', -180], ['WARRIOR', -120], ['TIME', 10], ['SCORE', 65], [isDaily ? 'HONORS' : 'LEGEND', 140]]
+      .forEach(([label, dx]) => this.addToLayer(w / 2 + dx, headerY - 3, label, '5.5px', '#8cb38c'));
 
     const myWallet = getAddress();
     const rows = board.entries.map((e, i) => ({

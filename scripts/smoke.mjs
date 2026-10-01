@@ -5,8 +5,9 @@ import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { freePort, waitForMoonshard } from './fork/ports.mjs';
 
-const PORT = 5198;
+const PORT = await freePort();
 const WEB = `http://127.0.0.1:${PORT}`;
 const SHOTS = new URL('../docs/screenshots/', import.meta.url).pathname;
 await mkdir(SHOTS, { recursive: true });
@@ -15,10 +16,8 @@ const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
   env: { ...process.env, VITE_API_URL: 'http://127.0.0.1:9' }, // nothing listens on port 9
   stdio: 'ignore',
 });
-for (let i = 0; i < 80; i++) {
-  try { if ((await fetch(WEB)).ok) break; } catch { /* starting */ }
-  await new Promise((r) => setTimeout(r, 500));
-}
+process.on('exit', () => vite.kill()); // never leave a dev server behind, even if a run crashes
+await waitForMoonshard(WEB);
 
 const errors = [];
 const browser = await chromium.launch();

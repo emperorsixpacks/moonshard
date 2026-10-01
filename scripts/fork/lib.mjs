@@ -6,6 +6,7 @@ import {
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { celo } from 'viem/chains';
+import { freePort } from './ports.mjs';
 import { createDb } from '../../server/src/db.js';
 import { createChain } from '../../server/src/chain.js';
 import { createApp } from '../../server/src/app.js';
@@ -71,7 +72,8 @@ const ACCESS_CONTROL_LOCATION = '0x02dd7bc7dec4dceedda775e58dd541e08a116c6c53815
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'https://forno.celo.org', port = 8545, apiPort = 0 } = {}) {
+export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'https://forno.celo.org', port, apiPort = 0 } = {}) {
+  port = port ?? (await freePort());
   const rpc = `http://127.0.0.1:${port}`;
   const anvil = spawn('anvil', ['--fork-url', upstream, '--port', String(port), '--chain-id', '42220', '--silent'], { stdio: 'ignore' });
   process.on('exit', () => anvil.kill()); // never leave a fork running, even if the run crashes
