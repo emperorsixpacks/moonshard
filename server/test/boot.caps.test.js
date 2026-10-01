@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { encodeAbiParameters, toFunctionSelector } from "viem";
+import { encodeAbiParameters } from "viem";
 import { GAME } from "../config.js";
 import { checkVaultCaps } from "../src/boot.js";
 import { startSettlementCron } from "../src/cron.js";
@@ -117,10 +117,15 @@ test("a hanging RPC is given up on after the timeout instead of holding boot", a
 
 // --- the real read path: viem + the two selectors, against a local JSON-RPC endpoint ----------------------------
 
+// The selectors of MoonshardVault.maxPerVoucher() and dailyCap(), written out (from `cast sig`) so that they do not
+// depend on the code under test.
+const MAX_PER_VOUCHER_SELECTOR = "0x96c991c8";
+const DAILY_CAP_SELECTOR = "0xeb339391";
+
 async function fakeRpc(values) {
   const selectors = {
-    [toFunctionSelector("maxPerVoucher()")]: values.maxPerVoucher,
-    [toFunctionSelector("dailyCap()")]: values.dailyCap,
+    [MAX_PER_VOUCHER_SELECTOR]: values.maxPerVoucher,
+    [DAILY_CAP_SELECTOR]: values.dailyCap,
   };
   const seen = [];
   const server = createServer((req, res) => {
@@ -150,7 +155,7 @@ test("the default reader asks the vault for maxPerVoucher() and dailyCap() over 
     assert.equal(out.dailyCap, G(1000));
     assert.deepEqual(out.problems.map((p) => p.code), ["daily_cap"], "1000 < 1900");
     assert.deepEqual(rpc.seen.map((s) => s.to), [VAULT, VAULT]);
-    assert.deepEqual(rpc.seen.map((s) => s.selector).sort(), [toFunctionSelector("maxPerVoucher()"), toFunctionSelector("dailyCap()")].sort());
+    assert.deepEqual(rpc.seen.map((s) => s.selector).sort(), [MAX_PER_VOUCHER_SELECTOR, DAILY_CAP_SELECTOR].sort());
   } finally { await rpc.close(); }
 });
 
