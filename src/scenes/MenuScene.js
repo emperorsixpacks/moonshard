@@ -1,9 +1,55 @@
 import Phaser from 'phaser';
-import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
 import { gdService } from '../engine/GdService.js';
 import { pauseService } from '../engine/PauseService.js';
+
+/*
+ * Sizes for the two canvases (480x270 landscape, 480x440 tall), in game units.
+ *
+ * A text hint of 7px or more is drawn in the pixel font at that size; a smaller hint is drawn in VT323 at 2.3x the hint
+ * (engine/typography.js), so '6.3px' is a 14.5-unit VT323 caption and '14px' is a 14-unit pixel-font heading.
+ * The tall canvas is the one shown upright on a phone, at about 0.81 CSS px per unit, so its sizes are picked to read as
+ * >= 9 CSS px for captions, >= 10 for body text and >= 11 for headings there. The landscape canvas is shown at 1.4 to
+ * 2.1 CSS px per unit, where the sizes below are already large enough.
+ */
+const LAYOUT = {
+  land: {
+    banner: { w: 310, h: 42, y: 33, title: '13px', titleDy: -12, sub: '6.5px', subDy: 1, badge: '4.5px', badgeDy: 12, stroke: 3 },
+    list: { gap: 4, pad: 3, rowH: 25, rowGap: 2, icon: '15px', iconDx: 19, label: '8px', labelDy: -5, desc: '4.5px', descDy: 6 },
+  },
+  tall: {
+    banner: { w: 424, h: 68, y: 48, title: '20px', titleDy: -21, sub: '11.5px', subDy: 2, badge: '6.8px', badgeDy: 21, stroke: 3 },
+    list: { gap: 6, pad: 4, rowH: 44, rowGap: 3, icon: '26px', iconDx: 30, label: '14px', labelDy: -9, desc: '6.3px', descDy: 10 },
+  },
+  // Positions below are measured from the top edge of the modal panel (which is centred on the canvas)
+  storyModal: {
+    land: {
+      panelW: 426, panelH: 244, titleY: 20, title: '8px', subY: 33, sub: '4.5px',
+      firstY: 58, pitch: 25, entryW: 398, entryH: 21, padX: 10, entry: '5px', entryDesc: '4.5px',
+      closeY: 219, closeW: 150, closeH: 24, close: '6.5px',
+    },
+    tall: {
+      panelW: 456, panelH: 384, titleY: 32, title: '14px', subY: 57, sub: '6.3px',
+      firstY: 100, pitch: 41, entryW: 428, entryH: 36, padX: 14, entry: '6.9px', entryDesc: '6.3px',
+      closeY: 352, closeW: 200, closeH: 38, close: '6.9px',
+    },
+  },
+  settingsModal: {
+    land: {
+      panelW: 380, panelH: 186, titleY: 27, title: '8.5px', subY: 43, sub: '5px',
+      rowW: 340, rowH: 36, rowPad: 16, label: '6px', labelDy: -6, desc: '4.5px', descDy: 7,
+      btnW: 84, btnH: 22, btn: '6px', row1Y: 75, row2Y: 117,
+      closeY: 161, closeW: 150, closeH: 22, close: '6.5px',
+    },
+    tall: {
+      panelW: 440, panelH: 296, titleY: 36, title: '14px', subY: 62, sub: '6.3px',
+      rowW: 404, rowH: 64, rowPad: 16, label: '6.9px', labelDy: -13, desc: '6.3px', descDy: 13,
+      btnW: 104, btnH: 38, btn: '6.9px', row1Y: 116, row2Y: 190,
+      closeY: 262, closeW: 210, closeH: 38, close: '6.9px',
+    },
+  },
+};
 
 export default class MenuScene extends Phaser.Scene {
   constructor() {
@@ -13,6 +59,7 @@ export default class MenuScene extends Phaser.Scene {
   create() {
     const w = this.cameras.main.width;
     const h = this.cameras.main.height;
+    this.layoutSize = { w, h };
 
     pauseService.detachScene();
     this.cameras.main.resetFX();
@@ -61,23 +108,22 @@ export default class MenuScene extends Phaser.Scene {
 
     // Title banner container
     const isTall = h > 300;
-    const titleY = isTall ? 50 : 33;
-    const titleBoxW = isTall ? 340 : 310;
-    const titleBoxH = isTall ? 50 : 42;
-    const titleBox = this.add.rectangle(w / 2, titleY, titleBoxW, titleBoxH, 0x0a140a, 0.88).setDepth(10);
+    const L = isTall ? LAYOUT.tall : LAYOUT.land;
+    const titleY = L.banner.y;
+    const titleBox = this.add.rectangle(w / 2, titleY, L.banner.w, L.banner.h, 0x0a140a, 0.88).setDepth(10);
     titleBox.setStrokeStyle(1.5, 0x2e4e2e);
 
-    const titleText = this.add.text(w / 2, titleY - (isTall ? 14 : 12), 'MOONSHARD', {
+    const titleText = this.add.text(w / 2, titleY + L.banner.titleDy, 'MOONSHARD', {
       fontFamily: 'Press Start 2P',
-      fontSize: isTall ? '14px' : '13px',
+      fontSize: L.banner.title,
       color: '#f6c026',
       stroke: '#000000',
-      strokeThickness: 3
+      strokeThickness: L.banner.stroke
     }).setOrigin(0.5).setDepth(11);
 
-    const subText = this.add.text(w / 2, titleY + 1, 'THE HIGH FOREST', {
+    const subText = this.add.text(w / 2, titleY + L.banner.subDy, 'THE HIGH FOREST', {
       fontFamily: 'Press Start 2P',
-      fontSize: isTall ? '7.5px' : '6.5px',
+      fontSize: L.banner.sub,
       color: '#98ff20',
       stroke: '#000000',
       strokeThickness: 2,
@@ -91,12 +137,13 @@ export default class MenuScene extends Phaser.Scene {
       if (st.status === 'expired') return '🛡 RE-VERIFY TO KEEP EARNING G$';
       return `🛡 ${st.shortAddress} • VERIFY TO EARN G$`;
     };
-    const badge = this.add.text(w / 2, titleY + (isTall ? 14 : 12), badgeText(gdService.getStatus()), {
+    const badge = this.add.text(w / 2, titleY + L.banner.badgeDy, badgeText(gdService.getStatus()), {
       fontFamily: 'Press Start 2P',
-      fontSize: isTall ? '5.5px' : '4.5px',
+      fontSize: L.banner.badge,
       color: '#a0c4a0',
       stroke: '#000000',
-      strokeThickness: 2
+      strokeThickness: 2,
+      padding: { x: 10, y: 2 } // a bigger tap target; the glyphs stay where they are
     }).setOrigin(0.5).setDepth(11);
     badge.setInteractive({ useHandCursor: true });
     badge.on('pointerdown', () => window.__gdPanel?.open());
@@ -113,53 +160,74 @@ export default class MenuScene extends Phaser.Scene {
       ease: 'Sine.easeInOut'
     });
 
-    // Menu Buttons Container - properly spaced across the viewport height
-    const startY = isTall ? 114 : 66;
-    const spacing = isTall ? 45 : 22;
-    const btnW = isTall ? 340 : 310;
-    const btnH = isTall ? 33 : 20;
-
+    // Menu entries: an icon at the left of each row, the label and its caption centred
     const options = [
       {
-        text: '⚔️ 1. STORY MODE',
+        icon: '⚔️',
+        text: '1. STORY MODE',
         desc: 'The Shattered Moon & The Blighted Roots',
         action: () => this.openStoryModal(),
         shouldFade: false
       },
       {
-        text: '🎓 2. COMBAT TUTORIAL',
+        icon: '🎓',
+        text: '2. COMBAT TUTORIAL',
         desc: 'Learn Touch Moves, Jumps, Slashes & Combos',
         action: () => this.scene.start('TutorialScene'),
         shouldFade: true
       },
       {
-        text: '🏆 3. ENDLESS MODE',
+        icon: '🏆',
+        text: '3. ENDLESS MODE',
         desc: 'Endless Arena • Verified Leaderboard',
         action: () => this.scene.start('SurvivalScene'),
         shouldFade: true
       },
       {
-        text: '⚒️ 4. FORGE & SATCHEL',
+        icon: '⚒️',
+        text: '4. FORGE & SATCHEL',
         desc: 'Craft Blades & Companion Relics',
         action: () => this.scene.start('ForgeScene'),
         shouldFade: true
       },
       {
-        text: '💰 5. LEADERBOARD',
+        icon: '💰',
+        text: '5. LEADERBOARD',
         desc: 'All-Time & Daily Rankings',
         action: () => this.scene.start('LeaderboardScene'),
         shouldFade: true
       },
       {
-        text: '⚙️ 6. SETTINGS',
+        icon: '⚙️',
+        text: '6. SETTINGS',
         desc: 'Sound Effects & Background Music',
         action: () => this.openSettingsModal(),
         shouldFade: false
       }
     ];
 
+    // A dark backing behind the whole list, so the sky never shows through between the rows
+    const rowW = L.banner.w - 2 * L.list.pad;
+    const rowsTop = titleY + L.banner.h / 2 + L.list.gap + L.list.pad;
+    const rowPitch = L.list.rowH + L.list.rowGap;
+    const backingH = options.length * rowPitch - L.list.rowGap + 2 * L.list.pad;
+    this.add.rectangle(w / 2, rowsTop - L.list.pad + backingH / 2, L.banner.w, backingH, 0x050c05, 0.6)
+      .setStrokeStyle(1, 0x1c301c, 0.9)
+      .setDepth(9);
+
     options.forEach((opt, idx) => {
-      this.createMenuButton(w / 2, startY + idx * spacing, btnW, btnH, opt.text, opt.desc, opt.action, opt.shouldFade, isTall);
+      this.createMenuButton({
+        x: w / 2,
+        y: rowsTop + L.list.rowH / 2 + idx * rowPitch,
+        width: rowW,
+        height: L.list.rowH,
+        icon: opt.icon,
+        label: opt.text,
+        subtitle: opt.desc,
+        callback: opt.action,
+        shouldFade: opt.shouldFade,
+        style: L.list
+      });
     });
 
     // Animated warrior on menu
@@ -179,22 +247,35 @@ export default class MenuScene extends Phaser.Scene {
     const boar = this.add.sprite(w - 52, h - 32, 'boar_idle').setDepth(10);
     boar.play('boar_idle_anim');
     boar.setFlipX(true);
+
+    // The screen was turned while a modal was open: bring it back on the new canvas
+    if (this.reopenModal) {
+      const reopen = this.reopenModal;
+      this.reopenModal = null;
+      this[reopen]();
+    }
   }
 
-  createMenuButton(x, y, width, height, label, subtitle, callback, shouldFade = false, isTall = false) {
+  createMenuButton({ x, y, width, height, icon, label, subtitle, callback, shouldFade = false, style }) {
     const btnBg = this.add.rectangle(x, y, width, height, 0x142814, 0.88).setDepth(10);
     btnBg.setStrokeStyle(1.5, 0x3c6e3c);
     btnBg.setInteractive({ useHandCursor: true });
 
-    const txt = this.add.text(x, y - (isTall ? 5 : 3), label, {
+    // The icon is its own, bigger text object: at the label's size an emoji is a speck
+    this.add.text(x - width / 2 + style.iconDx, y, icon, {
       fontFamily: 'Press Start 2P',
-      fontSize: isTall ? '8.5px' : '7px',
+      fontSize: style.icon
+    }).setOrigin(0.5).setDepth(11);
+
+    const txt = this.add.text(x, y + style.labelDy, label, {
+      fontFamily: 'Press Start 2P',
+      fontSize: style.label,
       color: '#ffffff'
     }).setOrigin(0.5).setDepth(11);
 
-    const sub = this.add.text(x, y + (isTall ? 6 : 5), subtitle, {
+    this.add.text(x, y + style.descDy, subtitle, {
       fontFamily: 'Press Start 2P',
-      fontSize: isTall ? '5.5px' : '4.5px',
+      fontSize: style.desc,
       color: '#86b886'
     }).setOrigin(0.5).setDepth(11);
 
@@ -249,8 +330,11 @@ export default class MenuScene extends Phaser.Scene {
 
   openStoryModal() {
     if (this.storyModalObjects) return;
-    const w = GAME_CONFIG.WIDTH;
-    const h = GAME_CONFIG.HEIGHT;
+    // Laid out for the canvas that is on screen: the tall (upright phone) canvas gets bigger rows and type
+    const w = this.cameras.main.width;
+    const h = this.cameras.main.height;
+    const M = h > 300 ? LAYOUT.storyModal.tall : LAYOUT.storyModal.land;
+    const top = h / 2 - M.panelH / 2;
     this.storyModalObjects = [];
 
     // 1. Dim full-screen overlay backdrop (captures any clicks outside panel)
@@ -261,25 +345,23 @@ export default class MenuScene extends Phaser.Scene {
     this.storyModalObjects.push(overlay);
 
     // 2. Modal panel frame
-    const panelW = 426;
-    const panelH = 250;
-    const panel = this.add.rectangle(w / 2, h / 2, panelW, panelH, 0x071317, 0.96)
+    const panel = this.add.rectangle(w / 2, h / 2, M.panelW, M.panelH, 0x071317, 0.96)
       .setStrokeStyle(2, 0x1d4754)
       .setDepth(600)
       .setInteractive(); // Blocks clicks from hitting overlay underneath
     this.storyModalObjects.push(panel);
 
     // 3. Header
-    const title = this.add.text(w / 2, h / 2 - 108, '⚔️ CHOOSE CHAPTER', {
+    const title = this.add.text(w / 2, top + M.titleY, '⚔️ CHOOSE CHAPTER', {
       fontFamily: 'Press Start 2P',
-      fontSize: '8px',
+      fontSize: M.title,
       color: '#ffd166'
     }).setOrigin(0.5).setDepth(601);
     this.storyModalObjects.push(title);
 
-    const sub = this.add.text(w / 2, h / 2 - 96, 'THE SHATTERED MOON & THE BLIGHTED ROOTS', {
+    const sub = this.add.text(w / 2, top + M.subY, 'THE SHATTERED MOON & THE BLIGHTED ROOTS', {
       fontFamily: 'Press Start 2P',
-      fontSize: '4.5px',
+      fontSize: M.sub,
       color: '#7ba0ab'
     }).setOrigin(0.5).setDepth(601);
     this.storyModalObjects.push(sub);
@@ -328,32 +410,27 @@ export default class MenuScene extends Phaser.Scene {
       }
     ];
 
-    const startY = 60;
-    const spacing = 22;
-    const btnW = 398;
-    const btnH = 18;
-
     entries.forEach((item, idx) => {
-      const ey = startY + idx * spacing;
-      const btnBg = this.add.rectangle(w / 2, ey, btnW, btnH, item.unlocked ? 0x0d222b : 0x0a1417, 0.9)
+      const ey = top + M.firstY + idx * M.pitch;
+      const btnBg = this.add.rectangle(w / 2, ey, M.entryW, M.entryH, item.unlocked ? 0x0d222b : 0x0a1417, 0.9)
         .setStrokeStyle(1, item.unlocked ? (item.isEpilogue ? 0x554422 : 0x225566) : 0x1a2d33)
         .setDepth(601);
       this.storyModalObjects.push(btnBg);
 
       // Title left-anchored
-      const leftX = (w / 2) - (btnW / 2) + 10;
+      const leftX = (w / 2) - (M.entryW / 2) + M.padX;
       const t = this.add.text(leftX, ey, item.title, {
         fontFamily: 'Press Start 2P',
-        fontSize: '5px',
+        fontSize: M.entry,
         color: item.unlocked ? '#ffffff' : '#556b73'
       }).setOrigin(0, 0.5).setDepth(602);
       this.storyModalObjects.push(t);
 
       // Description/Status right-anchored to prevent any overflow
-      const rightX = (w / 2) + (btnW / 2) - 10;
+      const rightX = (w / 2) + (M.entryW / 2) - M.padX;
       const d = this.add.text(rightX, ey, item.desc, {
         fontFamily: 'Press Start 2P',
-        fontSize: '4.5px',
+        fontSize: M.entryDesc,
         color: item.unlocked ? '#64dfdf' : '#667b84'
       }).setOrigin(1, 0.5).setDepth(602);
       this.storyModalObjects.push(d);
@@ -391,19 +468,48 @@ export default class MenuScene extends Phaser.Scene {
     });
 
     // Close button
-    const closeBtnY = startY + entries.length * spacing + 10;
-    const closeBg = this.add.rectangle(w / 2, closeBtnY, 140, 22, 0x162c33, 0.95)
-      .setStrokeStyle(1.5, 0x3d6b73)
-      .setDepth(602)
-      .setInteractive({ useHandCursor: true });
-    this.storyModalObjects.push(closeBg);
+    this.addModalCloseButton(this.storyModalObjects, {
+      x: w / 2,
+      y: top + M.closeY,
+      width: M.closeW,
+      height: M.closeH,
+      fontSize: M.close,
+      depth: 602,
+      onClose: () => this.closeStoryModal()
+    });
 
-    const closeText = this.add.text(w / 2, closeBtnY, '✕ BACK TO MENU', {
+    // ESC key listener
+    this.storyModalEscHandler = () => this.closeStoryModal();
+    this.input.keyboard.once('keydown-ESC', this.storyModalEscHandler);
+  }
+
+  closeStoryModal({ silent = false } = {}) {
+    if (!this.storyModalObjects) return;
+    if (!silent) sound.playCancel();
+    if (this.storyModalEscHandler) {
+      this.input.keyboard.off('keydown-ESC', this.storyModalEscHandler);
+      this.storyModalEscHandler = null;
+    }
+    this.storyModalObjects.forEach(obj => {
+      if (obj && obj.destroy) obj.destroy();
+    });
+    this.storyModalObjects = null;
+  }
+
+  /** The "✕ BACK TO MENU" button that ends both modals. Its objects are added to `objects`. */
+  addModalCloseButton(objects, { x, y, width, height, fontSize, depth, onClose }) {
+    const closeBg = this.add.rectangle(x, y, width, height, 0x162c33, 0.95)
+      .setStrokeStyle(1.5, 0x3d6b73)
+      .setDepth(depth)
+      .setInteractive({ useHandCursor: true });
+    objects.push(closeBg);
+
+    const closeText = this.add.text(x, y, '✕ BACK TO MENU', {
       fontFamily: 'Press Start 2P',
-      fontSize: '6.5px',
+      fontSize,
       color: '#e0f0f5'
-    }).setOrigin(0.5).setDepth(603).setInteractive({ useHandCursor: true });
-    this.storyModalObjects.push(closeText);
+    }).setOrigin(0.5).setDepth(depth + 1).setInteractive({ useHandCursor: true });
+    objects.push(closeText);
 
     const setCloseHover = (isHover) => {
       closeBg.setFillStyle(isHover ? 0x244c59 : 0x162c33);
@@ -417,31 +523,16 @@ export default class MenuScene extends Phaser.Scene {
     closeText.on('pointerover', () => setCloseHover(true));
     closeText.on('pointerout', () => setCloseHover(false));
 
-    closeBg.on('pointerdown', () => this.closeStoryModal());
-    closeText.on('pointerdown', () => this.closeStoryModal());
-
-    // ESC key listener
-    this.storyModalEscHandler = () => this.closeStoryModal();
-    this.input.keyboard.once('keydown-ESC', this.storyModalEscHandler);
-  }
-
-  closeStoryModal() {
-    if (!this.storyModalObjects) return;
-    sound.playCancel();
-    if (this.storyModalEscHandler) {
-      this.input.keyboard.off('keydown-ESC', this.storyModalEscHandler);
-      this.storyModalEscHandler = null;
-    }
-    this.storyModalObjects.forEach(obj => {
-      if (obj && obj.destroy) obj.destroy();
-    });
-    this.storyModalObjects = null;
+    closeBg.on('pointerdown', onClose);
+    closeText.on('pointerdown', onClose);
   }
 
   openSettingsModal() {
     if (this.settingsModalObjects) return;
-    const w = GAME_CONFIG.WIDTH;
-    const h = GAME_CONFIG.HEIGHT;
+    const w = this.cameras.main.width;
+    const h = this.cameras.main.height;
+    const M = h > 300 ? LAYOUT.settingsModal.tall : LAYOUT.settingsModal.land;
+    const top = h / 2 - M.panelH / 2;
     this.settingsModalObjects = [];
 
     // 1. Full-screen backdrop
@@ -452,9 +543,7 @@ export default class MenuScene extends Phaser.Scene {
     this.settingsModalObjects.push(overlay);
 
     // 2. Modal panel frame
-    const panelW = 380;
-    const panelH = 186;
-    const panel = this.add.rectangle(w / 2, h / 2, panelW, panelH, 0x07151e, 0.98)
+    const panel = this.add.rectangle(w / 2, h / 2, M.panelW, M.panelH, 0x07151e, 0.98)
       .setStrokeStyle(2, 0x1d4754)
       .setDepth(660)
       .setInteractive();
@@ -462,10 +551,10 @@ export default class MenuScene extends Phaser.Scene {
 
     // Corner rivets
     const rivets = [
-      { x: w / 2 - panelW / 2 + 6, y: h / 2 - panelH / 2 + 6 },
-      { x: w / 2 + panelW / 2 - 6, y: h / 2 - panelH / 2 + 6 },
-      { x: w / 2 - panelW / 2 + 6, y: h / 2 + panelH / 2 - 6 },
-      { x: w / 2 + panelW / 2 - 6, y: h / 2 + panelH / 2 - 6 }
+      { x: w / 2 - M.panelW / 2 + 6, y: top + 6 },
+      { x: w / 2 + M.panelW / 2 - 6, y: top + 6 },
+      { x: w / 2 - M.panelW / 2 + 6, y: top + M.panelH - 6 },
+      { x: w / 2 + M.panelW / 2 - 6, y: top + M.panelH - 6 }
     ];
     rivets.forEach(rv => {
       const r = this.add.rectangle(rv.x, rv.y, 3, 3, 0xf6c026, 0.9).setDepth(661);
@@ -473,55 +562,64 @@ export default class MenuScene extends Phaser.Scene {
     });
 
     // 3. Header
-    const title = this.add.text(w / 2, h / 2 - 66, '⚙️ AUDIO SETTINGS', {
+    const title = this.add.text(w / 2, top + M.titleY, '⚙️ AUDIO SETTINGS', {
       fontFamily: 'Press Start 2P',
-      fontSize: '8.5px',
+      fontSize: M.title,
       color: '#ffd166',
       stroke: '#000000',
       strokeThickness: 2
     }).setOrigin(0.5).setDepth(661);
     this.settingsModalObjects.push(title);
 
-    const sub = this.add.text(w / 2, h / 2 - 50, 'SOUND EFFECTS & MUSIC PREFERENCES', {
+    const sub = this.add.text(w / 2, top + M.subY, 'SOUND EFFECTS & MUSIC PREFERENCES', {
       fontFamily: 'Press Start 2P',
-      fontSize: '5px',
+      fontSize: M.sub,
       color: '#7ba0ab'
     }).setOrigin(0.5).setDepth(661);
     this.settingsModalObjects.push(sub);
 
+    // One row per setting: label and description at the left, the on/off button at the right
+    const rowLeft = w / 2 - M.rowW / 2 + M.rowPad;
+    const btnX = w / 2 + M.rowW / 2 - M.rowPad - M.btnW / 2;
+    const addRow = (y, label, desc) => {
+      const row = this.add.rectangle(w / 2, y, M.rowW, M.rowH, 0x0b1f29, 0.9)
+        .setStrokeStyle(1, 0x1d4754)
+        .setDepth(661);
+      this.settingsModalObjects.push(row);
+
+      const labelText = this.add.text(rowLeft, y + M.labelDy, label, {
+        fontFamily: 'Press Start 2P',
+        fontSize: M.label,
+        color: '#ffffff'
+      }).setOrigin(0, 0.5).setDepth(662);
+      this.settingsModalObjects.push(labelText);
+
+      const descText = this.add.text(rowLeft, y + M.descDy, desc, {
+        fontFamily: 'Press Start 2P',
+        fontSize: M.desc,
+        color: '#76a0b0'
+      }).setOrigin(0, 0.5).setDepth(662);
+      this.settingsModalObjects.push(descText);
+
+      const btnBg = this.add.rectangle(btnX, y, M.btnW, M.btnH, 0x144a25, 0.95)
+        .setStrokeStyle(1.5, 0x4ade80)
+        .setDepth(662)
+        .setInteractive({ useHandCursor: true });
+      this.settingsModalObjects.push(btnBg);
+
+      const btnTxt = this.add.text(btnX, y, '[ ON ]', {
+        fontFamily: 'Press Start 2P',
+        fontSize: M.btn,
+        color: '#4ade80'
+      }).setOrigin(0.5).setDepth(663).setInteractive({ useHandCursor: true });
+      this.settingsModalObjects.push(btnTxt);
+
+      return { btnBg, btnTxt };
+    };
+
     // 4. Sound Effects Row (SFX)
-    const sfxY = h / 2 - 18;
-    const sfxRow = this.add.rectangle(w / 2, sfxY, 340, 36, 0x0b1f29, 0.9)
-      .setStrokeStyle(1, 0x1d4754)
-      .setDepth(661);
-    this.settingsModalObjects.push(sfxRow);
-
-    const sfxLabel = this.add.text(w / 2 - 155, sfxY - 6, '🔊 SOUND EFFECTS (SFX)', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '6px',
-      color: '#ffffff'
-    }).setOrigin(0, 0.5).setDepth(662);
-    this.settingsModalObjects.push(sfxLabel);
-
-    const sfxDesc = this.add.text(w / 2 - 155, sfxY + 7, 'Sword slashes, enemy hits, jumps & UI', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '4.5px',
-      color: '#76a0b0'
-    }).setOrigin(0, 0.5).setDepth(662);
-    this.settingsModalObjects.push(sfxDesc);
-
-    const sfxBtnBg = this.add.rectangle(w / 2 + 112, sfxY, 84, 22, 0x144a25, 0.95)
-      .setStrokeStyle(1.5, 0x4ade80)
-      .setDepth(662)
-      .setInteractive({ useHandCursor: true });
-    this.settingsModalObjects.push(sfxBtnBg);
-
-    const sfxBtnTxt = this.add.text(w / 2 + 112, sfxY, '[ ON ]', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '6px',
-      color: '#4ade80'
-    }).setOrigin(0.5).setDepth(663).setInteractive({ useHandCursor: true });
-    this.settingsModalObjects.push(sfxBtnTxt);
+    const sfxY = top + M.row1Y;
+    const { btnBg: sfxBtnBg, btnTxt: sfxBtnTxt } = addRow(sfxY, '🔊 SOUND EFFECTS (SFX)', 'Sword slashes, enemy hits, jumps & UI');
 
     const updateSfxUI = () => {
       const isMuted = sound.isSoundMuted();
@@ -541,38 +639,8 @@ export default class MenuScene extends Phaser.Scene {
     sfxBtnTxt.on('pointerdown', toggleSfxAction);
 
     // 5. Music Row (BGM)
-    const bgmY = h / 2 + 24;
-    const bgmRow = this.add.rectangle(w / 2, bgmY, 340, 36, 0x0b1f29, 0.9)
-      .setStrokeStyle(1, 0x1d4754)
-      .setDepth(661);
-    this.settingsModalObjects.push(bgmRow);
-
-    const bgmLabel = this.add.text(w / 2 - 155, bgmY - 6, '🎵 BACKGROUND MUSIC (BGM)', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '6px',
-      color: '#ffffff'
-    }).setOrigin(0, 0.5).setDepth(662);
-    this.settingsModalObjects.push(bgmLabel);
-
-    const bgmDesc = this.add.text(w / 2 - 155, bgmY + 7, 'Melodic chapter soundtracks & ambient cues', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '4.5px',
-      color: '#76a0b0'
-    }).setOrigin(0, 0.5).setDepth(662);
-    this.settingsModalObjects.push(bgmDesc);
-
-    const bgmBtnBg = this.add.rectangle(w / 2 + 112, bgmY, 84, 22, 0x144a25, 0.95)
-      .setStrokeStyle(1.5, 0x4ade80)
-      .setDepth(662)
-      .setInteractive({ useHandCursor: true });
-    this.settingsModalObjects.push(bgmBtnBg);
-
-    const bgmBtnTxt = this.add.text(w / 2 + 112, bgmY, '[ ON ]', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '6px',
-      color: '#4ade80'
-    }).setOrigin(0.5).setDepth(663).setInteractive({ useHandCursor: true });
-    this.settingsModalObjects.push(bgmBtnTxt);
+    const bgmY = top + M.row2Y;
+    const { btnBg: bgmBtnBg, btnTxt: bgmBtnTxt } = addRow(bgmY, '🎵 BACKGROUND MUSIC (BGM)', 'Melodic chapter soundtracks & ambient cues');
 
     const updateMusicUI = () => {
       const isMuted = sound.isMusicMuted();
@@ -592,43 +660,24 @@ export default class MenuScene extends Phaser.Scene {
     bgmBtnTxt.on('pointerdown', toggleMusicAction);
 
     // 6. Close Button
-    const closeBtnY = h / 2 + 68;
-    const closeBg = this.add.rectangle(w / 2, closeBtnY, 150, 22, 0x162c33, 0.95)
-      .setStrokeStyle(1.5, 0x3d6b73)
-      .setDepth(662)
-      .setInteractive({ useHandCursor: true });
-    this.settingsModalObjects.push(closeBg);
-
-    const closeText = this.add.text(w / 2, closeBtnY, '✕ BACK TO MENU', {
-      fontFamily: 'Press Start 2P',
-      fontSize: '6.5px',
-      color: '#e0f0f5'
-    }).setOrigin(0.5).setDepth(663).setInteractive({ useHandCursor: true });
-    this.settingsModalObjects.push(closeText);
-
-    const setCloseHover = (isHover) => {
-      closeBg.setFillStyle(isHover ? 0x244c59 : 0x162c33);
-      closeBg.setStrokeStyle(1.5, isHover ? 0x64dfdf : 0x3d6b73);
-      closeText.setColor(isHover ? '#ffd166' : '#e0f0f5');
-      if (isHover) sound.playBlip(true);
-    };
-
-    closeBg.on('pointerover', () => setCloseHover(true));
-    closeBg.on('pointerout', () => setCloseHover(false));
-    closeText.on('pointerover', () => setCloseHover(true));
-    closeText.on('pointerout', () => setCloseHover(false));
-
-    closeBg.on('pointerdown', () => this.closeSettingsModal());
-    closeText.on('pointerdown', () => this.closeSettingsModal());
+    this.addModalCloseButton(this.settingsModalObjects, {
+      x: w / 2,
+      y: top + M.closeY,
+      width: M.closeW,
+      height: M.closeH,
+      fontSize: M.close,
+      depth: 662,
+      onClose: () => this.closeSettingsModal()
+    });
 
     // ESC key listener
     this.settingsModalEscHandler = () => this.closeSettingsModal();
     this.input.keyboard.once('keydown-ESC', this.settingsModalEscHandler);
   }
 
-  closeSettingsModal() {
+  closeSettingsModal({ silent = false } = {}) {
     if (!this.settingsModalObjects) return;
-    sound.playCancel();
+    if (!silent) sound.playCancel();
     if (this.settingsModalEscHandler) {
       this.input.keyboard.off('keydown-ESC', this.settingsModalEscHandler);
       this.settingsModalEscHandler = null;
@@ -640,7 +689,9 @@ export default class MenuScene extends Phaser.Scene {
   }
 
   onViewportResize(w, h) {
-    if (this.cameras?.main && this.cameras.main.width === w && this.cameras.main.height === h) {
+    // Compared with the canvas the menu was laid out for: by the time this is called the camera has already been
+    // resized by the scale manager, so comparing with the camera would never see a change.
+    if (this.layoutSize && this.layoutSize.w === w && this.layoutSize.h === h) {
       return;
     }
     if (this.bgSky) {
@@ -662,10 +713,13 @@ export default class MenuScene extends Phaser.Scene {
     if (this.cameras && this.cameras.main) {
       this.cameras.main.setSize(w, h);
     }
-    // Re-layout menu on viewport orientation change if no modal open
-    if (!this.storyModalObjects && !this.settingsModalObjects) {
-      this.scene.restart();
-    }
+    // Re-layout the menu on a viewport orientation change. A modal is sized for the canvas it was opened on, so an open
+    // one is closed quietly and opened again on the new canvas.
+    const openModal = this.storyModalObjects ? 'openStoryModal' : (this.settingsModalObjects ? 'openSettingsModal' : null);
+    if (openModal) this.reopenModal = openModal;
+    this.closeStoryModal({ silent: true });
+    this.closeSettingsModal({ silent: true });
+    this.scene.restart();
   }
 
   update() {

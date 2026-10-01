@@ -10,6 +10,62 @@ import EnemyHealthBar from '../ui/EnemyHealthBar.js';
 import { pauseService } from '../engine/PauseService.js';
 import confetti from 'canvas-confetti';
 
+/*
+ * Sizes for the two canvases (480x270 landscape, 480x440 tall), in game units.
+ *
+ * A text hint of 7px or more is drawn in the pixel font at that size; a smaller hint is drawn in VT323 at 2.3x the hint
+ * (engine/typography.js), so '6.8px' is a 15.5-unit VT323 line and '13.5px' is a 13.5-unit pixel-font heading.
+ * The tall canvas is the one shown upright on a phone, at about 0.81 CSS px per unit, so its sizes are picked to read as
+ * >= 9 CSS px for captions, >= 10 for body text and >= 11 for headings there. The landscape canvas is shown at 1.4 to
+ * 2.1 CSS px per unit, where the sizes below are already large enough.
+ */
+
+/** The lesson card at the top. Positions are measured from the middle of the card. */
+const HUD = {
+  land: {
+    card: { w: 340, h: 58, x: 175, y: 35 },
+    avatar: { x: -146, y: 0, size: 24, scale: 0.5 },
+    pill: { x: -88, y: -19, w: 74, h: 12, size: '5px' },
+    title: { x: 32, y: -19, originX: 0.5, size: '6px' },
+    dialogue: { x: -126, y: 1, wrap: 286, size: '4.5px', spacing: 2 },
+    progress: { x: 14, y: 21, originX: 0.5, size: '4.5px' },
+  },
+  tall: {
+    card: { w: 450, h: 112, x: 240, y: 62 },
+    avatar: { x: -196, y: -34, size: 36, scale: 0.72 },
+    pill: { x: -124, y: -42, w: 88, h: 18, size: '6.3px' },
+    title: { x: -168, y: -20, originX: 0, size: '13.5px' },
+    dialogue: { x: -215, y: 12, wrap: 430, size: '6.8px', spacing: 4 },
+    progress: { x: -215, y: 43, originX: 0, size: '6.8px' },
+  },
+};
+
+/** Labels floating over the playfield. */
+const WORLD = {
+  land: { banner: '7px', indicator: '5px', tag: '5.5px', counter: '6.5px', stomp: '6px', graze: '5px' },
+  tall: { banner: '12px', indicator: '6.3px', tag: '6.3px', counter: '6.8px', stomp: '6.5px', graze: '6.3px' },
+};
+
+/** The "training complete" card. Positions are measured from the middle of the card. */
+const VICTORY = {
+  land: {
+    card: { w: 360, h: 170 },
+    title: { y: -68, size: '11px' },
+    desc: { y: -26, size: '5.5px', spacing: 4 },
+    start: { y: 24, w: 280, h: 24 },
+    row: { y: 56, w: 134, h: 24, dx: 74 },
+    btn: '6px',
+  },
+  tall: {
+    card: { w: 440, h: 248 },
+    title: { y: -100, size: '14px' },
+    desc: { y: -42, size: '6.8px', spacing: 6 },
+    start: { y: 28, w: 380, h: 40 },
+    row: { y: 80, w: 186, h: 40, dx: 96 },
+    btn: '6.9px',
+  },
+};
+
 export default class TutorialScene extends Phaser.Scene {
   constructor() {
     super({ key: 'TutorialScene' });
@@ -193,7 +249,13 @@ export default class TutorialScene extends Phaser.Scene {
       this.txtTitle.setText(curTitle);
       this.txtDialogue.setText(curDiag);
       this.txtProgress.setText(curProg);
+      if (this.isVictory) this.hudContainer.setVisible(false);
     }
+  }
+
+  /** Sizes for the labels floating over the playfield, for the canvas that is on screen. */
+  worldSizes() {
+    return (this.cameras?.main?.height || GAME_CONFIG.HEIGHT) > 300 ? WORLD.tall : WORLD.land;
   }
 
   createGround(x, y, width) {
@@ -241,87 +303,69 @@ export default class TutorialScene extends Phaser.Scene {
 
   createTutorialHUD(w, h) {
     const isTall = (h || this.cameras?.main?.height || 270) > 300;
-    const hudW = isTall ? 450 : 340;
-    const hudH = isTall ? 76 : 54;
-    const hudX = isTall ? (w / 2) : 175;
-    const hudY = isTall ? 46 : 33;
+    const H = isTall ? HUD.tall : HUD.land;
 
-    this.hudContainer = this.add.container(hudX, hudY).setDepth(400);
+    this.hudContainer = this.add.container(H.card.x, H.card.y).setDepth(400);
 
     // Card background
-    this.hudBg = this.add.rectangle(0, 0, hudW, hudH, 0x06140b, 0.94);
+    this.hudBg = this.add.rectangle(0, 0, H.card.w, H.card.h, 0x06140b, 0.94);
     this.hudBg.setStrokeStyle(1.5, 0x2e6e3e);
     this.hudContainer.add(this.hudBg);
 
     // Inner framing
-    const inner = this.add.rectangle(0, 0, hudW - 6, hudH - 6, 0x000000, 0);
+    const inner = this.add.rectangle(0, 0, H.card.w - 6, H.card.h - 6, 0x000000, 0);
     inner.setStrokeStyle(1, 0x183b22, 0.6);
     this.hudContainer.add(inner);
 
     // Sylva Avatar Frame with fairy_portrait (left side)
-    const avatarX = isTall ? -(hudW / 2) + 26 : -146;
-    const avatarSize = isTall ? 32 : 24;
-    this.avatarBg = this.add.rectangle(avatarX, 0, avatarSize, avatarSize, 0x102818, 0.95);
+    this.avatarBg = this.add.rectangle(H.avatar.x, H.avatar.y, H.avatar.size, H.avatar.size, 0x102818, 0.95);
     this.avatarBg.setStrokeStyle(1.5, 0x4ade80);
     this.hudContainer.add(this.avatarBg);
 
-    this.avatarSylva = this.add.image(avatarX, 0, 'fairy_portrait').setScale(isTall ? 0.65 : 0.5);
+    this.avatarSylva = this.add.image(H.avatar.x, H.avatar.y, 'fairy_portrait').setScale(H.avatar.scale);
     this.hudContainer.add(this.avatarSylva);
 
     // Step tag pill (top row)
-    const row1Y = isTall ? -22 : -16;
-    const pillW = isTall ? 88 : 74;
-    const pillH = isTall ? 16 : 12;
-    const pillX = isTall ? -(hudW / 2) + 50 + pillW / 2 : -88;
-
-    this.stepPill = this.add.rectangle(pillX, row1Y, pillW, pillH, 0x16381e, 0.95);
+    this.stepPill = this.add.rectangle(H.pill.x, H.pill.y, H.pill.w, H.pill.h, 0x16381e, 0.95);
     this.stepPill.setStrokeStyle(1, 0x4ade80);
     this.hudContainer.add(this.stepPill);
 
-    this.txtStep = this.add.text(pillX, row1Y, 'LESSON 1 / 6', {
+    this.txtStep = this.add.text(H.pill.x, H.pill.y, 'LESSON 1 / 6', {
       fontFamily: 'Press Start 2P',
-      fontSize: isTall ? '6px' : '5px',
+      fontSize: H.pill.size,
       color: '#4ade80'
     }).setOrigin(0.5);
     this.hudContainer.add(this.txtStep);
 
     // Title / Action instruction (top row)
-    const titleX = isTall ? (pillX + pillW / 2 + 10) : 32;
-    this.txtTitle = this.add.text(titleX, row1Y, '1. RUNNING & TRAVERSAL', {
+    this.txtTitle = this.add.text(H.title.x, H.title.y, '1. RUNNING & TRAVERSAL', {
       fontFamily: 'Press Start 2P',
-      fontSize: isTall ? '8px' : '6px',
+      fontSize: H.title.size,
       color: '#ffd166',
       stroke: '#000000',
       strokeThickness: 2
-    }).setOrigin(isTall ? 0 : 0.5, 0.5);
+    }).setOrigin(H.title.originX, 0.5);
     this.hudContainer.add(this.txtTitle);
 
-    // Sylva dialogue quote (middle row)
-    const row2Y = isTall ? -3 : 0;
-    const dialogueX = isTall ? -(hudW / 2) + 50 : -126;
-    const dialogueWrap = isTall ? (hudW - 60) : 286;
-
-    this.txtDialogue = this.add.text(dialogueX, row2Y, 'Sylva: "Tap the ◀ and ▶ buttons on the left D-Pad to run."', {
+    // Sylva dialogue quote (middle rows: one or two lines, centred between the title and the checklist)
+    this.txtDialogue = this.add.text(H.dialogue.x, H.dialogue.y, 'Sylva: "Tap the ◀ and ▶ buttons on the left D-Pad to run."', {
       fontFamily: 'Press Start 2P',
-      fontSize: isTall ? '6.5px' : '4.5px',
+      fontSize: H.dialogue.size,
       color: '#e4faec',
-      wordWrap: { width: dialogueWrap },
-      lineSpacing: isTall ? 4 : 2,
+      wordWrap: { width: H.dialogue.wrap },
+      lineSpacing: H.dialogue.spacing,
       align: 'left'
     }).setOrigin(0, 0.5);
     this.hudContainer.add(this.txtDialogue);
 
     // Task checklist badge (bottom row)
-    const row3Y = isTall ? 21 : 16;
-    const progressX = isTall ? dialogueX : 14;
-
-    this.txtProgress = this.add.text(progressX, row3Y, '[ ◀ RUN LEFT: ⭕ ]   [ ▶ RUN RIGHT: ⭕ ]', {
+    this.txtProgress = this.add.text(H.progress.x, H.progress.y, '[ ◀ RUN LEFT: ⭕ ]   [ ▶ RUN RIGHT: ⭕ ]', {
       fontFamily: 'Press Start 2P',
-      fontSize: isTall ? '6.5px' : '4.5px',
+      fontSize: H.progress.size,
       color: '#98ff20',
       stroke: '#000000',
       strokeThickness: 1.5
-    }).setOrigin(isTall ? 0 : 0.5, 0.5);
+    }).setOrigin(H.progress.originX, 0.5);
     this.hudContainer.add(this.txtProgress);
   }
 
@@ -469,11 +513,14 @@ export default class TutorialScene extends Phaser.Scene {
     // Floating checkmark banner
     const checkText = this.add.text(this.player.x, this.player.y - 42, '✔ LESSON COMPLETE!', {
       fontFamily: 'Press Start 2P',
-      fontSize: '7px',
+      fontSize: this.worldSizes().banner,
       color: '#4ade80',
       stroke: '#000000',
       strokeThickness: 3
     }).setOrigin(0.5).setDepth(500);
+    // keep the whole banner on screen when the player is at an edge
+    const half = checkText.width / 2 + 4;
+    checkText.x = Phaser.Math.Clamp(checkText.x, half, (this.cameras.main.width || GAME_CONFIG.WIDTH) - half);
 
     this.tweens.add({
       targets: checkText,
@@ -507,9 +554,9 @@ export default class TutorialScene extends Phaser.Scene {
       bee.healthBar.update(bee.hp, bee.maxHp);
     }
 
-    const indicator = this.add.text(x, y - 18, '⚔️ SLICE WITH UP ATTK', {
+    const indicator = this.add.text(x, y - 26, '⚔️ SLICE WITH UP ATTK', {
       fontFamily: 'Press Start 2P',
-      fontSize: '5px',
+      fontSize: this.worldSizes().indicator,
       color: '#ffd166',
       stroke: '#000000',
       strokeThickness: 2
@@ -539,9 +586,9 @@ export default class TutorialScene extends Phaser.Scene {
     }
 
     // Floating bounce guide tag
-    const stompTag = this.add.text(x, y - 24, '⬇ STOMP BOUNCE', {
+    const stompTag = this.add.text(x, y - 28, '⬇ STOMP BOUNCE', {
       fontFamily: 'Press Start 2P',
-      fontSize: '5.5px',
+      fontSize: this.worldSizes().tag,
       color: '#ffd166',
       stroke: '#000000',
       strokeThickness: 2
@@ -549,7 +596,7 @@ export default class TutorialScene extends Phaser.Scene {
 
     this.tweens.add({
       targets: stompTag,
-      y: y - 28,
+      y: y - 32,
       duration: 500,
       yoyo: true,
       loop: -1,
@@ -575,7 +622,7 @@ export default class TutorialScene extends Phaser.Scene {
     // Distinct Sparring Dummy Nameplate
     const dummyLabel = this.add.text(x, y - 32, '🥋 TRAINING DUMMY', {
       fontFamily: 'Press Start 2P',
-      fontSize: '5.5px',
+      fontSize: this.worldSizes().tag,
       color: '#ffd166',
       stroke: '#000000',
       strokeThickness: 2
@@ -627,7 +674,7 @@ export default class TutorialScene extends Phaser.Scene {
 
       const counterText = this.add.text(enemy.x, enemy.y - 14, 'AERIAL SLICE! 💥', {
         fontFamily: 'Press Start 2P',
-        fontSize: '6.5px',
+        fontSize: this.worldSizes().counter,
         color: '#ffea00',
         stroke: '#000000',
         strokeThickness: 2
@@ -721,7 +768,7 @@ export default class TutorialScene extends Phaser.Scene {
         enemy.hasTelegraphedHarmlessTouch = true;
         const grazeText = this.add.text(enemy.x, enemy.y - 10, 'SWOOP! (0 DMG)', {
           fontFamily: 'Press Start 2P',
-          fontSize: '5px',
+          fontSize: this.worldSizes().graze,
           color: '#38bdf8',
           stroke: '#000000',
           strokeThickness: 2
@@ -749,7 +796,7 @@ export default class TutorialScene extends Phaser.Scene {
 
       const txt = this.add.text(enemy.x, enemy.y - 18, '💥 STOMP BOUNCE! -25', {
         fontFamily: 'Press Start 2P',
-        fontSize: '6px',
+        fontSize: this.worldSizes().stomp,
         color: '#ffd166',
         stroke: '#000000',
         strokeThickness: 3
@@ -808,13 +855,13 @@ export default class TutorialScene extends Phaser.Scene {
           enemy.update(this.player);
         }
         if (enemy.indicator && enemy.active) {
-          enemy.indicator.setPosition(enemy.x, enemy.y - 18);
+          enemy.indicator.setPosition(enemy.x, enemy.y - 26);
         }
         if (enemy.dummyLabel && enemy.active) {
           enemy.dummyLabel.setPosition(enemy.x, enemy.y - 32);
         }
         if (enemy.stompTag && enemy.active) {
-          enemy.stompTag.setPosition(enemy.x, enemy.y - 24);
+          enemy.stompTag.setPosition(enemy.x, enemy.y - 28);
         }
       });
     }
@@ -887,30 +934,31 @@ export default class TutorialScene extends Phaser.Scene {
     this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.75).setDepth(600).setInteractive();
 
     const card = this.add.container(w / 2, h / 2).setDepth(601);
+    const V = h > 300 ? VICTORY.tall : VICTORY.land;
 
-    const cardBg = this.add.rectangle(0, 0, 360, 180, 0x061a10, 0.96);
+    const cardBg = this.add.rectangle(0, 0, V.card.w, V.card.h, 0x061a10, 0.96);
     cardBg.setStrokeStyle(2, 0x4ade80);
     card.add(cardBg);
 
-    const title = this.add.text(0, -58, '🏆 TRAINING COMPLETE!', {
+    const title = this.add.text(0, V.title.y, '🏆 TRAINING COMPLETE!', {
       fontFamily: 'Press Start 2P',
-      fontSize: '11px',
+      fontSize: V.title.size,
       color: '#ffd166',
       stroke: '#000000',
       strokeThickness: 3
     }).setOrigin(0.5);
     card.add(title);
 
-    const desc = this.add.text(0, -20, [
+    const desc = this.add.text(0, V.desc.y, [
       'You have mastered the Moonshard!',
       '• Movement & Mid-Air Double Jumps',
       '• Ground Cleaves & Upward Air Slashes',
       '• Stomp Bounces & Shell Tactics'
     ].join('\n'), {
       fontFamily: 'Press Start 2P',
-      fontSize: '5.5px',
+      fontSize: V.desc.size,
       color: '#c8eed4',
-      lineSpacing: 5,
+      lineSpacing: V.desc.spacing,
       align: 'center'
     }).setOrigin(0.5);
     card.add(desc);
@@ -921,7 +969,7 @@ export default class TutorialScene extends Phaser.Scene {
         .setInteractive({ useHandCursor: true });
       const txt = this.add.text(bx, by, label, {
         fontFamily: 'Press Start 2P',
-        fontSize: '6px',
+        fontSize: V.btn,
         color: textCol
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
@@ -951,17 +999,17 @@ export default class TutorialScene extends Phaser.Scene {
       }
     };
 
-    createBtn(0, 12, 280, 24, 0x164e22, 0x4ade80, '#ffffff', storyBtnLabel, proceedToStory);
+    createBtn(0, V.start.y, V.start.w, V.start.h, 0x164e22, 0x4ade80, '#ffffff', storyBtnLabel, proceedToStory);
 
     this.input.keyboard.once('keydown-SPACE', proceedToStory);
     this.input.keyboard.once('keydown-ENTER', proceedToStory);
 
-    createBtn(-74, 44, 134, 24, 0x1a3848, 0x38bdf8, '#38bdf8', '🏆 DAILY TRIAL', () => {
+    createBtn(-V.row.dx, V.row.y, V.row.w, V.row.h, 0x1a3848, 0x38bdf8, '#38bdf8', '🏆 DAILY TRIAL', () => {
       sound.playCoin();
       this.scene.start('SurvivalScene');
     });
 
-    createBtn(74, 44, 134, 24, 0x382414, 0xf59e0b, '#f59e0b', '◄ MAIN MENU', () => {
+    createBtn(V.row.dx, V.row.y, V.row.w, V.row.h, 0x382414, 0xf59e0b, '#f59e0b', '◄ MAIN MENU', () => {
       sound.playCoin();
       this.scene.start('MenuScene');
     });
