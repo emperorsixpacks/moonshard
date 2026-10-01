@@ -60,6 +60,8 @@ export function fakeEngagementRpc(initial = {}) {
     appsAsked: [],
     ...initial,
   };
+  // retryCount 0: viem would otherwise retry a failed request in the background (150 ms, 300 ms, 600 ms), long enough
+  // for a test to flip `fail` back and see a "failed" call succeed behind its back.
   const client = createPublicClient({
     transport: custom({
       async request({ method, params }) {
@@ -83,7 +85,7 @@ export function fakeEngagementRpc(initial = {}) {
           ],
         });
       },
-    }),
+    }, { retryCount: 0 }),
   });
   return { state, client };
 }

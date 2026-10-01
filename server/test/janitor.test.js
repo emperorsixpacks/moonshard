@@ -10,6 +10,15 @@ import { startSettlementCron } from "../src/cron.js";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
+
+/** Polls (on real timers) until `cond()` is true; fails after `ms`. A fixed sleep would be a coin-flip on a loaded machine. */
+async function until(cond, ms = 5_000) {
+  const end = Date.now() + ms;
+  while (!(await cond())) {
+    if (Date.now() > end) throw new Error("timed out waiting for the condition");
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
 const agoMs = (now, ms) => new Date(now - ms);
 
 async function insertRun(h, { id, subject = "0xaa", status, startedAgo, submittedAgo = null, day = "2026-10-03", checkpoints = 0 }) {
@@ -204,22 +213,20 @@ test("the cron runs the janitor once at start-up and then every hour, next to se
     h.db.tx = (fn) => realTx((t) => fn({ query: (sql, params) => { if (/DELETE FROM runs/.test(sql)) sweeps.push(h.clock()); return t.query(sql, params); } }));
 
     stop = startSettlementCron(h.ctx, 60_000, { checkCaps: async () => ({ checked: false }) });
-    await new Promise((r) => setImmediate(r));
-    await new Promise((r) => setTimeout(r, 50)); // let the first pass finish (real timers still back setTimeout here)
+    await until(async () => sweeps.length === 1 && (await runIds(h)).length === 0); // real timers still back setTimeout here
     assert.equal(sweeps.length, 1, "once at start-up");
-    assert.deepEqual(await runIds(h), []);
 
     mock.timers.tick(30 * 60_000);
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 30));
     assert.equal(sweeps.length, 1, "not before the hour is up");
     mock.timers.tick(30 * 60_000);
-    await new Promise((r) => setTimeout(r, 50));
+    await until(() => sweeps.length === 2);
     assert.equal(sweeps.length, 2, "again after an hour");
 
     stop();
     stop = null;
     mock.timers.tick(5 * HOUR);
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 30));
     assert.equal(sweeps.length, 2, "the stop function stops the janitor as well");
   } finally {
     stop?.();
@@ -236,11 +243,11 @@ test("a janitor that fails is logged and does not stop the cron", async () => {
   try {
     h.db.tx = async () => { throw new Error("db gone"); };
     stop = startSettlementCron(h.ctx, 60_000, { checkCaps: async () => ({ checked: false }), log: { error: (...a) => errors.push(a.join(" ")), warn() {}, info() {} } });
-    await new Promise((r) => setTimeout(r, 50));
+    const failures = () => errors.filter((e) => /janitor failed/.test(e) && /db gone/.test(e)).length;
+    await until(() => failures() >= 1);
     assert.ok(errors.some((e) => /janitor failed/.test(e) && /db gone/.test(e)), JSON.stringify(errors));
     mock.timers.tick(HOUR);
-    await new Promise((r) => setTimeout(r, 50));
-    assert.ok(errors.filter((e) => /janitor failed/.test(e)).length >= 2, "it tried again on the next tick");
+    await until(() => failures() >= 2); // it tried again on the next tick
   } finally {
     stop?.();
     mock.timers.reset();
