@@ -26,6 +26,8 @@ const MESSAGES = {
   wallet_timeout: "The wallet didn't respond. Check it for a pending prompt, then try again.",
   vault_mismatch: "The prize vault in the server's answer does not match this app's configuration. Do not redeem; tell the team.",
   slow_down: 'Easy. Try again in a few seconds.',
+  wallet_busy: 'Your wallet is still waiting for an answer. Approve or reject that request there first.',
+  already_submitted: 'Your earlier request is still confirming on the network. Check back in a minute.',
   engagement_not_configured: 'Bounty claims are not enabled on this server yet.',
 };
 

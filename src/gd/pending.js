@@ -43,6 +43,7 @@ export function createPendingConfirms({
   storage = defaultStorage(),
 } = {}) {
   let running = null;
+  const sessionListeners = new Set();
 
   function read() {
     try {
@@ -80,11 +81,12 @@ export function createPendingConfirms({
   }
 
   async function attempt(kind, txHash) {
+    const token = tokenFn();
     try {
-      const response = await api(PATHS[kind], { method: 'POST', token: tokenFn(), body: { txHash }, timeoutMs: CONFIRM_TIMEOUT_MS });
-      return { ok: true, response };
+      const response = await api(PATHS[kind], { method: 'POST', token, body: { txHash }, timeoutMs: CONFIRM_TIMEOUT_MS });
+      return { ok: true, response, token };
     } catch (err) {
-      return { ok: false, retryable: isRetryable(err), error: err?.message || 'confirm_failed', status: err?.status };
+      return { ok: false, retryable: isRetryable(err), error: err?.message || 'confirm_failed', status: err?.status, token };
     }
   }
 
@@ -104,7 +106,12 @@ export function createPendingConfirms({
     return { confirmed: false, queued: false, error: r.error, status: r.status };
   }
 
-  function retryAll() {
+  /**
+   * Retries every queued confirmation that belongs to the signed-in account. `onUnauthorized(token)` is called once
+   * if the server says that session is dead: the entries stay queued, but the caller can tell the player to reconnect.
+   */
+  function retryAll({ onUnauthorized } = {}) {
+    if (onUnauthorized) sessionListeners.add(onUnauthorized);
     if (running) return running;
     running = (async () => {
       if (!tokenFn()) return 0;
@@ -122,8 +129,14 @@ export function createPendingConfirms({
           remove(item.txHash);
         }
       }
+      const dead = results.find(({ r }) => !r.ok && r.status === 401);
+      if (dead) {
+        for (const fn of sessionListeners) {
+          try { fn(dead.r.token); } catch { /* a listener must not break the retry loop */ }
+        }
+      }
       return confirmed;
-    })().finally(() => { running = null; });
+    })().finally(() => { running = null; sessionListeners.clear(); });
     return running;
   }
 

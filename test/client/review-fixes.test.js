@@ -207,3 +207,21 @@ test('retry requests carry a short timeout', async () => {
   await q.pending.retryAll();
   assert.ok(seen > 0 && seen <= 6000, `timeoutMs was ${seen}`);
 });
+
+test('a dead session found while retrying is reported once, with the token that was used, and the entries wait', async () => {
+  const seen = [];
+  const q = queue({ api: async () => { throw failure(401, 'invalid_session'); } });
+  q.pending.add('ubi', H1);
+  q.pending.add('ubi', H2);
+  await q.pending.retryAll({ onUnauthorized: (token) => seen.push(token) });
+  assert.deepEqual(seen, ['tok'], 'once, not once per entry');
+  assert.equal(q.pending.list().length, 2, 'they wait for the next sign-in');
+});
+
+test('no session callback when nothing was unauthorized', async () => {
+  const seen = [];
+  const q = queue({ api: async () => { throw failure(0); } });
+  q.pending.add('ubi', H1);
+  await q.pending.retryAll({ onUnauthorized: (token) => seen.push(token) });
+  assert.deepEqual(seen, []);
+});
