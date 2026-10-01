@@ -39,7 +39,12 @@ export function fakeClock(start = T0) {
   return fn;
 }
 
-export function fakeChain() {
+/**
+ * A chain with no network. Given a `clock`, an identity whitelisted with an `expiresAt` stops being whitelisted once
+ * that time has passed, which is what the identity contract does (getWhitelistedRoot() returns 0 after the account's
+ * re-verification date). Without a clock it answers the same thing forever.
+ */
+export function fakeChain(clock) {
   const state = {
     roots: new Map(),
     txs: new Map(),
@@ -57,6 +62,9 @@ export function fakeChain() {
       state.calls.identity++;
       const hit = state.roots.get(address.toLowerCase());
       if (!hit) return { isWhitelisted: false, root: null, expiresAt: null, expired: false };
+      if (clock && hit.expiresAt != null && hit.expiresAt <= clock()) {
+        return { isWhitelisted: false, root: null, expiresAt: null, expired: true };
+      }
       return { isWhitelisted: true, root: hit.root, expiresAt: hit.expiresAt, expired: false };
     },
     verifySignature: (address, message, signature) => verifyMessage({ address, message, signature }),
@@ -70,7 +78,7 @@ export function fakeChain() {
 
 export async function makeHarness(opts = {}) {
   const clock = opts.clock ?? fakeClock();
-  const chain = opts.chain ?? fakeChain();
+  const chain = opts.chain ?? fakeChain(clock);
   const db = await createDb("");
   const config = {
     port: 0,
@@ -93,7 +101,9 @@ export async function makeHarness(opts = {}) {
     appSignerKey: generatePrivateKey(),
     ...opts.config,
   };
-  const { app, ctx } = createApp({ db, chain, config, now: clock });
+  // `opts.env` stands in for process.env (NODE_ENV and friends), so a test can build a "production" app and the suite
+  // does not change behaviour when it is run with NODE_ENV=production in the shell.
+  const { app, ctx } = createApp({ db, chain, config, now: clock, env: opts.env ?? { NODE_ENV: "test" } });
   const server = await new Promise((resolve) => {
     const s = createServer(app).listen(0, "127.0.0.1", () => resolve(s));
   });
