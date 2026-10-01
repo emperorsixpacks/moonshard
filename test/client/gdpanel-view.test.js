@@ -121,3 +121,49 @@ test('with the server unreachable but data known, the data stays and the notice 
   assert.match(h, /Server unreachable/);
   assert.match(h, /CLAIM DAILY G\$/);
 });
+
+/* ---- the verified-human gate: shown when the player tries to start a game mode ---- */
+
+const gate = { label: 'ENDLESS MODE' };
+const gated = (over) => renderPanelHtml(status(over), 0, { gate });
+const anonymous = { connected: false, status: 'anonymous', verified: false, ubi: null, bounty: null, spoils: [], blessing: false };
+
+test('the gate explains the rule and starts at step one for a visitor', () => {
+  const h = gated(anonymous);
+  assert.match(h, /VERIFIED HUMANS ONLY/);
+  assert.match(h, /one human, one slot/i);
+  assert.match(h, /data-act="connect"/);
+  assert.doesNotMatch(h, /data-act="play"/);
+  assert.doesNotMatch(h, /DAILY G\$|FIRST-BOSS BOUNTY|SPOILS/);
+  assert.match(h, /gd-step-now[^<]*>[^<]*1\./);
+});
+
+test('a connected player who is not verified is sent to the face scan', () => {
+  const h = gated({ status: 'unverified', verified: false, ubi: null, bounty: null, spoils: [] });
+  assert.match(h, /data-act="verify"/);
+  assert.match(h, /data-act="recheck"/);
+  assert.doesNotMatch(h, /data-act="play"/);
+  assert.match(h, /gd-step-done[^<]*>[^<]*1\./);
+  assert.match(h, /gd-step-now[^<]*>[^<]*2\./);
+});
+
+test('the gate says when it is still checking, and when it cannot reach the server', () => {
+  assert.match(gated({ status: 'unknown', verified: false, offline: false }), /Checking your verification/);
+  const off = gated({ status: 'unknown', verified: false, offline: true });
+  assert.match(off, /data-act="recheck"/);
+  assert.match(off, /reach the server/i);
+  assert.doesNotMatch(off, /data-act="play"/);
+});
+
+test('a verified human gets a play button that names the mode', () => {
+  const h = gated({});
+  assert.match(h, /data-act="play"/);
+  assert.match(h, /PLAY ENDLESS MODE/);
+  assert.match(h, /gd-step-done[^<]*>[^<]*2\./);
+});
+
+test('without a gate the panel no longer says the game can be played without a wallet', () => {
+  const h = renderPanelHtml(status(anonymous), 0);
+  assert.doesNotMatch(h, /play everything without a wallet/i);
+  assert.match(h, /verified human/i);
+});

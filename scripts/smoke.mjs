@@ -1,5 +1,6 @@
-// First-visit smoke test: no wallet, API unreachable. Proves the game boots and plays, the wallet panel opens in its
-// "not connected" state, and no scene throws. Needs neither a server nor a chain.
+// First-visit smoke test: no wallet, API unreachable. Proves a first visitor is stopped at the verified-human gate, the
+// wallet panel opens in its "not connected" state, every scene still boots without a server (started the way test tooling
+// does, around the gate), and no scene throws. Needs neither a server nor a chain.
 //   npm run test:smoke        (screenshots go to docs/screenshots/smoke-*.png)
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
@@ -47,7 +48,8 @@ try {
   await page.waitForFunction(() => document.querySelector('#gd-panel')?.innerText.includes('NOT CONNECTED'));
   const panelText = await page.innerText('#gd-panel');
   assert.match(panelText, /No wallet detected/i);
-  assert.match(panelText, /play everything without a wallet/i);
+  assert.match(panelText, /verified humans/i);
+  assert.doesNotMatch(panelText, /without a wallet/i);
   await shot('panel');
   await page.click('[data-act="connect"]');
   await page.waitForTimeout(500);
@@ -56,6 +58,25 @@ try {
   assert.equal(await page.evaluate(() => window.game.scene.isActive('LeaderboardScene')), false, 'panel click leaked into the game');
   assert.equal(await page.evaluate(() => window.game.scene.isActive('MenuScene')), true);
   await page.click('#gd-close');
+
+  console.log('▶ the verified-human gate: a first visitor cannot start a game mode');
+  for (const [key, data] of [['SurvivalScene'], ['TutorialScene'], ['StoryScene', { chapter: 1 }], ['StoryIntroScene']]) {
+    // the same call the menu rows and the story transitions make
+    await page.evaluate(([k, d]) => window.game.scene.getScene('MenuScene').scene.start(k, d), [key, data]);
+    await page.waitForTimeout(400);
+    assert.equal(await page.evaluate((k) => window.game.scene.isActive(k), key), false, `${key} started without a verified human`);
+    assert.equal(await page.evaluate(() => window.game.scene.isActive('MenuScene')), true);
+    const gateText = await page.innerText('#gd-panel');
+    assert.match(gateText, /VERIFIED HUMANS ONLY/);
+    assert.match(gateText, /CONNECT WALLET/);
+    assert.doesNotMatch(gateText, /PLAY .* ▶/);
+    if (key === 'SurvivalScene') await shot('gate');
+    await page.click('#gd-close');
+  }
+  // places that are not play stay open to everyone
+  await page.evaluate(() => window.game.scene.getScene('MenuScene').scene.start('LeaderboardScene'));
+  await page.waitForFunction(() => window.game.scene.isActive('LeaderboardScene'), null, { timeout: 15_000 });
+  await startScene('MenuScene');
 
   for (const [key, data, ms] of [['TutorialScene', undefined, 6000], ['SurvivalScene', undefined, 8000], ['StoryScene', { chapter: 1 }, 8000]]) {
     console.log(`▶ ${key} runs offline`);

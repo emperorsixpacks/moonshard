@@ -6,6 +6,7 @@ import { renderPanelHtml } from './gdPanelView.js';
 export class GdPanel {
   constructor() {
     this.el = null;
+    this.gate = null; // { label, launch } while the verified-human gate is showing
   }
 
   mount() {
@@ -34,6 +35,12 @@ export class GdPanel {
     gdService.subscribe(() => this.render());
   }
 
+  /** The verified-human gate: the player asked to start `label`; `launch()` carries it out once they may play. */
+  openGate(request) {
+    this.gate = request;
+    this.open();
+  }
+
   open() {
     this.mount();
     this.el.classList.remove('hidden');
@@ -42,18 +49,27 @@ export class GdPanel {
   }
 
   close() {
+    this.gate = null;
     this.el?.classList.add('hidden');
   }
 
   render() {
     if (!this.el) return;
-    this.el.querySelector('#gd-body').innerHTML = renderPanelHtml(gdService.getStatus());
+    this.el.querySelector('#gd-body').innerHTML = renderPanelHtml(gdService.getStatus(), Date.now(), {
+      gate: this.gate ? { label: this.gate.label } : null,
+    });
   }
 
   async onClick(e) {
     const el = e.target.closest('[data-act]');
     if (!el || el.disabled) return;
     const act = el.dataset.act;
+    if (act === 'play') {
+      const request = this.gate;
+      this.close();
+      request?.launch();
+      return;
+    }
     const actions = {
       connect: () => gdService.connect(),
       reconnect: () => gdService.connect(),

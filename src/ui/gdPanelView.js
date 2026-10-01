@@ -1,6 +1,7 @@
 import { explorerTx } from '../gd/config.js';
 import { explainError, formatCountdown, formatG } from '../gd/format.js';
 import { identiconSvg } from '../gd/identicon.js';
+import { gateStep } from '../engine/playGateRules.js';
 
 /**
  * The wallet panel as a pure function of the service status (no DOM, no service import), so every state it can be
@@ -88,7 +89,36 @@ function spoilsHtml(s, txDisabled) {
   return rows.join('');
 }
 
-export function renderPanelHtml(s, now = Date.now()) {
+/**
+ * The verified-human gate, shown when the player tries to start a game mode: three steps, the current one marked,
+ * and the one action that moves them forward. `gate.label` names the mode they asked for.
+ */
+function gateHtml(s, gate, busy, txDisabled) {
+  const step = gateStep(s);
+  const at = { connect: 0, checking: 1, unreachable: 1, verify: 1, ready: 2 }[step];
+  const steps = ['1. Connect your wallet', '2. Prove you are human', `3. Play ${gate.label}`].map((text, i) => {
+    const cls = i < at ? 'gd-step-done' : i === at ? 'gd-step-now' : 'gd-step-todo';
+    const mark = i < at ? '✔' : i === at ? '▶' : '○';
+    return `<li class="${cls}">${mark} ${text}</li>`;
+  });
+  let action = '';
+  if (step === 'connect') {
+    action = button('connect', 'CONNECT WALLET', { disabled: busy });
+    if (!s.hasWallet) action += warn('No wallet detected. Open Moonshard in a browser or app with a Celo-compatible wallet.');
+  } else if (step === 'checking') {
+    action = note('Checking your verification…');
+  } else if (step === 'unreachable') {
+    action = `${warn("Can't reach the server to check your verification.")}${button('recheck', 'TRY AGAIN', { disabled: busy })}`;
+  } else if (step === 'verify') {
+    const expired = s.status === 'expired';
+    action = `<p>${expired ? 'Your GoodDollar verification has expired. Verify again to play.' : "GoodDollar's quick face scan proves you are a real person. Moonshard never sees your face."}</p>${button('verify', 'VERIFY (FACE SCAN)', { disabled: txDisabled })}${button('recheck', "I'M DONE — CHECK AGAIN", { disabled: busy, cls: 'gd-ghost' })}`;
+  } else {
+    action = button('play', `PLAY ${esc(gate.label)} ▶`, { disabled: busy });
+  }
+  return section('VERIFIED HUMANS ONLY', `<p>Moonshard is played by real people: one human, one slot. Connect your wallet and prove you are human with GoodDollar to play.</p><ol class="gd-steps">${steps.join('')}</ol>${action}`);
+}
+
+export function renderPanelHtml(s, now = Date.now(), { gate = null } = {}) {
   const busy = Boolean(s.busy);
   const txDisabled = busy || s.wrongChain || s.needsReconnect;
   const status = Object.hasOwn(LABELS, s.status) ? s.status : 'anonymous'; // never interpolate server text into markup
@@ -103,9 +133,14 @@ export function renderPanelHtml(s, now = Date.now()) {
 
   if (busy) out.push(note('Working… confirm in your wallet if asked.'));
 
-  if (!s.connected) {
+  if (gate) {
+    if (!s.connected && s.sessionExpired) out.push(warn('Your session ended. Connect your wallet again to keep playing.'));
+    if (s.connected && s.needsReconnect && gateStep(s) !== 'ready') out.push(warn('Reconnect your wallet to continue.'));
+    out.push(gateHtml(s, gate, busy, txDisabled));
+    if (s.connected) out.push(button('disconnect', 'DISCONNECT', { disabled: busy, cls: 'gd-ghost' }));
+  } else if (!s.connected) {
     if (s.sessionExpired) out.push(warn('Your session ended. Connect your wallet again to keep earning.'));
-    out.push(note('You can play everything without a wallet. Connect a Celo wallet to join the ranked board, claim your daily G$ and earn Spoils.'));
+    out.push(note('Moonshard is for verified humans. Connect your Celo wallet and prove you are human (GoodDollar face scan) to play, claim your daily G$ and earn Spoils.'));
     out.push(button('connect', 'CONNECT WALLET', { disabled: busy }));
     if (!s.hasWallet) out.push(warn('No wallet detected. Open Moonshard in a browser or app with a Celo-compatible wallet.'));
   } else {
@@ -125,7 +160,7 @@ export function renderPanelHtml(s, now = Date.now()) {
     } else if (status !== 'verified') {
       const copy = status === 'expired'
         ? 'Your GoodDollar verification has expired. Re-verify to keep earning.'
-        : "Moonshard rewards one human, one slot. GoodDollar's quick face scan proves you are a real person. Moonshard never sees your face.";
+        : "Moonshard is played by verified humans: one human, one slot. GoodDollar's quick face scan proves you are a real person. Moonshard never sees your face.";
       out.push(section("PROVE YOU'RE HUMAN", `<p>${copy}</p>${button('verify', 'VERIFY (FACE SCAN)', { disabled: txDisabled })}${button('recheck', "I'M DONE — CHECK AGAIN", { disabled: busy, cls: 'gd-ghost' })}`));
     } else {
       out.push(section('DAILY G$', dailyHtml(s, txDisabled, now)));

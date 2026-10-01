@@ -1135,3 +1135,8 @@ html, body {
 .gd-spoil small { display: block; color: #8cb38c; font-size: 7px; }
 .gd-spoil .gd-btn { width: auto; }
 .gd-link { color: #38e1ff; text-align: center; text-decoration: none; padding: 4px 0; }
+.gd-steps { list-style: none; margin: 2px 0 4px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.gd-steps li { padding: 6px 8px; border: 1px solid #2e4e2e; background: #0d170d; }
+.gd-step-done { color: #98ff20; }
+.gd-step-now { color: #ffd166; border-color: #e9b213 !important; background: #1a1a0a !important; }
+.gd-step-todo { color: #5f7f5f; }
