@@ -73,13 +73,16 @@ try {
   log('▶ M3: kills and shards collected after the finish, while a periodic checkpoint is in flight');
   api.handlers.checkpoints = async () => ({ delayMs: 1_500, body: { ok: true, accepted: 1, duplicates: 0 } });
   await startStory();
+  // the hero idles for up to 16 s of real time here; on a loaded machine that is long enough for the foes to reach and kill
+  // it, and the submit would then carry the totals at its death instead of the scripted ones
+  await story((s) => { if (s.player) s.player.invulnerableUntil = Infinity; });
   const before = api.callsTo(/\/checkpoints$/).length;
   for (let i = 0; i < 160 && api.callsTo(/\/checkpoints$/).length === before; i += 1) await wait(100); // the 10 s checkpoint goes out
   const lateRun = lastRun().runId;
   await story((s) => { s.killsCount = 5; s.sessionCrystalsCollected = 2; s.triggerChapterVictory(); s.killsCount = 8; s.sessionCrystalsCollected = 4; });
   await wait(4_500);
   const lateSubmit = submitsOf(lateRun)[0]?.body;
-  check(lateSubmit?.kills === 5 && lateSubmit?.shards === 2, `submitted the totals at the finish (${lateSubmit?.kills} kills / ${lateSubmit?.shards} shards)`);
+  check(lateSubmit?.kills === 5 && lateSubmit?.shards === 2, `submitted the totals at the finish (${lateSubmit?.kills} kills / ${lateSubmit?.shards} shards; submit: ${JSON.stringify(lateSubmit)})`);
   check(checkpointPointsOf(lateRun).every((p) => p.kills <= lateSubmit.kills && p.shards <= lateSubmit.shards),
     `no checkpoint is above them: ${JSON.stringify(checkpointPointsOf(lateRun).map((p) => [p.kills, p.shards]))}`);
   api.handlers.checkpoints = async () => ({ body: { ok: true, accepted: 1, duplicates: 0 } });
