@@ -34,6 +34,19 @@ export function reasonFor(err) {
 /** Network trouble or a server hiccup: the request may not have been handled, so asking again is safe and useful. */
 const isTransient = (err) => !Number.isInteger(err?.status) || err.status === 0 || err.status >= 500;
 
+/** The longest pause the tracker will sit out before asking for a ticket again: a longer one means something else is wrong. */
+const MAX_START_WAIT_MS = 15_000;
+
+/**
+ * The server paces /runs/start per player and mode: a start too soon after the last one is 429 `slow_down` with the time
+ * left in `retryAfterMs`. Returns that wait when the error is that refusal and the wait is one to trust, else null.
+ */
+function slowDownWait(err) {
+  if (err?.status !== 429 || err?.message !== 'slow_down') return null;
+  const ms = err.body?.retryAfterMs;
+  return typeof ms === 'number' && Number.isFinite(ms) && ms >= 0 && ms <= MAX_START_WAIT_MS ? Math.ceil(ms) : null;
+}
+
 /**
  * Tracks one server-ticketed run. Anonymous / offline runs are simply unticketed: every method is
  * a safe no-op, so gameplay never depends on the API being reachable.
@@ -83,6 +96,8 @@ export class RunTracker {
     this.lastError = null;
     this.authLostHandler = null;
     this.authLostSent = false;
+    // The pause a start() is sitting out before it asks for its ticket again, so that stop() can cancel it.
+    this.startWait = null;
   }
 
   /**
@@ -115,8 +130,8 @@ export class RunTracker {
       if (epoch !== this.epoch) return null; // stopped, finished or superseded while waiting
     }
     try {
-      const res = await this.api('/runs/start', { method: 'POST', token, body: { mode, ...(chapter ? { chapter } : {}) } });
-      if (epoch !== this.epoch) return null; // stopped or superseded while the request was in flight
+      const res = await this._requestStart(epoch, { mode, chapter, token });
+      if (epoch !== this.epoch) return null; // stopped or superseded while the request was in flight (or the pause before the second)
       if (!res?.runId || !res?.ticket) {
         this.noRunReason = 'rejected';
         return null;
@@ -214,6 +229,7 @@ export class RunTracker {
 
   stop() {
     this.epoch += 1;
+    this.startWait?.cancel(); // a start() sitting out the server's pace gives up now instead of when the pause ends
     if (this.timer != null) this.timers.clearInterval(this.timer);
     this.timer = null;
     this.run = null; // a settlement in progress keeps its own reference to the run and carries on
@@ -221,6 +237,43 @@ export class RunTracker {
   }
 
   // ------------------------------------------------------------------------------------------------ internals
+
+  /**
+   * POST /runs/start. A restart can land inside the server's pace for this player and mode; a run without a ticket is not
+   * ranked, so when the server says how long to wait, wait that out once and ask again. The scenes do not await start(),
+   * so the game goes on meanwhile; the run's clock starts when the ticket arrives. Returns null when the run was stopped or
+   * superseded during the pause (nothing more is sent then).
+   */
+  async _requestStart(epoch, { mode, chapter, token }) {
+    const send = () => this.api('/runs/start', { method: 'POST', token, body: { mode, ...(chapter ? { chapter } : {}) } });
+    try {
+      return await send();
+    } catch (err) {
+      const wait = slowDownWait(err);
+      if (wait === null) throw err;
+      await this._pause(wait);
+      if (epoch !== this.epoch) return null;
+      return send();
+    }
+  }
+
+  /** Resolves after `ms`, or at once if stop() cancels it. */
+  _pause(ms) {
+    return new Promise((resolve) => {
+      const handle = {};
+      const done = () => {
+        if (this.startWait === handle) this.startWait = null;
+        resolve();
+      };
+      const id = typeof this.timers.setTimeout === 'function' ? this.timers.setTimeout(done, ms) : setTimeout(done, ms);
+      handle.cancel = () => {
+        if (typeof this.timers.clearTimeout === 'function') this.timers.clearTimeout(id);
+        else clearTimeout(id);
+        done();
+      };
+      this.startWait = handle;
+    });
+  }
 
   async _settle(run, { totals, closing, durationMs, bossCleared }) {
     try {

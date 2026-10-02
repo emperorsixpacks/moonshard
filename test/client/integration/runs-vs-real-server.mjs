@@ -25,8 +25,10 @@ const rowOf = async (runId) => (await rows()).find((r) => r.run_id === runId);
 const lastCheckpoint = async (runId) => (await h.db.query('SELECT t_ms, score, kills, shards FROM run_checkpoints WHERE run_id = $1 ORDER BY seq DESC LIMIT 1', [runId])).rows[0];
 
 /** A tracker on the real server. `wrap(path, opts, real)` can delay, drop or alter a request. */
-function trackerFor(player, { wrap, token = player.token } = {}) {
+function trackerFor(player, { wrap, token = player.token, pause } = {}) {
   const timers = { fns: [], setInterval(fn) { this.fns.push(fn); return this.fns.length; }, clearInterval(id) { this.fns[id - 1] = null; } };
+  // `pause(ms)` stands in for the wait the tracker sits out (it moves the server's clock instead of sleeping)
+  if (pause) Object.assign(timers, { setTimeout(fn, ms) { pause(ms); queueMicrotask(fn); return 0; }, clearTimeout() {} });
   const real = (path, opts) => apiFetch(path, { ...opts, base: h.base });
   const api = wrap ? (path, opts) => wrap(path, opts, real) : real;
   const tracker = new RunTracker({ api, getToken: () => token, now: () => h.clock(), timers, intervalMs: 10_000 });
@@ -168,6 +170,21 @@ try {
     const res = await t.finish({ score: 1, kills: 0, shards: 0, durationMs: 9_000 });
     check(run === null && res.reason === 'signed_out', `the real 401 is read as signed out (${JSON.stringify(res)})`);
     check(seen.length === 1 && seen[0].status === 401, `and reported once (${JSON.stringify(seen)})`);
+  }
+
+  log('▶ a restart inside the server\'s pace: the refusal names the wait, and the run is ticketed when it is over');
+  {
+    const p = await h.newPlayer({ verified: true });
+    await trackerFor(p).start({ mode: 'TRIAL' }); // accepted: the pace for this player's Trial starts now
+    h.clock.advance(4_000);
+    const waits = [];
+    const t = trackerFor(p, { pause: (ms) => { waits.push(ms); h.clock.advance(ms); } });
+    const run = await t.start({ mode: 'TRIAL' });
+    check(waits.length === 1 && waits[0] === 6_000, `it waited the 6 s the real server named (${JSON.stringify(waits)})`);
+    check(Boolean(run?.runId), 'and then got its ticket');
+    await play(t, 40, { score: 900, kills: 9, shards: 0 });
+    const res = await t.finish({ score: 900, kills: 9, shards: 0, durationMs: 40_000 });
+    check(res.ticketed && res.rankedOk === true && res.flags.length === 0, `the run is ranked, unflagged (${JSON.stringify({ rankedOk: res.rankedOk, flags: res.flags })})`);
   }
 
   if (!observe) {
