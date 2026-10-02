@@ -13,8 +13,8 @@ A pixel action-platformer built with **Phaser 4**, where **GoodDollar (G$) on Ce
 | First-boss bounty | Defeat a Story boss, then claim a one-time protocol-funded reward | Engagement Rewards (`nonContractAppClaim`) |
 | Spoils | Top-3 verified daily runs and the Shard Harvest are paid in G$ from a capped vault; you redeem your own voucher | `MoonshardVault` (this repo) |
 | One human, one slot | Rewards, caps and boards key on the whitelisted root, so linked wallets share one slot | Identity contract |
-| Anti-cheat | Server-issued run tickets, checkpoints, server clock, rate limits | n/a |
-| Public metrics | `/stats.html`: verified humans, in-game UBI claims, bounties, Spoils, daily players | n/a |
+| Anti-cheat | Server-issued run tickets, checkpoints, the server's clock, score ceilings derived from the game's own tables, a 30 s minimum before a run counts, paced run starts, rate limits | n/a |
+| Public metrics | `/stats.html`: what the chain confirms (verified humans, in-game UBI claims, bounties, Spoils paid) kept apart from what the game only reports (runs, wallets) | n/a |
 
 **Verified humans only.** Before any game mode starts (story, tutorial, endless), the player must connect a wallet and be a verified human; the game shows a three-step gate (connect, prove you are human, play) and starts the mode they asked for once they pass. The menu, forge, leaderboard and public stats are open to everyone. The gate is the experience of the rule; the server independently only ranks and pays verified humans.
 
