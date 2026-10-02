@@ -36,6 +36,22 @@ export function walletStub({ accounts = [ADDR], chainId = CELO } = {}) {
 
 const reply = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
+export const VAULT = '0x00000000000000000000000000000000000ba5e1';
+/** GET /shop as the server answers it (server/config.js GAME.SHOP, abridged). */
+export const SHOP = {
+  enabled: true,
+  token: '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A',
+  vault: VAULT,
+  items: [
+    { id: 'iron_starter', name: 'Rusted Shortsword', kind: 'blade', priceG: '20', requires: null },
+    { id: 'iron_broadsword', name: 'Iron Broadsword', kind: 'forge', priceG: '30', requires: null },
+    { id: 'forest_glaive', name: 'Forest Glaive', kind: 'forge', priceG: '60', requires: null },
+    { id: 'golden_albatross', name: 'Golden Solar Blade', kind: 'cosmetic', priceG: '150', requires: 'forest_glaive' },
+    { id: 'skin_flame', name: 'Crimson Flame Katana', kind: 'cosmetic', priceG: '100', requires: null },
+    { id: 'satchel_pet', name: 'Moon Sprite', kind: 'cosmetic', priceG: '80', requires: null },
+  ],
+};
+
 /**
  * `handlers[path]` may replace any default answer: `(ctx) => reply(...)` or a plain object / Promise of one,
  * where ctx = { token, body, n } (n = how many times this path was called).
@@ -52,6 +68,10 @@ export function serverStub(opts = {}) {
     confirmed: [],
     handlers: {},
     down: false,
+    // the Moon Shop: GET /shop answers `shop`; /rewards/status lists `owned`; a confirmed purchase adds `buys` to it
+    shop: SHOP,
+    owned: ['iron_starter'],
+    buys: 'iron_starter',
     ...opts,
   };
   server.fetch = async (url, init = {}) => {
@@ -67,23 +87,25 @@ export function serverStub(opts = {}) {
       if (out !== undefined) return out; // a handler that returns nothing falls through to the default answer
     }
     const identity = { address: ADDR.toLowerCase(), verified: server.verified, status: server.verified ? 'verified' : 'unverified' };
-    const authed = !path.startsWith('/auth/') && path !== '/config';
+    const authed = !path.startsWith('/auth/') && path !== '/config' && path !== '/shop';
     if (authed && !server.tokenOk(token)) return reply({ error: 'invalid_session' }, 401);
     switch (path) {
       case '/auth/nonce': return reply({ nonce: 'cd'.repeat(32), issuedAt: new Date().toISOString() });
       case '/auth/verify': return reply({ token: server.nextToken, ...identity });
       case '/me': case '/me/refresh': return reply(identity);
-      case '/rewards/status': return reply({ blessing: server.blessed, firstBossPrizeG: 2400, crystalStatus: { gdEarned: 0, dailyCapGd: 100, isCapped: false } });
+      case '/rewards/status': return reply({ blessing: server.blessed, firstBossPrizeG: 2400, crystalStatus: { gdEarned: 0, dailyCapGd: 100, isCapped: false }, owned: [...server.owned] });
+      case '/shop': return reply(server.shop);
       case '/engagement/status': return reply({ configured: true, canClaim: true, pendingRunId: 'run-1', rewardG: 2400 });
       case '/spoils':
         return reply({
           vault: { address: '0x00000000000000000000000000000000000ba5e1' },
           spoils: [{ id: '7', kind: 'TRIAL_PRIZE', day: '2026-10-05', rank: 1, amount: '1', amountG: '1', claimed: false, voucher: { to: ADDR, id: '7', amount: '1', deadline: '9', signature: '0x00' } }],
         });
-      case '/ubi/confirm': case '/engagement/confirm': case '/spoils/confirm': {
+      case '/ubi/confirm': case '/engagement/confirm': case '/spoils/confirm': case '/shop/confirm': {
         if (server.confirmStatus !== 200) return reply({ error: server.confirmStatus === 503 ? 'chain_unavailable' : server.confirmStatus === 401 ? 'invalid_session' : 'tx_not_today' }, server.confirmStatus);
         server.confirmed.push(`${path}:${body.txHash}`);
         if (path === '/ubi/confirm') server.blessed = true;
+        if (path === '/shop/confirm' && !server.owned.includes(server.buys)) server.owned.push(server.buys);
         return reply({ ok: true, recorded: true });
       }
       default: return reply({ error: 'not_found' }, 404);
@@ -102,6 +124,7 @@ export const stubLoaders = (over = {}) => ({
   identity: async () => ({ faceVerificationLink: async () => 'http://fv.test' }),
   engagement: async () => ({ claimBounty: async () => ({ hash: H2 }), ...over.engagement }),
   spoils: async () => ({ redeemSpoil: async () => ({ hash: H3 }), ...over.spoils }),
+  shop: async () => ({ readGBalance: async () => 100n * 10n ** 18n, buyItem: async () => ({ hash: H1 }), ...over.shop }),
 });
 
 /**

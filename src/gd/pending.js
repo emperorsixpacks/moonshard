@@ -5,7 +5,7 @@ const KEY = 'moonshard.pending.v1';
 const MAX_ITEMS = 20;
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const CONFIRM_TIMEOUT_MS = 5000; // short, and retries run in parallel, so a dead API delays a refresh by 5 s at most
-const PATHS = { ubi: '/ubi/confirm', engagement: '/engagement/confirm', spoil: '/spoils/confirm' };
+const PATHS = { ubi: '/ubi/confirm', engagement: '/engagement/confirm', spoil: '/spoils/confirm', shop: '/shop/confirm' };
 const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
 
 const memory = new Map();

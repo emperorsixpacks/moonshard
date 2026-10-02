@@ -1,3 +1,4 @@
+import { formatUnits } from 'viem';
 import { apiFetch } from '../gd/api.js';
 import { signIn } from '../gd/auth.js';
 import { clearSession, getToken, loadSession } from '../gd/session.js';
@@ -25,12 +26,14 @@ async function loadWalletConnect() {
 const wallet = createWalletManager({ getFallbackProvider: GD.reownProjectId ? loadWalletConnect : null });
 
 /** The pieces of server/chain data that refresh independently. `ok`/`fail` = number of the newest refresh that succeeded/failed. */
-const FIELDS = ['rewards', 'bounty', 'spoils', 'ubi'];
+const FIELDS = ['rewards', 'bounty', 'spoils', 'ubi', 'shop', 'balance'];
+/** Fields read from the chain, not from our API: their failures say nothing about whether the server is there. */
+const CHAIN_READS = new Set(['ubi', 'balance']);
 const freshMeta = () => Object.fromEntries(FIELDS.map((f) => [f, { ok: 0, fail: 0 }]));
 /** Network failure, timeout or server trouble: "the server is not there", as opposed to an answer about this request. */
 const isUnreachable = (err) => err?.status === 0 || err?.status >= 500;
 /** Actions that end in an on-chain transaction (their wait is longer than a wallet prompt). */
-const TX_ACTIONS = new Set(['ubi', 'bounty', 'redeem']);
+const TX_ACTIONS = new Set(['ubi', 'bounty', 'redeem', 'buy']);
 /** A transaction that was sent but is not recorded yet blocks repeating the same action for this long. */
 const AWAIT_MS = 15 * 60 * 1000;
 const sameHash = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
@@ -47,11 +50,13 @@ class GdServiceManager {
       identity: () => import('../gd/identity.js'),
       engagement: () => import('../gd/engagement.js'),
       spoils: () => import('../gd/spoils.js'),
+      shop: () => import('../gd/shop.js'),
     };
     this.s = {
       sessionAddress: null, status: 'anonymous', verified: false, identityLoaded: false, offline: false,
       needsReconnect: false, sessionExpired: false,
       busy: null, rewards: null, ubi: null, bounty: null, spoils: [], vault: null,
+      shop: null, balance: null,
     };
     // Refreshes can overlap (panel open, run end, claim, wallet events). Each one gets a number; a field is only
     // replaced by a newer answer, and a failure marks the field stale instead of replacing it with "nothing".
@@ -73,6 +78,7 @@ class GdServiceManager {
   }
 
   async init() {
+    this.refreshShop(); // public, and never blocks start-up
     const session = loadSession();
     if (session) {
       const token = session.token;
@@ -171,9 +177,12 @@ class GdServiceManager {
       bounty: connected ? this.s.bounty : null,
       spoils: connected ? this.s.spoils : [],
       vault: connected ? this.s.vault : null,
+      shop: this.s.shop,
+      owned: connected ? (this.s.rewards?.owned ?? null) : null,
+      balance: connected ? this.s.balance : null,
       stale: Object.fromEntries(FIELDS.map((f) => [f, connected && this.meta[f].fail > this.meta[f].ok])),
       pendingCount: this.pending.size(),
-      awaiting: connected ? this.awaitingStatus() : { ubi: null, bounty: null, spoils: {} },
+      awaiting: connected ? this.awaitingStatus() : { ubi: null, bounty: null, spoils: {}, shop: {} },
       blessing: connected && Boolean(this.s.rewards?.blessing),
     };
   }
@@ -192,11 +201,14 @@ class GdServiceManager {
 
   awaitingStatus() {
     const spoils = {};
+    const shop = {};
     for (const key of Object.keys(this.awaiting)) {
-      const hash = key.startsWith('redeem:') ? this.awaitingHash(key) : null;
-      if (hash) spoils[key.slice('redeem:'.length)] = hash;
+      const [kind, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
+      const into = kind === 'redeem' ? spoils : kind === 'buy' ? shop : null;
+      const hash = into ? this.awaitingHash(key) : null;
+      if (hash) into[id] = hash;
     }
-    return { ubi: this.awaitingHash('ubi'), bounty: this.awaitingHash('bounty'), spoils };
+    return { ubi: this.awaitingHash('ubi'), bounty: this.awaitingHash('bounty'), spoils, shop };
   }
 
   assertNotAwaiting(key) {
@@ -233,8 +245,8 @@ class GdServiceManager {
 
   /** Forget everything that belongs to a signed-in account (the data, not the wallet connection). */
   resetData() {
-    this.s = { ...this.s, rewards: null, ubi: null, bounty: null, spoils: [], vault: null };
-    this.meta = freshMeta();
+    this.s = { ...this.s, rewards: null, ubi: null, bounty: null, spoils: [], vault: null, balance: null };
+    this.meta = { ...freshMeta(), shop: this.meta.shop }; // what the shop sells is not the account's
     setBlessed(false);
   }
 
@@ -306,6 +318,8 @@ class GdServiceManager {
     const verified = this.s.verified;
     const jobs = {
       rewards: apiFetch('/rewards/status', { token }),
+      ...(this.s.shop ? {} : { shop: apiFetch('/shop') }), // the same for the whole deployment: once loaded, kept
+      balance: this.readBalance(),
       ...(verified
         ? {
           bounty: apiFetch('/engagement/status', { token }),
@@ -326,7 +340,7 @@ class GdServiceManager {
     if (!verified) {
       for (const f of ['bounty', 'spoils', 'ubi']) this.applyField(seq, f, { ok: true, value: f === 'spoils' ? { spoils: [], vault: null } : null });
     }
-    const api = settled.filter((_, i) => names[i] !== 'ubi'); // the UBI read goes to the chain, not to our API
+    const api = settled.filter((_, i) => !CHAIN_READS.has(names[i]));
     this.s.offline = api.length > 0 && api.every((r) => r.status === 'rejected' && isUnreachable(r.reason));
     this.notify();
   }
@@ -346,9 +360,42 @@ class GdServiceManager {
       } else {
         this.s[field] = outcome.value;
       }
+      if (field === 'rewards' || field === 'shop') this.syncOwnership();
     } else if (seq > m.fail) {
       m.fail = seq;
     }
+  }
+
+  /** What G$ buys on this server. Public, so it is shown before anyone connects. A failure keeps the last answer. */
+  async refreshShop() {
+    const seq = ++this.seq;
+    try {
+      this.applyField(seq, 'shop', { ok: true, value: await apiFetch('/shop') });
+    } catch (err) {
+      this.applyField(seq, 'shop', { ok: false, error: err });
+    }
+    this.notify();
+  }
+
+  /**
+   * Moon Shop items are paid for in G$ and belong to the person, so with the shop open the server's list is what this device
+   * unlocks (another account signing in here gets its own). With the shop closed the device keeps its own unlocks.
+   */
+  syncOwnership() {
+    const { shop } = this.s;
+    const owned = this.s.rewards?.owned;
+    if (shop && !shop.enabled) storage.applyShopClosed();
+    if (!shop?.enabled || !Array.isArray(owned)) return;
+    storage.applyShopOwnership(shop.items.map((item) => item.id), owned);
+  }
+
+  /** The G$ (a decimal string) in the session's wallet, or null when there is nothing to read with this wallet right now. */
+  async readBalance() {
+    const w = wallet.getState();
+    if (!w.connected || w.wrongChain || w.address !== this.s.sessionAddress) return null;
+    const { readGBalance } = await this.loaders.shop();
+    const { publicClient } = wallet.clients();
+    return formatUnits(await readGBalance({ publicClient, address: w.address }), 18);
   }
 
   /** The UBI status, or null when there is nothing to read with this wallet right now. Throws if the chain read fails. */
@@ -525,6 +572,33 @@ class GdServiceManager {
       const { claimBounty } = await this.loaders.engagement();
       const out = await claimBounty({ wallet, api: apiFetch, token, runId, onHash: (h) => this.pending.add('engagement', h) });
       return this.afterPaid('engagement', out.hash, { unconfirmed: out.unconfirmed, key: 'bounty' });
+    });
+  }
+
+  /**
+   * Buys a Moon Shop item: its price in G$, from the player's wallet into the prize vault the server named. Everything
+   * that can be known to be wrong is refused before the wallet is asked; the payment is then confirmed with the server like
+   * every other paid action, and the same purchase cannot be sent again until it has been.
+   */
+  buy(itemId) {
+    return this.run('buy', async () => {
+      this.requireSession();
+      const key = `buy:${itemId}`;
+      this.assertNotAwaiting(key);
+      const { shop, balance } = this.s;
+      const item = shop?.enabled ? shop.items.find((x) => x.id === itemId) : null;
+      if (!item) throw new Error('not_for_sale');
+      const owned = this.s.rewards?.owned ?? [];
+      if (owned.includes(itemId)) throw new Error('already_owned');
+      if (item.requires && !owned.includes(item.requires)) throw new Error('requires_item');
+      // G$ is paid on the token this build knows, into the vault it may pin: a server answer pointing elsewhere is refused.
+      if (String(shop.token).toLowerCase() !== GD.token.toLowerCase()) throw new Error('token_mismatch');
+      if (GD.vault && String(shop.vault).toLowerCase() !== GD.vault.toLowerCase()) throw new Error('vault_mismatch');
+      if (balance !== null && Number(balance) < Number(item.priceG)) throw new Error('not_enough_g');
+      await this.ensureWallet();
+      const { buyItem } = await this.loaders.shop();
+      const out = await buyItem({ wallet, vault: shop.vault, item, onHash: (h) => this.pending.add('shop', h) });
+      return this.afterPaid('shop', out.hash, { unconfirmed: out.unconfirmed, key });
     });
   }
 

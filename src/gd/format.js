@@ -29,6 +29,17 @@ const MESSAGES = {
   wallet_busy: 'Your wallet is still waiting for an answer. Approve or reject that request there first.',
   already_submitted: 'Your earlier request is still confirming on the network. Check back in a minute.',
   engagement_not_configured: 'Bounty claims are not enabled on this server yet.',
+  not_enough_g: "Not enough G$ in your wallet for that yet. Claim today's free G$ first.",
+  already_owned: 'You already own that.',
+  requires_item: 'Get the item it builds on first.',
+  not_for_sale: 'That is not for sale on this server.',
+  shop_closed: 'The Moon Shop is not open on this server.',
+  token_mismatch: "The G$ token in the server's answer does not match this app's. Nothing was sent; tell the team.",
+  blade_required: 'Get your blade first: it is paid for in G$.',
+  not_paid_to_vault: 'That payment did not go to the prize vault.',
+  underpaid: 'That payment was less than the price.',
+  no_item: 'That payment did not name a Moon Shop item.',
+  unknown_item: 'That payment did not name a Moon Shop item.',
 };
 
 export function shortAddress(addr) {

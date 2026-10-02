@@ -133,6 +133,34 @@ class StorageManager {
     return this.data.satchelUnlocked && this.data.companionEquipped;
   }
 
+  /** With no Moon Shop on the server the first blade is free, as it was before the shop existed. */
+  applyShopClosed() {
+    this.unlockWeapon(GAME_CONFIG.WEAPONS.STARTER.id);
+  }
+
+  /**
+   * With the Moon Shop open, the items it sells (`itemIds`) are paid for in G$ and belong to the person, so each one is
+   * unlocked on this device exactly when the server lists it in `owned`. Anything the shop does not sell is left alone.
+   * A newly owned pet comes out at once, as a forged one does; an equipped blade no longer owned is put away.
+   */
+  applyShopOwnership(itemIds, owned) {
+    const sold = new Set(itemIds);
+    const has = new Set(owned);
+    const weapons = Object.values(GAME_CONFIG.WEAPONS).map((w) => w.id);
+    this.data.unlockedWeapons = [
+      ...this.data.unlockedWeapons.filter((id) => !sold.has(id)),
+      ...weapons.filter((id) => sold.has(id) && has.has(id)),
+    ];
+    if (!this.data.unlockedWeapons.includes(this.data.equippedWeapon)) this.data.equippedWeapon = GAME_CONFIG.WEAPONS.STARTER.id;
+    if (sold.has('satchel_pet')) {
+      const pet = has.has('satchel_pet');
+      if (pet && !this.data.satchelUnlocked) this.data.companionEquipped = true;
+      if (!pet) this.data.companionEquipped = false;
+      this.data.satchelUnlocked = pet;
+    }
+    this.save();
+  }
+
   setActivePerk(perkId) {
     this.data.activePerk = perkId;
     this.save();
