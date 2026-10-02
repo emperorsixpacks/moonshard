@@ -64,3 +64,30 @@ export const inScene = (page, key, fn, arg) => page.evaluate(
 export const sceneTexts = (page, key) => inScene(page, key, (scene) => scene.children.list
   .filter((o) => o.type === 'Text' && o.visible !== false)
   .map((o) => o.text));
+
+/**
+ * Waits until a scene has run a few frames. Phaser adds a new scene's interactive objects to its input list on the
+ * scene's next update, so a click that lands in its very first frame finds nothing to hit. (A person cannot tap a
+ * screen before it has drawn once; a script can.)
+ */
+export const settled = (page, key, frames = 4) => page.evaluate(([k, n]) => new Promise((resolve) => {
+  const scene = window.game.scene.getScene(k);
+  let seen = 0;
+  const onUpdate = () => { if (++seen >= n) { scene.events.off('update', onUpdate); resolve(); } };
+  scene.events.on('update', onUpdate);
+}), [key, frames]);
+
+/** A real mouse click on the middle of the menu row whose label contains `label`. */
+export async function clickMenuRow(page, label) {
+  await settled(page, 'MenuScene');
+  const at = await inScene(page, 'MenuScene', (scene, text) => {
+    const t = scene.children.list.find((o) => o.type === 'Text' && o.text.includes(text));
+    const row = scene.children.list.find((o) => o.type === 'Rectangle' && o.input?.enabled
+      && Math.abs(o.x - t.x) < 1 && Math.abs(t.y - o.y) <= o.height / 2);
+    const b = row.getBounds();
+    const r = window.game.canvas.getBoundingClientRect();
+    const k = r.width / window.game.scale.width;
+    return { x: r.left + (b.x + b.width / 2) * k, y: r.top + (b.y + b.height / 2) * k };
+  }, label);
+  await page.mouse.click(at.x, at.y);
+}

@@ -28,6 +28,16 @@ cd server && npm install && cp .env.example .env     # then set JWT_SECRET (open
 cd .. && npm run dev:all                              # API on :3001 (in-memory DB), game on :5173
 ```
 
+### Try it by hand: real G$ flows, no wallet, no face scan
+
+```bash
+npm run dev:local      # needs internet (it copies Celo mainnet) and Foundry; Ctrl-C stops it and throws everything away
+```
+
+This starts a local copy ("fork") of Celo mainnet with GoodDollar's real Identity, UBI and Engagement Rewards contracts, the vault deployed and funded, the API, and the game, and opens the game in your browser. The page gets a built-in test wallet (a throwaway key held by the launcher, used even if a wallet extension is installed), and the **Verify (face scan)** step leads to a stand-in page where one click marks the test player as a verified human on the fork. A second page (`http://127.0.0.1:5180/dev`) shows the test player's G$ in and out and a guide to where G$ appears in the game, with shortcuts to skip a day (so the day's prizes become Spoils to redeem), to record a chapter-1 boss clear, and to remove the verification again.
+
+The game's source is untouched: the launcher swaps the one module that builds GoodDollar's face-scan link (`src/gd/identity.js`) and the one line that picks the wallet, inside its own dev server only. A normal `npm run dev` or build has none of it, and `npm run test:build` fails if any of it, or the development-only gate bypass, reaches a production build.
+
 Contracts (Foundry):
 
 ```bash
@@ -41,8 +51,9 @@ Tests:
 | Command | What it runs |
 |---|---|
 | `npm test` | client unit tests + server tests (in-memory Postgres) |
+| `npm run test:build` | builds for production and checks the shipped JavaScript: no test wallet, no stand-in face scan, no gate bypass, and GoodDollar's real face-verification code present |
 | `npm run test:smoke` | first-visit browser check: no wallet, API down; a first visitor is stopped at the verified-human gate, every scene boots (started around the gate, as test tooling does), the panel opens, no console errors (needs no server or chain) |
-| `node test/client/browser/<name>.mjs` | real-browser checks that need no server or chain (the API is stubbed): `gate` (deep link, return from the face scan, a verification that lapses mid-session), `menu` (the rows against the gate with real clicks, turning the phone with a dialog open, the forge and leaderboard keeping their tab), `stats` (what the public stats page labels as on-chain or self-reported), `labels` (in-world labels stay readable on an upright phone), `active-time` (paused time does not score), `survival-results`, `story-results` (what result screens say), `integration/runs-vs-real-server` (the run tracker against the real server app, including a restart inside the server's pace) |
+| `node test/client/browser/<name>.mjs` | real-browser checks that need no server or chain (the API is stubbed): `gate` (deep link, return from the face scan, a verification that lapses mid-session), `menu` (the rows against the gate with real clicks, turning the phone with a dialog open, the forge and leaderboard keeping their tab), `stats` (what the public stats page labels as on-chain or self-reported), `labels` (in-world labels stay readable on an upright phone), `local-dev` (the `npm run dev:local` session driven end to end: gate, stand-in face scan, claim, bounty, Spoils, with a wallet extension present; about 5 minutes, needs internet), `active-time` (paused time does not score), `survival-results`, `story-results` (what result screens say), `integration/runs-vs-real-server` (the run tracker against the real server app, including a restart inside the server's pace) |
 | `npm run test:contracts` | Foundry tests for `MoonshardVault` |
 | `npm run test:fork` | end to end on a Celo mainnet fork: real Identity, UBI, Engagement Rewards, vault, SDKs (needs network) |
 | `npm run test:browser` | Playwright against that fork, writes screenshots to `docs/screenshots/` |

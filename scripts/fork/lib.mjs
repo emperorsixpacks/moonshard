@@ -61,7 +61,7 @@ export const ADDR = {
 };
 
 const erc20 = parseAbi(['function transfer(address,uint256) returns (bool)', 'function balanceOf(address) view returns (uint256)']);
-const identityAbi = parseAbi(['function addWhitelisted(address)']);
+const identityAbi = parseAbi(['function addWhitelisted(address)', 'function removeWhitelisted(address)']);
 const engagementAbi = parseAbi([
   'function applyApp(address app,address rewardReceiver,uint8 userAndInviterPercentage,uint8 userPercentage,string description,string url,string email)',
   'function approve(address app)',
@@ -72,10 +72,11 @@ const ACCESS_CONTROL_LOCATION = '0x02dd7bc7dec4dceedda775e58dd541e08a116c6c53815
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'https://forno.celo.org', port, apiPort = 0 } = {}) {
+// `whitelistPlayer: false` starts the test player unverified (the local launcher lets a person pass the face-scan step by hand).
+export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'https://forno.celo.org', port, apiPort = 0, whitelistPlayer = true, anvilArgs = [] } = {}) {
   port = port ?? (await freePort());
   const rpc = `http://127.0.0.1:${port}`;
-  const anvil = spawn('anvil', ['--fork-url', upstream, '--port', String(port), '--chain-id', '42220', '--silent'], { stdio: 'ignore' });
+  const anvil = spawn('anvil', ['--fork-url', upstream, '--port', String(port), '--chain-id', '42220', '--silent', ...anvilArgs], { stdio: 'ignore' });
   process.on('exit', () => anvil.kill()); // never leave a fork running, even if the run crashes
   const pub = createPublicClient({ chain: celo, transport: forkTransport(rpc) });
   for (let i = 0; i < 60; i++) {
@@ -111,6 +112,12 @@ export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'ht
   async function whitelist(address) {
     const avatar = await impersonate(ADDR.avatar);
     const hash = await avatar.writeContract({ address: ADDR.identity, abi: identityAbi, functionName: 'addWhitelisted', args: [address] });
+    await pub.waitForTransactionReceipt({ hash });
+  }
+
+  async function unwhitelist(address) {
+    const avatar = await impersonate(ADDR.avatar);
+    const hash = await avatar.writeContract({ address: ADDR.identity, abi: identityAbi, functionName: 'removeWhitelisted', args: [address] });
     await pub.waitForTransactionReceipt({ hash });
   }
 
@@ -151,7 +158,7 @@ export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'ht
     return contractAddress;
   }
 
-  await whitelist(accounts.player.address);
+  if (whitelistPlayer) await whitelist(accounts.player.address);
   await registerApp();
   const vault = await deployVault();
   await fundG(vault, parseUnits('20000', 18));
@@ -191,7 +198,7 @@ export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'ht
   }
 
   return {
-    rpc, pub, as, local, accounts, rawRpc, fundCelo, fundG, whitelist,
+    rpc, pub, as, local, accounts, rawRpc, fundCelo, fundG, whitelist, unwhitelist,
     contracts: { ...ADDR, vault },
     api: { url, ctx, call, advance: (ms) => { offset += ms; } },
     login, grantEngagementAdmin,
