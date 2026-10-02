@@ -76,6 +76,12 @@ try {
   api.advance(10_500);
   const clear = await api.call('POST', `/runs/${story.runId}/submit`, { ticket: story.ticket, score: 0, kills: 12, shards: 0, durationMs: 60_000, bossCleared: true }, token);
   assert.equal(clear.body.bossCleared, true);
+  // What the server tells the player the bounty is worth is read from the real contract (its reward amount and this app's
+  // registered 80 / 60 split); the claim below must pay exactly that, not the pool's headline 5,000.
+  const offered = (await api.call('GET', '/engagement/status', undefined, token)).body;
+  assert.equal(offered.pendingRunId, story.runId, JSON.stringify(offered));
+  assert.equal(offered.rewardG, '2400', `the promised amount is the player's share, read from the chain: ${JSON.stringify(offered)}`);
+  assert.ok(Date.parse(offered.attestExpiresAt) > api.ctx.now(), 'the status says until when the bounty can be claimed');
   const att = (await api.call('POST', '/engagement/attest', { runId: story.runId }, token));
   assert.equal(att.status, 200, JSON.stringify(att.body));
   const sdk = new EngagementRewardsSDK(pub, wallet, contracts.engagement);
@@ -86,7 +92,7 @@ try {
   assert.equal(claimReceipt.status, 'success');
   const gained = (await balance(player.address)) - g0;
   console.log(`   bounty paid to player: ${G(gained)} G$`);
-  assert.ok(gained > 0n);
+  assert.equal(gained, BigInt(offered.rewardG) * 10n ** 18n, 'the player received exactly what the status promised');
   const conf = await api.call('POST', '/engagement/confirm', { txHash: claimReceipt.transactionHash }, token);
   assert.equal(conf.body.recorded, true, JSON.stringify(conf.body));
   assert.equal((await api.call('GET', '/engagement/status', undefined, token)).body.claimedHere, true);
