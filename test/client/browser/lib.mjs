@@ -11,9 +11,10 @@ const ROOT = new URL('../../../', import.meta.url).pathname;
  * Boot the dev server and a browser page. Returns { page, web, errors, close, startScene, scene }.
  *  - `api`: false (default) leaves the API unreachable (port 9), like a first visit; true serves /api from the page
  *    origin so the test can answer it with `page.route`.
+ *  - `deviceScaleFactor`: the screen's pixel density (a sharp 2x display, say).
  *  - `clock`: install Playwright's fake clock before the page loads (Date, timers, rAF and performance.now all follow it).
  */
-export async function bootGame({ api = false, clock = false, viewport = { width: 1280, height: 800 }, init } = {}) {
+export async function bootGame({ api = false, clock = false, viewport = { width: 1280, height: 800 }, deviceScaleFactor, init } = {}) {
   const port = await freePort();
   const web = `http://127.0.0.1:${port}`;
   const env = { ...process.env };
@@ -26,7 +27,7 @@ export async function bootGame({ api = false, clock = false, viewport = { width:
   try {
     await waitForMoonshard(web);
     browser = await chromium.launch();
-    const context = await browser.newContext({ viewport });
+    const context = await browser.newContext({ viewport, ...(deviceScaleFactor ? { deviceScaleFactor } : {}) });
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));

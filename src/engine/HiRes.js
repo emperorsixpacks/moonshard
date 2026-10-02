@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { adaptRenderScale, chooseRenderScale, pixelBudget } from './renderScale.js';
+import { chooseRenderScale, createScaleGovernor, decodeCap, encodeCap, pixelBudget } from './renderScale.js';
 import { resolveTextStyle } from './typography.js';
 
 /**
@@ -20,16 +20,15 @@ let renderScale = 1;
 let patched = false;
 let textPatched = false;
 
-// A device that could not keep up with the larger buffer is remembered, so the next visit starts lower.
+// A device that could not keep up with the larger buffer, and got faster with a smaller one, is remembered so the next
+// visit starts lower; the memory expires (see renderScale.js) so one slow spell is not held against the device for good.
 const CAP_KEY = 'moonshard.render.cap.v1';
 const readCap = () => {
-  try {
-    const n = Number(globalThis.localStorage?.getItem(CAP_KEY));
-    return n >= 1 ? n : Infinity;
-  } catch { return Infinity; }
+  try { return decodeCap(globalThis.localStorage?.getItem(CAP_KEY), Date.now()); } catch { return Infinity; }
 };
 let cap = readCap();
-const saveCap = (n) => { try { globalThis.localStorage?.setItem(CAP_KEY, String(n)); } catch { /* blocked storage: relearned next visit */ } };
+const saveCap = (n) => { try { globalThis.localStorage?.setItem(CAP_KEY, encodeCap(n, Date.now())); } catch { /* blocked storage: relearned next visit */ } };
+const forgetCap = () => { try { globalThis.localStorage?.removeItem(CAP_KEY); } catch { /* nothing to forget */ } };
 
 /** The current multiplier (1 until `installHiRes` has measured the screen). */
 export const getRenderScale = () => renderScale;
@@ -131,17 +130,21 @@ export function installHiRes(game) {
   watchDensity();
   update();
 
-  // Safety net: if the frame rate stays low while the tab is visible, step the buffer down one notch (and remember it).
+  // Safety net: if the frame rate stays low while the tab is visible, step the buffer down one notch, keep the smaller
+  // size (and remember it for a while) only if it clearly helped, and otherwise put it back (renderScale.js).
   const startedAt = performance.now();
-  let strikes = 0;
+  const governor = createScaleGovernor();
   setInterval(() => {
-    if (document.hidden || performance.now() - startedAt < 10_000) { strikes = 0; return; }
-    const verdict = adaptRenderScale({ fps: game.loop?.actualFps, scale: renderScale, strikes });
-    strikes = verdict.strikes;
-    if (verdict.changed) {
-      cap = verdict.scale;
+    if (document.hidden || performance.now() - startedAt < 10_000) { governor.reset(); return; }
+    const action = governor.sample({ fps: game.loop?.actualFps, scale: renderScale });
+    if (!action) return;
+    if (action.save !== undefined) {
+      cap = action.save;
       saveCap(cap);
-      update();
+      return;
     }
+    cap = action.scale;
+    if (action.forget) forgetCap(); // the smaller size did not help: it was not the resolution
+    update();
   }, 2000);
 }
