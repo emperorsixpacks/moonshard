@@ -416,10 +416,14 @@ export default class StoryDialogueBox extends Phaser.GameObjects.Container {
       this.scene.events.off('update', this.touchListener);
       this.touchListener = null;
     }
-    if (this.skipBtnBg && this.skipBtnBg.disableInteractive) this.skipBtnBg.disableInteractive();
-    if (this.btnSkip && this.btnSkip.disableInteractive) this.btnSkip.disableInteractive();
-    if (this.bgBox && this.bgBox.disableInteractive) this.bgBox.disableInteractive();
-    if (this.dimOverlay && this.dimOverlay.disableInteractive) this.dimOverlay.disableInteractive();
+    // Parts of the box can already be destroyed when the scene is torn down around it (a destroyed object has no scene or
+    // input left, and disableInteractive() on it throws, which used to stop the scene from stopping and the next dialogue
+    // from starting).
+    const quiet = (part) => { if (part?.scene && part.input && part.disableInteractive) part.disableInteractive(); };
+    quiet(this.skipBtnBg);
+    quiet(this.btnSkip);
+    quiet(this.bgBox);
+    quiet(this.dimOverlay);
     if (this.arrowTween) {
       this.arrowTween.stop();
       this.arrowTween = null;

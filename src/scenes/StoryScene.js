@@ -2351,13 +2351,18 @@ export default class StoryScene extends Phaser.Scene {
     }).setOrigin(0.5);
     card.add(desc);
 
+    // The card is done once, by a tap or by its own fade-out, whichever comes first: a tap during the fade used to advance it
+    // and then the finished fade advanced it again, beginning the opening dialogue twice.
+    let advanced = false;
     const advanceIntro = () => {
-      if (!this.chapterIntroCard) return;
+      if (advanced || this.chapterIntroCard !== card) return;
+      advanced = true;
       this.input.off('pointerdown', pointerHandler);
       if (this.game && this.game.canvas) {
         this.game.canvas.removeEventListener('pointerdown', canvasHandler);
       }
-      this.chapterIntroCard.destroy();
+      this.tweens.killTweensOf(card); // a tap takes over from the fade
+      card.destroy();
       this.chapterIntroCard = null;
       this.triggerChapterOpeningDialogue();
     };
@@ -2372,17 +2377,13 @@ export default class StoryScene extends Phaser.Scene {
     box.setInteractive({ useHandCursor: true }).on('pointerdown', advanceIntro);
 
     this.time.delayedCall(2400, () => {
-      if (!this.chapterIntroCard) return;
+      if (advanced || !this.chapterIntroCard) return;
       this.tweens.add({
         targets: card,
         alpha: 0,
         y: h / 2 - 20,
         duration: 400,
-        onComplete: () => {
-          if (this.chapterIntroCard === card) this.chapterIntroCard = null;
-          card.destroy();
-          this.triggerChapterOpeningDialogue();
-        }
+        onComplete: advanceIntro
       });
     });
   }
@@ -2931,6 +2932,12 @@ export default class StoryScene extends Phaser.Scene {
    * outcome from being reported). The totals are taken at this moment: kills and shards that come later, while the scene
    * keeps running behind the end screen, are not part of the run and are not described by it.
    */
+  /** Leaving through the pause menu ends the life like a death does: it is settled (not as a boss clear), not dropped. */
+  endRunOnLeave() {
+    if (this.isVictory || this.isGameOver) return; // already settled by its own ending
+    this.settleRun(false);
+  }
+
   settleRun(bossCleared) {
     this.settledShards = this.sessionCrystalsCollected || 0;
     const epoch = this.runEpoch;

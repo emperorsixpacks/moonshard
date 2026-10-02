@@ -250,7 +250,8 @@ export class PauseService {
       this.modal.classList.add('hidden');
     }
 
-    if (this.activeScene && this.activeScene.physics) {
+    // the scene may have been stopped while paused: its physics world is gone and there is nothing left to resume
+    if (this.activeScene?.physics?.world) {
       this.activeScene.physics.resume();
     }
 
@@ -271,6 +272,7 @@ export class PauseService {
         sceneToRestart.scene.restart({ chapter: sceneToRestart.chapterId || 1, skipIntroCard: true, skipDialogue: true });
         return;
       }
+      sceneToRestart.endRunOnLeave?.(); // the run being left is settled, not dropped (the next start waits for it)
       this.isPaused = false;
       if (this.modal) {
         this.modal.classList.add('hidden');
@@ -296,6 +298,7 @@ export class PauseService {
     sound.playSelect();
 
     const scene = this.activeScene;
+    scene?.endRunOnLeave?.(); // the run being left is settled, not dropped
     this.detachScene();
 
     if (scene && scene.scene) {

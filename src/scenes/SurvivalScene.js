@@ -1295,6 +1295,20 @@ export default class SurvivalScene extends Phaser.Scene {
     proof.label = survivalLabel({ connected: status.connected, verified: status.verified, result: proof.result, slow: proof.slow, sessionExpired: status.sessionExpired });
   }
 
+  /**
+   * Leaving through the pause menu (MAIN MENU, RETRY BATTLE) ends the run like a death does: it is settled with the totals at
+   * this moment (the same ones the game-over screen would use), so the score and the Shards the HUD counted are not dropped.
+   */
+  endRunOnLeave() {
+    if (this.isGameOver) return; // already settled by its own ending
+    runs.finish({
+      score: this.totalScore + this.secondsSurvived * GAME_CONFIG.SURVIVAL.PTS_PER_SECOND,
+      kills: this.killCount.total,
+      shards: this.sessionCrystalsCollected || 0,
+      durationMs: Math.round(this.activeClock.ms),
+    });
+  }
+
   /** Settle the run with the server and bring the result screen and the local record up to date. Never throws. */
   async settleRunProof(runData, proof) {
     try {
