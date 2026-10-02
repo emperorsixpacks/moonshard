@@ -94,7 +94,7 @@ What the owner decided (above), built test first at every level, then proven on 
 
 | Claim | Evidence |
 |---|---|
-| Vault contract | `forge test`: 23 pass (incl. fuzz); mutation-checked; the cap selectors are pinned literally |
+| Vault contract | `forge test`: 24 pass: the vault's 23 (incl. fuzz; mutation-checked; the cap selectors are pinned literally) and the deploy scripts reading `contracts/.env` |
 | API | `cd server && npm test`: 262 pass, also with `NODE_ENV=production`; the first hardening suite was run against real Postgres 16, this pass's pool, TLS and index tests against PGlite, a fake Postgres wire-protocol server and a private CA minted with `openssl` |
 | Client | `node --test "test/client/**/*.test.js"`: 457 pass |
 | Real contracts + SDKs | `npm run test:fork`: Celo mainnet fork, real Identity/UBI/Engagement contracts and SDKs; the server's `/engagement/status` promised 2,400 G$ read from the real contract and the real `nonContractAppClaim` paid exactly that; a next-day settlement paid 1,100 G$ through the vault; a run is refused without a blade, and three Moon Shop purchases made with the game's own purchase code are paid on the real G$ token (each transaction names its item; the player paid and the vault received exactly the 20 G$ of the blade), a Celestial blade bought before the Glaive is kept but not unlocked, and the stats count 250 G$ spent |
@@ -137,7 +137,7 @@ What the owner decided (above), built test first at every level, then proven on 
 1. **Check the Moon Shop prices** before launch: `server/config.js` `GAME.SHOP` (blade 20, forge fees 30 and 60, Celestial blades 150, skins 100, pet 80 G$). They were set to the design you approved; changing them needs only an API redeploy.
 2. ~~Where to push.~~ Done 2026-10-02: the private repository `JemIIahh/moonshard`. Keep it private until item 8 is done.
 3. Fund `MoonshardVault` with G$ and choose prize sizes and caps (`docs/DEPLOY.md`: `MAX_PER_VOUCHER` at least 1,000 G$, `DAILY_CAP` at least 1,900 + 100 x the verified players you expect to redeem on one day).
-4. Register the Engagement Rewards app (`scripts/register-engagement-app.mjs`) and get GoodDollar's approval; re-test the two Engagement behaviours above on the live contract.
+4. Register the Engagement Rewards app (`forge script script/RegisterApp.s.sol`, settings in `contracts/.env`, see `docs/DEPLOY.md`) and get GoodDollar's approval; re-test the two Engagement behaviours above on the live contract.
 5. Deploy the API and the web app (`docs/DEPLOY.md`), with `NODE_ENV=production` and a Reown project id (`VITE_REOWN_PROJECT_ID`): without WalletConnect a phone with no wallet app cannot get past the gate.
 6. Try it once on a real phone and inside the real GoodWallet before announcing it.
 7. KYC and the GoodBuilders form once published; fill the `OWNER TO SET/FILL` lines in `docs/application-brief.md`.

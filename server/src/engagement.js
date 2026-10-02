@@ -35,7 +35,7 @@ export async function pendingBossRun(ctx, subject) {
 //   userAndInviter = rewardAmount * userAndInviterPercentage / 100
 //   user           = userAndInviter * userPercentage / 100            <- what the player receives
 //   app            = rewardAmount - userAndInviter, plus the inviter's part when there is no inviter
-// Moonshard is registered at 80 / 60 (scripts/register-engagement-app.mjs) and attests with no inviter, so of the
+// Moonshard is registered at 80 / 60 (contracts/script/RegisterApp.s.sol) and attests with no inviter, so of the
 // pool's headline 5,000 G$ the player gets 2,400 G$. The UI must promise that number, so it is read from the chain
 // (reward amount and this app's own percentages) rather than written down here where it would go stale.
 // ---------------------------------------------------------------------------------------------------------------

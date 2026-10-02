@@ -50,6 +50,8 @@ forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 foundry-rs/forge-std --
 forge build && forge test -vv
 ```
 
+Deploying them (the settings, including the deploying wallet's key, go in `contracts/.env`, which git ignores): [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
 Tests:
 
 | Command | What it runs |
@@ -73,8 +75,8 @@ Server (`server/.env.example`): `PORT`, `JWT_SECRET`, `CORS_ORIGINS`, `TRUST_PRO
 ```
 src/            Phaser client (scenes, entities, engine, ui) + src/gd/ (GoodDollar layer)
 server/         Express API: auth, run tickets, leaderboard, Spoils, Moon Shop, Engagement attestation, stats
-contracts/      Foundry project: MoonshardVault
-scripts/        asset audit, Engagement app registration, Celo-fork end-to-end and browser runs
+contracts/      Foundry project: MoonshardVault, and the scripts that deploy it and register the Engagement app (settings in contracts/.env)
+scripts/        asset audit, Celo-fork end-to-end and browser runs, the local test launcher
 docs/           design spec, implementation plan, execution notes (deviations, evidence, limitations), attributions, deploy notes, application brief, screenshots
 ```
 

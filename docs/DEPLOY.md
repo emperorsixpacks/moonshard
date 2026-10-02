@@ -1,56 +1,56 @@
 # Deploying Moonshard
 
-> **None of the steps below were executed by the coding agent on the real chain.** They need your keys, funds and accounts. Steps 1 and 2 (deploy, fund, register) were rehearsed with throwaway keys on a local fork of Celo mainnet, and the API was booted in production mode against the result (`vault caps ok`). Check provider UIs against their current docs.
+> **None of the steps below were executed by the coding agent on the real chain.** They need your keys, funds and accounts. Steps 1 and 2 were rehearsed with throwaway keys on a local fork of Celo mainnet, exactly as written here (and the keystore alternative), and the API was booted in production mode against the result (`vault caps ok`). Check provider UIs against their current docs.
 >
-> **Never paste a private key into a chat, an issue or a file in this repository.** The deployer key goes into Foundry's encrypted keystore on your machine (`cast wallet import`), and the two server keys go only into your host's secret variables.
+> **Where secrets go.** The deploying wallet's private key: `contracts/.env`, on your computer only (git ignores it), removed once you have deployed. The server's two keys and its session secret: `server/.env` on your computer (git ignores it too) and the API host's variables. Never in a chat, an issue, any variable starting with `VITE_` (those are built into the public website), or any file git tracks.
 
 ## 0. Prerequisites
 
-- Node 22, Foundry (`forge`, `cast`).
-- A Celo wallet with about 1 CELO for gas (forge checks the balance against a cautious estimate: it asked for up to 0.65 CELO in the rehearsal; the real cost is usually far lower), and the G$ you want to pay out as Spoils.
-- Two **new** private keys (use `cast wallet new`):
-  - `VOUCHER_SIGNER_KEY`: signs Spoil vouchers. A leaked key can only mint vouchers within the vault's on-chain caps.
-  - `APP_SIGNER_KEY`: its address is the Engagement Rewards "app". It only signs attestations and must hold no funds.
+- Node 22, Foundry (`forge`, `cast`), and the contract libraries: `cd contracts && forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 foundry-rs/forge-std --no-git`.
+- A Celo wallet with about 1 CELO for gas (in the rehearsal, starting from exactly 1 CELO, the deploy and the funding used 0.23 CELO at a high gas price), and the G$ for the prize pool.
+- Two **new** keys, each made with `cast wallet new` (it prints an address and a private key; keep both in a password manager):
+  - the **voucher signer**: its key is the server's `VOUCHER_SIGNER_KEY` and signs Spoil vouchers. A leaked key can only mint vouchers within the vault's on-chain caps.
+  - the **app signer**: its key is the server's `APP_SIGNER_KEY`, and its address is the Engagement Rewards "app". It only signs attestations and must hold no funds.
 
-## 1. Deploy `MoonshardVault`
+## 1. Deploy and fund `MoonshardVault`
 
 ```bash
 cd contracts
-forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 foundry-rs/forge-std --no-git
-cast wallet import moonshard-deployer --interactive      # stores the key in an encrypted keystore
-
-G_TOKEN=0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A \
-VOUCHER_SIGNER=<address of VOUCHER_SIGNER_KEY> \
-VAULT_OWNER=<your owner address (use a multisig if you have one)> \
-MAX_PER_VOUCHER=1000000000000000000000 \
-DAILY_CAP=5000000000000000000000 \
-forge script script/Deploy.s.sol --rpc-url https://forno.celo.org --account moonshard-deployer --sender <the deployer's address> --broadcast
+cp .env.example .env      # then open contracts/.env and fill it in: every line is explained there
+forge script script/Deploy.s.sol --rpc-url https://forno.celo.org --broadcast
 ```
 
-It asks for the keystore password and prints `vault: contract MoonshardVault 0x...`: that is `VAULT_ADDRESS`. The deployment record is written to `contracts/broadcast/Deploy.s.sol/42220/run-latest.json`. Check the vault before funding it:
+What goes in `contracts/.env`:
+
+| Setting | What it is |
+|---|---|
+| `DEPLOYER_PRIVATE_KEY` | the deploying wallet's private key, with or without `0x`. It pays the gas and owns the vault |
+| `VOUCHER_SIGNER` | the voucher signer's **address** (its key goes on the server, not here) |
+| `APP_SIGNER` | the app signer's **address** (used in step 2) |
+| `MAX_PER_VOUCHER_G`, `DAILY_CAP_G` | the vault's limits in whole G$ (see "Sizing the caps"; 1000 and 5000 by default) |
+| `FUND_G` | G$ moved from the deploying wallet into the vault right after it is deployed (the prize pool); 0 to fund it later by sending G$ to the vault's address |
+| `APP_URL`, `APP_EMAIL` | for step 2; both are stored publicly on-chain |
+| `VAULT_OWNER` | optional: another owner, such as a Safe multisig. Empty: the deploying wallet owns the vault |
+
+The script prints the vault's address and where it goes: `VAULT_ADDRESS` on the server, `VITE_VAULT_ADDRESS` on the website. Its record is in `contracts/broadcast/` (git ignores it). Check the vault:
 
 ```bash
 for f in 'owner()(address)' 'signer()(address)' 'token()(address)' 'maxPerVoucher()(uint256)' 'dailyCap()(uint256)'; do
   cast call <VAULT_ADDRESS> "$f" --rpc-url https://forno.celo.org; done
 ```
 
-`MAX_PER_VOUCHER` and `DAILY_CAP` are wei of G$ (18 decimals): the values above are 1,000 G$ per voucher and 5,000 G$ per UTC day. Then fund the vault and set `VAULT_ADDRESS` on the server:
-
-```bash
-cast send 0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A "transfer(address,uint256)" <VAULT_ADDRESS> 10000000000000000000000 \
-  --account moonshard-deployer --rpc-url https://forno.celo.org
-```
+*Rather not keep the key in a file?* Leave `DEPLOYER_PRIVATE_KEY` empty, import the key into Foundry's encrypted keystore once (`cast wallet import moonshard-deployer --interactive`), and add `--account moonshard-deployer --sender <its address>` to each `forge script` command.
 
 The vault also receives every G$ players pay in the game (their blade, forge fees and Moon Shop looks, see below), so what players spend tops up the prizes. The owner can later `setCaps`, `setSigner`, `pause` or `withdraw`. `renounceOwnership` is disabled (it would leave the vault with no owner and no way to do any of those): hand the vault over with `transferOwnership`, then the new owner calls `acceptOwnership`.
 
 ### Sizing the caps
 
-The vault enforces both caps on every redemption. A voucher above `MAX_PER_VOUCHER`, or one that would take a UTC day's redemptions above `DAILY_CAP`, **reverts on-chain**, so the winner is holding a voucher they can never redeem. The server signs whatever the game has earned, so the caps have to be big enough for it:
+The vault enforces both caps on every redemption. A voucher above the per-voucher limit (`MAX_PER_VOUCHER_G`), or one that would take a UTC day's redemptions above the daily limit (`DAILY_CAP_G`), **reverts on-chain**, so the winner is holding a voucher they can never redeem. The server signs whatever the game has earned, so the caps have to be big enough for it:
 
-- `MAX_PER_VOUCHER` must be at least **1,000 G$**: the rank-1 daily prize. (A player's shard harvest is at most 100 G$.)
-- `DAILY_CAP` must be at least **1,900 + 100 x the verified players you expect to redeem on one UTC day**. 1,900 G$ is the three daily prizes (1,000 + 600 + 300) and 100 G$ is one player's full shard harvest (50 shards x 2 G$, the daily cap per player). For example, 50 players need 6,900 G$ and 200 players need 21,900 G$.
-- The 5,000 G$ in the command above covers the prizes and 31 harvesting players a day. It is a launch size: raise it as the player base grows, with `cast send <VAULT_ADDRESS> "setCaps(uint256,uint256)" <maxPerVoucher> <dailyCap> --account <owner account> --rpc-url https://forno.celo.org`.
-- Do not size it far above what you need. The caps are also the most a leaked `VOUCHER_SIGNER_KEY` can drain: up to `DAILY_CAP` in each UTC day (and up to twice that across a UTC midnight), until you notice and call `setSigner` or `pause`. Likewise fund the vault for a few days of expected payouts, not more.
+- `MAX_PER_VOUCHER_G` must be at least **1000**: the rank-1 daily prize. (A player's shard harvest is at most 100 G$.)
+- `DAILY_CAP_G` must be at least **1900 + 100 x the verified players you expect to redeem on one UTC day**. 1,900 G$ is the three daily prizes (1,000 + 600 + 300) and 100 G$ is one player's full shard harvest (50 shards x 2 G$, the daily cap per player). For example, 50 players need 6,900 G$ and 200 players need 21,900 G$.
+- The default 5,000 G$ covers the prizes and 31 harvesting players a day. It is a launch size: raise it as the player base grows, with `cast send <VAULT_ADDRESS> "setCaps(uint256,uint256)" <per voucher> <per day> --private-key <the owner's key> --rpc-url https://forno.celo.org` (here the amounts are in wei: G$ followed by 18 zeros, so 1000 G$ is `1000000000000000000000`).
+- Do not size it far above what you need. The caps are also the most a leaked `VOUCHER_SIGNER_KEY` can drain: up to the daily limit in each UTC day (and up to twice that across a UTC midnight), until you notice and call `setSigner` or `pause`. Likewise fund the vault for a few days of expected payouts, not more.
 
 When the API starts it reads `maxPerVoucher()` and `dailyCap()` from the vault and compares them with the prizes it signs. If they are too small it logs a `WARNING` with both numbers (it never refuses to start, and it only says so when the RPC answers). After every deploy or `setCaps`, restart the API and look for `vault caps ok` in its log.
 
@@ -63,15 +63,10 @@ Items and prices are in `server/config.js` (`GAME.SHOP`); the game reads them fr
 ## 2. Register the Engagement Rewards app
 
 ```bash
-cast send 0x25db74CF4E7BA120526fd87e159CF656d94bAE43 \
-  "applyApp(address,address,uint8,uint8,string,string,string)" \
-  <address of APP_SIGNER_KEY> <your owner address> 80 60 \
-  "Moonshard: a pixel action-platformer that rewards verified GoodDollar citizens every day." \
-  "https://<your-site>" "<you@example.com>" \
-  --account moonshard-deployer --rpc-url https://forno.celo.org
+forge script script/RegisterApp.s.sol --rpc-url https://forno.celo.org --broadcast
 ```
 
-This is what `scripts/register-engagement-app.mjs` sends, with the key kept in the keystore instead of an environment variable (the script takes `OWNER_KEY=0x..`, which ends up in your shell history). The second address receives the app's share of every bounty claim (2,600 G$ of each 5,000 G$ claim at the time of writing). The URL and email are stored publicly on-chain.
+It reads the same `contracts/.env` (`APP_SIGNER`, `APP_URL`, `APP_EMAIL`). The deploying wallet becomes the app's reward receiver: it gets the app's share of every bounty claim (2,600 G$ of each 5,000 G$ claim at the time of writing, as the player's inviter is not named). Once this has gone through, remove `DEPLOYER_PRIVATE_KEY` from `contracts/.env`.
 
 GoodDollar must then approve the app (Discord `ubi.gd/GoodBuildersDiscord`, Telegram `t.me/gooddollarbounties`). Until it is approved, `/api/engagement/attest` answers `not_claimable` and the panel shows the reason; everything else keeps working.
 
