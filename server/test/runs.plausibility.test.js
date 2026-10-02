@@ -129,6 +129,42 @@ test("a Trial counts only from 30 s of server-measured time: 29,999 ms is open-b
   } finally { await h.close(); }
 });
 
+test("the answer states what the end screen needs: whether the Shards were credited, and whether the run was too short to count", async () => {
+  const h = await makeHarness();
+  try {
+    const short = await trialOf(h, await h.newPlayer({ verified: true }), { elapsedMs: 20_000, durationMs: 20_000 });
+    assert.equal(short.status, 200, JSON.stringify(short.body));
+    assert.deepEqual(
+      { flags: short.body.flags, shardsCredited: short.body.shardsCredited, tooShort: short.body.tooShort, minPlayMs: short.body.minPlayMs },
+      { flags: [], shardsCredited: false, tooShort: true, minPlayMs: 30_000 },
+      "an honest run that ended early is too short, not flagged",
+    );
+
+    const long = await trialOf(h, await h.newPlayer({ verified: true }), { elapsedMs: 40_000, durationMs: 40_000 });
+    assert.deepEqual(
+      { shardsCredited: long.body.shardsCredited, tooShort: long.body.tooShort, minPlayMs: long.body.minPlayMs },
+      { shardsCredited: true, tooShort: false, minPlayMs: 30_000 },
+    );
+
+    // long enough but flagged: its totals are far above anything its last checkpoint allows
+    const flaggedPlayer = await h.newPlayer({ verified: true });
+    const run = (await start(h, flaggedPlayer)).body;
+    h.clock.advance(40_000);
+    assert.equal((await post(h, flaggedPlayer, run, [pt(40_000)])).status, 200);
+    const flagged = await submit(h, flaggedPlayer, run, { score: 30_000, kills: 60, shards: 40, durationMs: 40_000 });
+    assert.equal(flagged.status, 200, JSON.stringify(flagged.body));
+    assert.ok(flagged.body.flags.length > 0, "the run is flagged");
+    assert.deepEqual({ shardsCredited: flagged.body.shardsCredited, tooShort: flagged.body.tooShort }, { shardsCredited: false, tooShort: false });
+
+    // an unverified wallet's run is never credited, however long
+    const unverified = await trialOf(h, await h.newPlayer({ verified: false }), { elapsedMs: 40_000, durationMs: 40_000 });
+    assert.deepEqual({ shardsCredited: unverified.body.shardsCredited, tooShort: unverified.body.tooShort }, { shardsCredited: false, tooShort: false });
+
+    // the answer agrees with what was actually banked
+    assert.deepEqual((await shardRows(h)).map((row) => row.shards), [6], "only the long, clean, verified run banked Shards");
+  } finally { await h.close(); }
+});
+
 test("waiting is not enough: 40 s on the server's clock but only 25 s of claimed play is not ranked and banks nothing", async () => {
   const h = await makeHarness();
   try {

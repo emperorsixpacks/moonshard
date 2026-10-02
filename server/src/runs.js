@@ -318,7 +318,9 @@ export function runRoutes(ctx) {
     const rank = run.mode === "TRIAL"
       ? { open: await rankOf(ctx, run.day, run.subject, "open"), ranked: await rankOf(ctx, run.day, run.subject, "ranked") }
       : null;
-    res.json({ ok: true, isNewBest, rankedOk, bossCleared, flags, rank });
+    // `shardsCredited` and `tooShort` let the end screen say what happened instead of guessing: a run that ended before
+    // `minPlayMs` is not a flagged run, it just did not play long enough to count.
+    res.json({ ok: true, isNewBest, rankedOk, bossCleared, flags, rank, shardsCredited, tooShort: !playedLongEnough, minPlayMs: GAME.MIN_RANKED_ELAPSED_MS });
   }));
 
   return r;
