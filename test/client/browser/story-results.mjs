@@ -149,6 +149,14 @@ try {
   check(!/5000|5,000/.test(t), 'and the made-up 5000 is gone');
   check(/\+4 G\$ PENDING \(2 SHARDS\)/.test(t), 'with the shard line below it');
 
+  // GoodDollar has not approved the app yet: the contract refuses claims, so the banner must not tell the player to claim
+  Object.assign(api.engagement, { canClaim: false, reason: 'not_claimable', rewardG: null });
+  await page.evaluate(() => window.gdService.refreshAll());
+  t = await banner(accepted);
+  check(/BOSS SLAIN! THE FIRST-BOSS BOUNTY CAN'T BE CLAIMED RIGHT NOW/.test(t) && !/CLAIM [\d,]+ G\$|IN THE G\$ WALLET/.test(t), `an app that is not approved yet: no promise to claim (saw "${t.split('\n').find((l) => /BOSS SLAIN/.test(l))}")`);
+  Object.assign(api.engagement, { canClaim: true, reason: null, rewardG: '2400' });
+  await page.evaluate(() => window.gdService.refreshAll());
+
   t = await banner(async () => ({ status: 400, body: { error: 'invalid_score_rate' } }));
   check(/BOUNTY NOT RECORDED/.test(t) && !/BOSS SLAIN|CLAIM/.test(t), 'a refused submit says the bounty was not recorded');
   check(!/SHARD HARVEST BANKED|PENDING/.test(t), 'and no shard promise');

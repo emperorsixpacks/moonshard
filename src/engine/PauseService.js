@@ -1,4 +1,5 @@
 import { sound } from './Audio.js';
+import { startIsBlocked } from './playGate.js';
 
 export class PauseService {
   constructor() {
@@ -264,6 +265,12 @@ export class PauseService {
     if (!this.activeScene) return;
     try {
       const sceneToRestart = this.activeScene;
+      if (startIsBlocked(sceneToRestart.scene.key)) {
+        // the gate refuses (the verification lapsed since the run began): it opens over the pause menu, the run stays
+        // paused, and closing the gate leaves the player where they were
+        sceneToRestart.scene.restart({ chapter: sceneToRestart.chapterId || 1, skipIntroCard: true, skipDialogue: true });
+        return;
+      }
       this.isPaused = false;
       if (this.modal) {
         this.modal.classList.add('hidden');

@@ -451,7 +451,7 @@ export function shardsLine({ shards, rateG, connected, verified, result, brief =
 }
 
 /** The boss bounty line of the Story victory banner: { icon, text, tone }. Prints an amount only if the server gave one. */
-export function bossLine({ connected, verified, result, alreadyClaimed, rewardG, sessionExpired = false }) {
+export function bossLine({ connected, verified, result, alreadyClaimed, rewardG, claimable, sessionExpired = false }) {
   if (!connected && sessionExpired) return { icon: '⚡', tone: 'warn', text: 'Your session ended. Reconnect your wallet to claim boss bounties' };
   if (!connected) return { icon: '⚡', tone: 'muted', text: 'Connect & verify to earn boss bounties in future runs' };
   if (verified && alreadyClaimed) return { icon: '✔', tone: 'muted', text: 'First-boss bounty already claimed' };
@@ -464,6 +464,9 @@ export function bossLine({ connected, verified, result, alreadyClaimed, rewardG,
     return { icon: '⚠', tone: 'bad', text: 'Bounty not recorded: the run was flagged' };
   }
   if (!verified) return { icon: '🛡', tone: 'warn', text: 'Verify you are human to claim the boss bounty' };
+  // `claimable` is the server's answer about the bounty itself (false while GoodDollar has not approved the app, or on a cooldown):
+  // never tell a player to claim what the contract would refuse. Unknown (null/undefined) keeps the earlier wording.
+  if (claimable === false) return { icon: '🌟', tone: 'muted', text: "Boss slain! The first-boss bounty can't be claimed right now" };
   const amount = Number(rewardG);
   const worth = rewardG !== null && rewardG !== '' && Number.isFinite(amount) && amount > 0
     ? `${amount.toLocaleString('en-US', { maximumFractionDigits: 0 })} G$`

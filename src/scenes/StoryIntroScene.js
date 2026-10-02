@@ -3,6 +3,7 @@ import { GAME_CONFIG } from "../config.js";
 import { sound } from "../engine/Audio.js";
 import { storage } from "../engine/Storage.js";
 import { pauseService } from "../engine/PauseService.js";
+import { startIsBlocked } from "../engine/playGate.js";
 
 const PROLOGUE_SLIDES = [
   {
@@ -890,25 +891,24 @@ export default class StoryIntroScene extends Phaser.Scene {
       return { rect, txt };
     };
 
-    const choosePlayTutorial = () => {
+    // Leave for a play mode with a fade. If the gate would refuse that start (the verification lapsed), no fade and no
+    // one-shot flag: the start is handed to the gate at once and the prompt stays usable.
+    const leaveFor = (sceneKey, data) => {
       if (this.isTransitioning) return;
+      if (startIsBlocked(sceneKey)) {
+        this.scene.start(sceneKey, data);
+        return;
+      }
       this.isTransitioning = true;
       sound.playCoin();
       this.cameras.main.fade(400, 0, 0, 0);
       this.time.delayedCall(400, () => {
-        this.scene.start('TutorialScene', { fromPrologue: true });
+        this.scene.start(sceneKey, data);
       });
     };
 
-    const chooseSkipTutorial = () => {
-      if (this.isTransitioning) return;
-      this.isTransitioning = true;
-      sound.playCoin();
-      this.cameras.main.fade(400, 0, 0, 0);
-      this.time.delayedCall(400, () => {
-        this.scene.start('StoryScene', { chapter: 1 });
-      });
-    };
+    const choosePlayTutorial = () => leaveFor('TutorialScene', { fromPrologue: true });
+    const chooseSkipTutorial = () => leaveFor('StoryScene', { chapter: 1 });
 
     this.onChoosePlayTutorial = choosePlayTutorial;
     this.onChooseSkipTutorial = chooseSkipTutorial;

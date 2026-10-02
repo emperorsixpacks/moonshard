@@ -52,6 +52,9 @@ export class GdPanel {
   close() {
     this.gate = null;
     this.el?.classList.add('hidden');
+    // The button that was clicked is hidden now but would keep the keyboard until the browser notices, and this panel
+    // swallows key presses meant for itself: give the keyboard back to the game at once.
+    if (this.el?.contains(document.activeElement)) document.activeElement.blur();
   }
 
   render() {

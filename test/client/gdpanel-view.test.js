@@ -52,6 +52,18 @@ test('...and is not told they can still play: the gate holds play until the veri
   assert.equal((h.match(/class="gd-warn"/g) || []).length, 1, 'one notice, not the same bad news twice');
 });
 
+test('a verified player who cannot claim the bounty is told so up front, and is not promised an amount for beating a boss', () => {
+  const h = html({ bounty: { configured: true, canClaim: false, reason: 'not_claimable', claimedHere: false, pendingRunId: null, rewardG: null } });
+  assert.match(h, /not claimable right now/i);
+  assert.doesNotMatch(h, /unlock a one-time/i);
+  assert.doesNotMatch(h, /data-act="bounty"/);
+});
+
+test('...while one who can claim it is told what beating a boss unlocks', () => {
+  const h = html({ bounty: { configured: true, canClaim: true, claimedHere: false, pendingRunId: null, rewardG: '2400' } });
+  assert.match(h, /unlock a one-time bounty of 2,400 G\$/);
+});
+
 test('Spoils that could not be loaded say "unavailable", not "none yet"', () => {
   const h = html({ spoils: [], stale: { rewards: false, bounty: false, spoils: true, ubi: false } });
   assert.match(h, /Spoils.*unavailable|unavailable.*Spoils/i);

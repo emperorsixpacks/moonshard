@@ -63,8 +63,8 @@ export function playerShareWei({ rewardAmount, userAndInviterPercentage, userPer
 const wholeG = (wei) => (wei / 10n ** 18n).toString();
 
 /**
- * The player's share of the bounty as a string of whole G$ ("2400"), or null when the app is not registered or the
- * chain cannot be read. Cached (see the TTL constants above); requests that arrive together share one read.
+ * The player's share of the bounty as a string of whole G$ ("2400"), or null when the app is not registered and
+ * approved, or the chain cannot be read. Cached (see the TTL constants above); requests that arrive together share one read.
  *
  * @param {{ client: { readContract: Function }, address: string, app: string, now: () => number,
  *           ttlMs?: number, errorRetryMs?: number, staleMs?: number }} opts
@@ -87,8 +87,9 @@ export function createEngagementReward({
       client.readContract({ address, abi: engagementTermsAbi, functionName: "rewardAmount" }),
       client.readContract({ address, abi: engagementTermsAbi, functionName: "registeredApps", args: [app] }),
     ]);
-    const [, , , , , userAndInviterPercentage, userPercentage, isRegistered] = registered;
-    return isRegistered ? wholeG(playerShareWei({ rewardAmount, userAndInviterPercentage, userPercentage })) : null;
+    const [, , , , , userAndInviterPercentage, userPercentage, isRegistered, isApproved] = registered;
+    // an app GoodDollar has not approved yet cannot pay a claim, so there is no amount to promise
+    return isRegistered && isApproved ? wholeG(playerShareWei({ rewardAmount, userAndInviterPercentage, userPercentage })) : null;
   }
 
   return {

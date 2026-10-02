@@ -159,6 +159,27 @@ test('bossLine: recorded as cleared: verified players claim, unverified players 
   assert.doesNotMatch(boss({ ...UNVERIFIED }).text, /claim your/i);
 });
 
+test('bossLine: when the server says the bounty cannot be claimed (the app is not approved yet, a cooldown), the banner does not tell the player to claim it', () => {
+  const l = boss({ claimable: false, rewardG: null });
+  assert.match(l.text, /boss slain/i);
+  assert.match(l.text, /can't be claimed right now/i);
+  assert.doesNotMatch(l.text, /claim your|claim [\d,]+ g\$|g\$ wallet/i);
+  assert.notEqual(l.tone, 'good');
+  assert.doesNotMatch(boss({ claimable: false, rewardG: '2400' }).text, /2,400/, 'no amount is named for something that cannot be claimed');
+});
+
+test('bossLine: claimable, or not known yet (an older server), promises as before', () => {
+  for (const claimable of [true, null, undefined]) {
+    assert.match(boss({ claimable, rewardG: '2400' }).text, /claim 2,400 G\$ in the G\$ wallet/i);
+  }
+});
+
+test('bossLine: not being able to claim does not hide why a run was not recorded, or that the bounty is already claimed', () => {
+  assert.match(boss({ claimable: false, result: offline }).text, /bounty not recorded/i);
+  assert.match(boss({ claimable: false, alreadyClaimed: true }).text, /already claimed/i);
+  assert.match(boss({ claimable: false, ...UNVERIFIED }).text, /verify you are human/i);
+});
+
 test('bossLine: a one-time bounty already claimed is reported as such, whatever happened to this run', () => {
   assert.match(boss({ alreadyClaimed: true }).text, /already claimed/i);
   assert.match(boss({ alreadyClaimed: true, result: offline }).text, /already claimed/i);

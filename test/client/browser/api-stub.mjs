@@ -28,6 +28,9 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
   const api = {
     calls: [],
     verified,
+    // what the server says about the first-boss bounty: flip `canClaim` to false (and `rewardG` to null) for an app that
+    // GoodDollar has not approved yet
+    engagement: { configured: true, canClaim: true, reason: null, rewardG },
     latencyMs: 0,
     runs: new Map(), // runId -> { runId, mode, chapter, status: 'open' | 'void' | 'submitted', submit }
     handlers: {
@@ -60,11 +63,22 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
 
     if (path === '/me' || path === '/me/refresh') return json(200, { address: ADDRESS, status: api.verified ? 'verified' : 'unverified', verified: api.verified });
     if (path === '/rewards/status') {
-      return json(200, { crystalStatus: { gdEarned: 0, dailyCapGd: 100, isCapped: false }, firstBossClaimed, firstBossPrizeG: 5000, blessing: false });
+      return json(200, {
+        crystalStatus: { gdEarned: 0, dailyCapGd: 100, isCapped: false },
+        firstBossClaimed,
+        firstBossPrizeG: api.engagement.rewardG === null ? null : Number(api.engagement.rewardG), // the player's share, as the real server reports it
+        blessing: false,
+      });
     }
-    if (path === '/engagement/status') return json(200, { configured: true, claimedHere: false, canClaim: true, reason: null, pendingRunId: null, rewardG });
+    if (path === '/engagement/status') {
+      const e = api.engagement;
+      return json(200, { configured: e.configured, claimedHere: false, canClaim: e.canClaim, reason: e.reason, pendingRunId: null, rewardG: e.rewardG });
+    }
     if (path === '/spoils') return json(200, { spoils: [], vault: null });
-    if (path.startsWith('/leaderboard')) return json(200, { rows: [], me: null });
+    // the real shapes: server/src/leaderboard.js and the /config route in server/src/app.js
+    if (path === '/leaderboard/daily') return json(200, { day: '2026-10-05', view: 'ranked', entries: [], prizesG: ['1000', '600', '300'] });
+    if (path === '/leaderboard/alltime') return json(200, { view: 'ranked', entries: [] });
+    if (path === '/config') return json(200, { appName: 'Moonshard', chainId: 42220, prizesG: ['1000', '600', '300'], shardRateG: '2', dailyShardCap: 50 });
 
     if (method === 'POST' && path === '/runs/start') {
       const id = `run-${api.runs.size + 1}`;

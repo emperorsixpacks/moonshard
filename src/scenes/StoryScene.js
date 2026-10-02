@@ -36,6 +36,7 @@ import WeatherManager from '../engine/WeatherManager.js';
 import confetti from 'canvas-confetti';
 import ShardDrop from '../entities/ShardDrop.js';
 import { gdService } from '../engine/GdService.js';
+import { startIsBlocked } from '../engine/playGate.js';
 import { layoutHud } from '../ui/hudLayout.js';
 import { cssPerUnitOf } from '../engine/uiScale.js';
 import { useHudHeight } from '../engine/HudAnchor.js';
@@ -3046,6 +3047,7 @@ export default class StoryScene extends Phaser.Scene {
       sessionExpired: st.sessionExpired,
       alreadyClaimed: Boolean(this.rewardsStatus?.firstBossClaimed),
       rewardG: st.bounty?.rewardG, // the player's real share, when the server says so; no amount otherwise
+      claimable: st.bounty?.canClaim, // false while the app is not approved: the banner must not say "claim"
     });
     const shards = this.shardsBadge({ underBountyLine: true });
     return {
@@ -3150,6 +3152,11 @@ export default class StoryScene extends Phaser.Scene {
 
     const doAdvance = () => {
       if (actionTaken || performance.now() < this.victoryInputReadyTime) return;
+      if (nextCh && startIsBlocked('StoryScene')) {
+        // the gate may refuse this restart (the verification lapsed since the run began): then it opens over this screen, which stays as it is
+        this.scene.restart({ chapter: nextCh });
+        return;
+      }
       actionTaken = true;
       cleanup();
       sound.playCoin();
@@ -3162,6 +3169,11 @@ export default class StoryScene extends Phaser.Scene {
 
     const doRetry = () => {
       if (actionTaken || performance.now() < this.victoryInputReadyTime) return;
+      if (startIsBlocked('StoryScene')) {
+        // the gate may refuse this restart (the verification lapsed since the run began): then it opens over this screen, which stays as it is
+        this.scene.restart({ chapter: this.chapterId });
+        return;
+      }
       actionTaken = true;
       cleanup();
       sound.playCoin();
@@ -3393,6 +3405,11 @@ export default class StoryScene extends Phaser.Scene {
 
     const doRetry = () => {
       if (actionTaken || performance.now() < this.gameOverInputReadyTime) return;
+      if (startIsBlocked('StoryScene')) {
+        // the gate may refuse this restart (the verification lapsed since the run began): then it opens over this screen, which stays as it is
+        this.scene.restart({ chapter: this.chapterId });
+        return;
+      }
       actionTaken = true;
       cleanup();
       sound.playCoin();

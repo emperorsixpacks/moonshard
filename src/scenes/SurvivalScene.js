@@ -22,6 +22,7 @@ import { storage } from '../engine/Storage.js';
 import { getTodaySeedString, generateDailySurvivalSpec } from '../engine/PRNG.js';
 import { pauseService } from '../engine/PauseService.js';
 import { gdService } from '../engine/GdService.js';
+import { startIsBlocked } from '../engine/playGate.js';
 import { layoutHud } from '../ui/hudLayout.js';
 import { cssPerUnitOf } from '../engine/uiScale.js';
 import { useHudHeight } from '../engine/HudAnchor.js';
@@ -1454,6 +1455,11 @@ export default class SurvivalScene extends Phaser.Scene {
     };
 
     const goRetry = () => {
+      if (startIsBlocked('SurvivalScene')) {
+        // the gate may refuse this restart (the verification lapsed since the run began): then it opens over this screen, which stays as it is
+        this.scene.restart();
+        return;
+      }
       cleanup();
       sound.playCoin();
       this.scene.restart();

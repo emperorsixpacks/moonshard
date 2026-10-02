@@ -75,6 +75,7 @@ function bountyHtml(s, txDisabled, now) {
     const window = left !== null && Number.isFinite(left) ? note(`Claim within ${formatCountdown(left)}.`) : '';
     return `<p>Boss defeated! Claim your one-time reward.</p>${window}${button('bounty', amount ? `CLAIM ${amount} BOUNTY` : 'CLAIM BOUNTY', { disabled: txDisabled })}`;
   }
+  if (b.canClaim === false) return warn(esc(reasonText(b.reason))); // never promise an unlock the contract would refuse
   return note(`Defeat a chapter boss in Story Mode to unlock a one-time ${amount ? `bounty of ${amount}` : 'G$ bounty'}.`);
 }
 

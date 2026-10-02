@@ -90,11 +90,27 @@ test("an app that is not registered has no reward to promise: rewardG and firstB
   } finally { await h.close(); }
 });
 
-test("a registered app that is not approved yet still has a known share (canClaim carries the 'not approved' reason)", async () => {
+test("a registered app that GoodDollar has not approved yet pays nothing, so no amount is promised anywhere", async () => {
+  // Review finding: the boss banner, the leaderboard pill and the wallet panel all said "claim 2,400 G$" for an app whose
+  // claims the contract refuses. Until the app is approved there is no bounty to name.
   const h = await makeHarness({ engagementRpc: fakeEngagementRpc({ isApproved: false }) });
   try {
     const p = await h.newPlayer({ verified: true });
+    assert.equal((await h.api.get("/engagement/status", { token: p.token })).body.rewardG, null);
+    assert.equal((await h.api.get("/rewards/status", { token: p.token })).body.firstBossPrizeG, null);
+  } finally { await h.close(); }
+});
+
+test("once the app is approved the amount appears, when the cached read has aged out", async () => {
+  const rpc = fakeEngagementRpc({ isApproved: false });
+  const h = await makeHarness({ engagementRpc: rpc });
+  try {
+    const p = await h.newPlayer({ verified: true });
+    assert.equal((await h.api.get("/engagement/status", { token: p.token })).body.rewardG, null);
+    rpc.state.isApproved = true; // GoodDollar approves the app
+    h.clock.advance(5 * MINUTE);
     assert.equal((await h.api.get("/engagement/status", { token: p.token })).body.rewardG, "2400");
+    assert.equal((await h.api.get("/rewards/status", { token: p.token })).body.firstBossPrizeG, 2400);
   } finally { await h.close(); }
 });
 
