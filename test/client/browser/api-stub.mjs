@@ -6,7 +6,18 @@
 // of that mode, a submit on a void run is 409 run_void, a second submit of a run is 409 already_submitted, and a request
 // takes effect when it ARRIVES, `latencyMs` after it was sent, not when its answer is delivered.
 
+import { formatUnits } from 'viem';
+import { GAME } from '../../../server/config.js';
+
 export const ADDRESS = '0x1111111111111111111111111111111111111111';
+export const VAULT = '0x00000000000000000000000000000000000ba5e1';
+/** GET /shop as the real server answers it, from the server's own catalog (server/config.js GAME.SHOP). */
+export const SHOP = {
+  enabled: true,
+  token: '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A',
+  vault: VAULT,
+  items: GAME.SHOP.map(({ id, name, kind, price, requires }) => ({ id, name, kind, priceG: formatUnits(price, 18), requires: requires ?? null })),
+};
 
 /** Script that puts a signed-in session in localStorage before the app starts (`bootGame({ init: sessionInit() })`). */
 export const sessionInit = (address = ADDRESS) => `
@@ -24,10 +35,13 @@ const RANKED = { ok: true, isNewBest: true, rankedOk: true, bossCleared: false, 
  * `api.runs` the server's view of each run. Per-test behaviour: `api.latencyMs`, and `api.handlers[name]` (start,
  * checkpoints, submit) replaced by `async ({ call, run }) => ({ status, body, delayMs, hang })`.
  */
-export async function installApi(page, { verified = true, rewardG = '2400', firstBossClaimed = false } = {}) {
+export async function installApi(page, { verified = true, rewardG = '2400', firstBossClaimed = false, owned = ['iron_starter'], shop = SHOP } = {}) {
   const api = {
     calls: [],
     verified,
+    // the Moon Shop: what GET /shop answers, and what the player owns (a player who plays has bought the blade)
+    shop,
+    owned: [...owned],
     // what the server says about the first-boss bounty: flip `canClaim` to false (and `rewardG` to null) for an app that
     // GoodDollar has not approved yet
     engagement: { configured: true, canClaim: true, reason: null, rewardG },
@@ -68,8 +82,10 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
         firstBossClaimed,
         firstBossPrizeG: api.engagement.rewardG === null ? null : Number(api.engagement.rewardG), // the player's share, as the real server reports it
         blessing: false,
+        owned: [...api.owned],
       });
     }
+    if (path === '/shop') return json(200, api.shop);
     if (path === '/engagement/status') {
       const e = api.engagement;
       return json(200, { configured: e.configured, claimedHere: false, canClaim: e.canClaim, reason: e.reason, pendingRunId: null, rewardG: e.rewardG });

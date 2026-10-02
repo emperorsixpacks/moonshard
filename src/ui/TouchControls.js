@@ -1,6 +1,7 @@
 import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
 import { gdService } from '../engine/GdService.js';
+import { walletPillText } from './gdPanelView.js';
 
 export class TouchController {
   constructor(game) {
@@ -373,7 +374,7 @@ export class TouchController {
         if (!label || !indicator) return;
         indicator.classList.toggle('online', status.verified);
         indicator.classList.toggle('offline', !status.verified);
-        label.textContent = status.connected ? (status.verified ? 'G$ ✔' : status.shortAddress || 'G$') : 'G$';
+        label.textContent = walletPillText(status);
       };
       paint(txt, dot);
       paint(txtLand, dotLand);

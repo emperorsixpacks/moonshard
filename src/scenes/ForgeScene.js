@@ -4,7 +4,32 @@ import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
 import { pauseService } from '../engine/PauseService.js';
 import { isTallCanvas } from '../engine/uiScale.js';
+import { gdService } from '../engine/GdService.js';
+import { describeOutcome } from '../gd/outcome.js';
+import { formatG } from '../gd/format.js';
+import { forgeOffer, materialsLabel } from '../ui/forgeOffer.js';
+import { showToast } from '../ui/toast.js';
 import confetti from 'canvas-confetti';
+
+/** Each tab's button colours (the ones the Forge always had), and gold for everything paid in G$, whichever tab it is on. */
+const SKINS_TONE = { equip: { fill: 0x1d3f58, stroke: 0x38e1ff }, equipped: { fill: 0x163416, stroke: 0x98ff20 }, craft: { fill: 0x472810, stroke: 0xff9933 } };
+const FREE_TONE = { equip: { fill: 0x2a542a, stroke: 0x4a7d4a }, equipped: { fill: 0x183318, stroke: 0x98ff20 }, craft: { fill: 0x3d4414, stroke: 0x4a7d4a } };
+// a materials-only craft on this gold tab is forest green, so it never looks like a G$ purchase
+const NIM_TONE = { equip: { fill: 0x4a3a14, stroke: 0xe9b213 }, equipped: { fill: 0x1e3a1e, stroke: 0xe9b213 }, craft: { fill: 0x2c3a14, stroke: 0x7fae4a } };
+const G_TONE = { fill: 0x3d3410, stroke: 0xf6c026 };
+const LOCKED_TONE = { fill: 0x24241f, stroke: 0x5c5c4c };
+function buttonTone(offer, tone) {
+  if (offer.priceG !== undefined || offer.action === 'wait') return G_TONE;
+  if (offer.action === 'locked') return LOCKED_TONE;
+  if (offer.action === 'none' || (offer.action === 'toggle' && offer.label === 'PET ON')) return tone.equipped;
+  if (offer.action === 'craft' || offer.action === 'short') return tone.craft;
+  return tone.equip;
+}
+
+/** G$ in a wallet, rounded down (a balance shown as "20" can pay 20). */
+const walletG = (g) => formatG(Math.floor(Number(g) * 100) / 100, 2);
+const NEEDS = { bark: 'Bark', amber: 'Amber', iron: 'Iron' };
+const needsText = (cost = {}) => Object.entries(NEEDS).filter(([k]) => cost[k] > 0).map(([k, name]) => `${cost[k]} ${name}`).join(', ');
 
 // One layout per canvas shape. Text sizes are font-size hints (engine/typography.js): under 7 the text is drawn in
 // VT323 at 2.3x ('4.5px' is 10.5 units), from 7 up in Press Start 2P at that size. All numbers are game units.
@@ -29,7 +54,7 @@ const LANDSCAPE = {
     textDx: -190,
     name: { dy: 10, hint: '8px' },
     stats: { dy: 24, hint: '5px' },
-    btn: { dx: 152, w: 92, h: 24, hint: '5px' }
+    btn: { dx: 152, w: 92, h: 30, hint: '4.5px', spacing: 1 }
   },
   nim: {
     top: 72, h: 36, gap: 4,
@@ -67,7 +92,7 @@ const TALL = {
     textDx: -206,
     name: { dy: 23.3, hint: '14px' },
     stats: { dy: 43.3, hint: '6.1px' },
-    btn: { dx: 170, w: 96, h: 46, hint: '6.1px' }
+    btn: { dx: 170, w: 96, h: 46, hint: '6.1px', spacing: 2 }
   },
   nim: {
     top: 126, h: 60, gap: 6,
@@ -116,7 +141,7 @@ export default class ForgeScene extends Phaser.Scene {
       color: '#f6c026'
     }).setOrigin(0.5);
 
-    this.add.text(w / 2, L.sub.y, 'Equip Sword Skins & Craft Blades with Forest Materials', {
+    this.subText = this.add.text(w / 2, L.sub.y, '', {
       fontFamily: 'Press Start 2P',
       fontSize: L.sub.hint,
       color: '#a0c4a0'
@@ -155,13 +180,131 @@ export default class ForgeScene extends Phaser.Scene {
     // Equipped gear preview container at bottom right
     this.createHeroPreview(w, h);
 
-    // Render active tab items
-    this.renderTabContent(w, h);
+    // Render the active tab now, and again whenever the G$ side changes while the screen is open (the catalog arrives, a
+    // payment is confirmed, the balance moves, the player connects)
+    this.unsubscribeGd = gdService.subscribe(() => {
+      this.updateHeaderBar();
+      this.renderTabContent(w, h);
+    });
+    this.events.once('shutdown', () => this.unsubscribeGd?.());
   }
 
   updateHeaderBar() {
     const mats = storage.getMaterials();
-    this.matsText.setText(`🌲Bark: ${mats.bark} | 🍯Amber: ${mats.amber} | ⚙️Iron: ${mats.iron}`);
+    const { balance, shop } = gdService.getStatus();
+    const g = balance == null ? '' : ` | G$: ${walletG(balance)}`;
+    this.matsText.setText(`🌲Bark: ${mats.bark} | 🍯Amber: ${mats.amber} | ⚙️Iron: ${mats.iron}${g}`);
+    this.subText.setText(shop?.enabled
+      ? 'Blades: forest materials + a G$ fee • Looks: G$'
+      : 'Equip Sword Skins & Craft Blades with Forest Materials');
+  }
+
+  /**
+   * A card's action button: what it says and does come from forgeOffer(). `item` carries what forgeOffer() reads plus what
+   * crafting needs (`type`: weapon / satchel / reroll). `tone` is the tab's colours for equip / equipped / craft.
+   */
+  addOfferButton(item, { x, y, C, tone }, w, h) {
+    const offer = forgeOffer(item, gdService.getStatus());
+    const { fill, stroke } = buttonTone(offer, tone);
+    const live = !['none', 'wait', 'locked'].includes(offer.action);
+    const btn = this.add.rectangle(x, y, C.btn.w, C.btn.h, fill)
+      .setStrokeStyle(1.2, stroke)
+      .setInteractive({ useHandCursor: live });
+    const lbl = this.add.text(x, y, offer.label, {
+      fontFamily: 'Press Start 2P',
+      fontSize: C.btn.hint,
+      color: '#ffffff',
+      align: 'center',
+      lineSpacing: C.btn.spacing ?? 1
+    }).setOrigin(0.5);
+    this.contentContainer.add([btn, lbl]);
+    if (live) btn.on('pointerdown', () => this.pressOffer(offer, item, w, h));
+  }
+
+  pressOffer(offer, item, w, h) {
+    switch (offer.action) {
+      case 'equip':
+        storage.equipWeapon(item.id);
+        sound.playCoin();
+        this.updateHeroPreview();
+        this.renderTabContent(w, h);
+        return;
+      case 'toggle':
+        storage.toggleCompanion();
+        sound.playCoin();
+        this.renderTabContent(w, h);
+        return;
+      case 'short':
+        sound.playHit();
+        showToast(`Not enough forest materials yet. Needs ${needsText(item.cost)}.`, { type: 'warn' });
+        return;
+      case 'wallet':
+        sound.playCoin();
+        globalThis.window?.__gdPanel?.open();
+        return;
+      case 'craft':
+        this.craft(item, w, h);
+        return;
+      case 'buy':
+      case 'forge':
+        this.payWithG(offer, item, w, h);
+        return;
+      default:
+    }
+  }
+
+  /** A material craft (no Moon Shop on the server, or an item it does not sell). */
+  craft(item, w, h) {
+    if (!storage.spendMaterials(item.cost)) {
+      sound.playHit();
+      showToast(`Not enough forest materials yet. Needs ${needsText(item.cost)}.`, { type: 'warn' });
+      return;
+    }
+    sound.playVictory();
+    try { confetti({ particleCount: 50, spread: 60 }); } catch (e) {}
+    if (item.type === 'satchel') {
+      storage.unlockSatchel();
+    } else if (item.type === 'reroll') {
+      const current = storage.getActivePerk();
+      const nextPerk = Phaser.Utils.Array.GetRandom(GAME_CONFIG.PERKS.filter(p => p.id !== current));
+      storage.setActivePerk(nextPerk.id);
+      showToast(`Relic perk re-rolled: ${nextPerk.name} (${nextPerk.desc})`);
+    } else {
+      storage.unlockWeapon(item.id);
+      storage.equipWeapon(item.id);
+      this.updateHeroPreview();
+    }
+    this.updateHeaderBar();
+    this.renderTabContent(w, h);
+  }
+
+  /**
+   * A G$ purchase: the price goes from the player's wallet into the prize vault (GdService.buy). A forged blade's materials
+   * are spent only once the payment went through and was not refused, so a failed payment costs no materials.
+   */
+  async payWithG(offer, item, w, h) {
+    if (this.paying) return;
+    this.paying = true;
+    try {
+      const res = await gdService.buy(item.id);
+      const toast = describeOutcome('buy', res);
+      if (toast) showToast(toast.text, { type: toast.type });
+      if (!res.ok || res.confirmRejected) {
+        sound.playHit();
+        return;
+      }
+      if (offer.action === 'forge') storage.spendMaterials(item.cost);
+      if (storage.isWeaponUnlocked(item.id)) storage.equipWeapon(item.id); // recorded: owned already
+      sound.playVictory();
+      try { confetti({ particleCount: 50, spread: 60 }); } catch (e) {}
+    } finally {
+      this.paying = false;
+      if (this.sys.isActive()) {
+        this.updateHeaderBar();
+        this.updateHeroPreview();
+        this.renderTabContent(w, h);
+      }
+    }
   }
 
   createTabs(w) {
@@ -359,62 +502,11 @@ export default class ForgeScene extends Phaser.Scene {
         this.contentContainer.add(descTxt);
 
         // Action Button
-        let btnText = 'EQUIP';
-        let btnColor = 0x1d3f58;
-        let strokeColor = 0x38e1ff;
-
-        if (isEquipped) {
-          btnText = 'EQUIPPED';
-          btnColor = 0x163416;
-          strokeColor = 0x98ff20;
-        } else if (!unlocked && weap.cost) {
-          btnText = `CRAFT\n(${weap.cost.bark || 0}B/${weap.cost.amber || 0}A/${weap.cost.iron || 0}I)`;
-          btnColor = 0x472810;
-          strokeColor = 0xff9933;
-        }
-
-        const btn = this.add.rectangle(w / 2 + C.btn.dx, y, C.btn.w, C.btn.h, btnColor)
-          .setStrokeStyle(1.2, strokeColor)
-          .setInteractive({ useHandCursor: !isEquipped });
-        this.contentContainer.add(btn);
-
-        const btnLbl = this.add.text(w / 2 + C.btn.dx, y, btnText, {
-          fontFamily: 'Press Start 2P',
-          fontSize: C.btn.hint,
-          color: '#ffffff',
-          align: 'center',
-          lineSpacing: C.btn.spacing
-        }).setOrigin(0.5);
-        this.contentContainer.add(btnLbl);
-
-        if (!isEquipped) {
-          btn.on('pointerdown', () => {
-            if (unlocked) {
-              storage.equipWeapon(weap.id);
-              sound.playCoin();
-              this.updateHeroPreview();
-              this.renderTabContent(w, h);
-            } else if (weap.cost) {
-              const spent = storage.spendMaterials(weap.cost);
-              if (spent) {
-                storage.unlockWeapon(weap.id);
-                storage.equipWeapon(weap.id);
-                sound.playVictory();
-                try { confetti({ particleCount: 50, spread: 60 }); } catch (e) {}
-                this.updateHeaderBar();
-                this.updateHeroPreview();
-                this.renderTabContent(w, h);
-              } else {
-                sound.playHit();
-                const reqParts = [];
-                if (weap.cost.bark) reqParts.push(`${weap.cost.bark} Bark`);
-                if (weap.cost.amber) reqParts.push(`${weap.cost.amber} Amber`);
-                if (weap.cost.iron) reqParts.push(`${weap.cost.iron} Iron`);
-                alert(`Not enough materials gathered from Forest yet!\nRequires: ${reqParts.join(', ')}`);
-              }
-            }
-          });
-        }
+        this.addOfferButton(
+          { id: weap.id, type: 'weapon', cost: weap.cost, unlocked, equipped: isEquipped, hasMaterials: this.hasMaterials(weap.cost) },
+          { x: w / 2 + C.btn.dx, y, C, tone: SKINS_TONE },
+          w, h,
+        );
       });
     } else if (this.currentTab === 'free') {
       // STANDARD BLADES
@@ -450,53 +542,11 @@ export default class ForgeScene extends Phaser.Scene {
         this.contentContainer.add(stats);
 
         // Action Button
-        let btnText = 'EQUIP';
-        let btnColor = 0x2a542a;
-
-        if (isEquipped) {
-          btnText = 'EQUIPPED';
-          btnColor = 0x183318;
-        } else if (!unlocked && weap.cost) {
-          btnText = `CRAFT (${weap.cost.bark || 0}B/${weap.cost.iron || 0}I)`;
-          btnColor = 0x3d4414;
-        }
-
-        const btn = this.add.rectangle(w / 2 + C.btn.dx, y, C.btn.w, C.btn.h, btnColor)
-          .setStrokeStyle(1, isEquipped ? 0x98ff20 : 0x4a7d4a)
-          .setInteractive({ useHandCursor: !isEquipped });
-        this.contentContainer.add(btn);
-
-        const btnLbl = this.add.text(w / 2 + C.btn.dx, y, btnText, {
-          fontFamily: 'Press Start 2P',
-          fontSize: C.btn.hint,
-          color: '#ffffff'
-        }).setOrigin(0.5);
-        this.contentContainer.add(btnLbl);
-
-        if (!isEquipped) {
-          btn.on('pointerdown', () => {
-            if (unlocked) {
-              storage.equipWeapon(weap.id);
-              sound.playCoin();
-              this.updateHeroPreview();
-              this.renderTabContent(w, h);
-            } else if (weap.cost) {
-              const spent = storage.spendMaterials(weap.cost);
-              if (spent) {
-                storage.unlockWeapon(weap.id);
-                storage.equipWeapon(weap.id);
-                sound.playVictory();
-                try { confetti({ particleCount: 50, spread: 60 }); } catch (e) {}
-                this.updateHeaderBar();
-                this.updateHeroPreview();
-                this.renderTabContent(w, h);
-              } else {
-                sound.playHit();
-                alert('Not enough materials gathered from Forest yet!');
-              }
-            }
-          });
-        }
+        this.addOfferButton(
+          { id: weap.id, type: 'weapon', cost: weap.cost, unlocked, equipped: isEquipped, hasMaterials: this.hasMaterials(weap.cost) },
+          { x: w / 2 + C.btn.dx, y, C, tone: FREE_TONE },
+          w, h,
+        );
       });
     } else {
       // Celestial Blades, Companions & Perk Re-roll
@@ -505,25 +555,22 @@ export default class ForgeScene extends Phaser.Scene {
         {
           id: GAME_CONFIG.WEAPONS.GOLDEN_ALBATROSS.id,
           name: 'Golden Solar Blade',
-          desc: 'Sun-forged golden sword trail & sparkling embers.',
+          desc: "Glaive's power, a new look: golden trail & embers.",
           cost: { amber: 8, iron: 6 },
-          costLabel: '8 Amber, 6 Iron',
           type: 'weapon'
         },
         {
           id: GAME_CONFIG.WEAPONS.CORRUPTED_VOID.id,
           name: 'Corrupted Void Edge',
-          desc: 'Ancient twilight essence. Dark obsidian shadow slashes.',
+          desc: "Glaive's power, a new look: obsidian shadow slashes.",
           cost: { amber: 10, iron: 8 },
-          costLabel: '10 Amber, 8 Iron',
           type: 'weapon'
         },
         {
           id: 'satchel_pet',
           name: 'Moon Sprite Satchel (Sylva)',
-          desc: 'Cosmetic Moon Sprite fairy hovering by your shoulder in trials.',
+          desc: 'Looks only: a Moon Sprite hovering by your shoulder.',
           cost: { bark: 8, amber: 6 },
-          costLabel: '8 Bark, 6 Amber',
           type: 'satchel'
         },
         {
@@ -531,7 +578,6 @@ export default class ForgeScene extends Phaser.Scene {
           name: 'Stat Catalyst Re-roll',
           desc: `Current Perk: ${storage.getActivePerk().toUpperCase()}. Re-roll relic perk.`,
           cost: { bark: 2, amber: 2 },
-          costLabel: '2 Bark, 2 Amber',
           type: 'reroll'
         }
       ];
@@ -562,72 +608,36 @@ export default class ForgeScene extends Phaser.Scene {
         });
         this.contentContainer.add(desc);
 
-        // Button label (the price goes on its own line so it always fits the button)
-        let btnText = `CRAFT\n(${item.costLabel})`;
-        if (unlocked && item.type === 'weapon') {
-          btnText = isEquipped ? 'EQUIPPED' : 'EQUIP';
-        } else if (unlocked && item.type === 'satchel') {
-          btnText = isEquipped ? 'PET ON' : 'PET OFF';
-        } else if (item.type === 'reroll') {
-          btnText = `REROLL\n(${item.costLabel})`;
+        // Action Button (a re-roll can be bought again and again: it is never "owned")
+        const offerItem = { id: item.id, type: item.type, cost: item.cost, unlocked, equipped: isEquipped, hasMaterials: this.hasMaterials(item.cost), pet: item.type === 'satchel' };
+        if (item.type === 'reroll') {
+          this.addRerollButton(offerItem, { x: w / 2 + C.btn.dx, y, C }, w, h);
+        } else {
+          this.addOfferButton(offerItem, { x: w / 2 + C.btn.dx, y, C, tone: NIM_TONE }, w, h);
         }
-
-        const btn = this.add.rectangle(w / 2 + C.btn.dx, y, C.btn.w, C.btn.h, isEquipped ? 0x1e3a1e : 0x4a3a14)
-          .setStrokeStyle(1, 0xe9b213)
-          .setInteractive({ useHandCursor: true });
-        this.contentContainer.add(btn);
-
-        const btnLbl = this.add.text(w / 2 + C.btn.dx, y, btnText, {
-          fontFamily: 'Press Start 2P',
-          fontSize: C.btn.hint,
-          color: '#ffffff',
-          align: 'center',
-          lineSpacing: C.btn.spacing
-        }).setOrigin(0.5);
-        this.contentContainer.add(btnLbl);
-
-        btn.on('pointerdown', () => {
-          if (unlocked && item.type === 'weapon') {
-            storage.equipWeapon(item.id);
-            sound.playCoin();
-            this.updateHeroPreview();
-            this.renderTabContent(w, h);
-          } else if (unlocked && item.type === 'satchel') {
-            storage.toggleCompanion();
-            sound.playCoin();
-            this.renderTabContent(w, h);
-          } else {
-            // Material craft / unlock
-            const success = storage.spendMaterials(item.cost);
-            if (success) {
-              sound.playVictory();
-              try { confetti({ particleCount: 40, spread: 50 }); } catch (e) {}
-
-              if (item.type === 'weapon') {
-                storage.unlockWeapon(item.id);
-                storage.equipWeapon(item.id);
-                this.updateHeroPreview();
-              } else if (item.type === 'satchel') {
-                storage.unlockSatchel();
-              } else if (item.type === 'reroll') {
-                const perks = GAME_CONFIG.PERKS;
-                const current = storage.getActivePerk();
-                const others = perks.filter(p => p.id !== current);
-                const nextPerk = Phaser.Utils.Array.GetRandom(others);
-                storage.setActivePerk(nextPerk.id);
-                alert(`Relic Perk Re-rolled! Now equipped with: ${nextPerk.name} (${nextPerk.desc})`);
-              }
-
-              this.updateHeaderBar();
-              this.renderTabContent(w, h);
-            } else {
-              sound.playHit();
-              alert(`Not enough materials gathered! Requires: ${item.costLabel}`);
-            }
-          }
-        });
       });
     }
+  }
+
+  hasMaterials(cost = {}) {
+    const mats = storage.getMaterials();
+    return Object.keys(NEEDS).every((k) => (mats[k] ?? 0) >= (cost[k] ?? 0));
+  }
+
+  /** The relic re-roll is crafted from materials only, whatever the server sells. */
+  addRerollButton(item, { x, y, C }, w, h) {
+    const btn = this.add.rectangle(x, y, C.btn.w, C.btn.h, NIM_TONE.craft.fill)
+      .setStrokeStyle(1.2, NIM_TONE.craft.stroke)
+      .setInteractive({ useHandCursor: true });
+    const lbl = this.add.text(x, y, `REROLL\n(${materialsLabel(item.cost)})`, {
+      fontFamily: 'Press Start 2P',
+      fontSize: C.btn.hint,
+      color: '#ffffff',
+      align: 'center',
+      lineSpacing: C.btn.spacing ?? 1
+    }).setOrigin(0.5);
+    this.contentContainer.add([btn, lbl]);
+    btn.on('pointerdown', () => this.craft(item, w, h));
   }
 
   // Portrait and landscape have different layouts: lay the screen out again when the phone is turned,

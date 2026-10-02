@@ -1,4 +1,5 @@
-import { explorerTx } from '../gd/config.js';
+import { GAME_CONFIG } from '../config.js';
+import { explorerAddress, explorerTx } from '../gd/config.js';
 import { explainError, formatCountdown, formatG } from '../gd/format.js';
 import { identiconSvg } from '../gd/identicon.js';
 import { canPlay, entryBlade, gateStep } from '../engine/playGateRules.js';
@@ -37,6 +38,15 @@ const txLink = (hash) => `<a class="gd-link" href="${esc(explorerTx(hash))}" tar
 /** G$ in a wallet, rounded down: a balance shown as "20" must be able to pay 20. */
 const walletG = (g) => formatG(Math.floor(Number(g) * 100) / 100, 2);
 const balanceLine = (s) => (s.balance == null ? '' : `<p>Your G$: <b>${walletG(s.balance)}</b></p>`);
+
+/** The text on the G$ button: a verified player's balance, once it is known. */
+export function walletPillText(s) {
+  if (!s.connected) return 'G$';
+  if (!s.verified) return s.shortAddress || 'G$';
+  if (s.balance == null) return 'G$ ✔';
+  const g = Math.floor(Number(s.balance) * 100) / 100;
+  return `G$ ${g >= 1000 ? formatG(Math.floor(g)) : formatG(g, 2)}`;
+}
 /** Known to hold less than `priceG` (an unknown balance is not short: the wallet checks before anything is sent). */
 const isShort = (s, priceG) => s.balance != null && Number(s.balance) < Number(priceG);
 
@@ -226,6 +236,104 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null } = {}) {
     out.push(button('disconnect', 'DISCONNECT', { disabled: busy, cls: 'gd-ghost' }));
   }
 
+  out.push('<a class="gd-link" href="/stats.html" target="_blank" rel="noopener">PUBLIC STATS ▸</a>');
+  return out.join('');
+}
+
+/* ---- the G$ guide: what G$ is in Moonshard, what it buys, how it is won back, where it goes, and the next step ---- */
+
+const gText = (v) => `${formatG(v, 2)} G$`;
+const SKINS = new Set(Object.values(GAME_CONFIG.WEAPONS).filter((w) => w.isSkin).map((w) => w.id));
+const CELESTIAL = new Set(Object.values(GAME_CONFIG.WEAPONS).filter((w) => w.tier === 'Celestial Blade').map((w) => w.id));
+
+/** "100 G$ each" for a group at one price, "from 80 G$" for a group at several. */
+function groupPrice(items) {
+  const prices = [...new Set(items.map((x) => Number(x.priceG)))];
+  if (prices.length > 1) return `from ${gText(Math.min(...prices))}`;
+  return items.length > 1 ? `${gText(prices[0])} each` : gText(prices[0]);
+}
+
+function looksLine(looks) {
+  const skins = looks.filter((x) => SKINS.has(x.id));
+  const celestial = looks.filter((x) => CELESTIAL.has(x.id));
+  const pet = looks.filter((x) => x.id === 'satchel_pet');
+  const other = looks.filter((x) => !skins.includes(x) && !celestial.includes(x) && !pet.includes(x));
+  const parts = [];
+  if (skins.length) parts.push(`Sword skins: ${groupPrice(skins)}`);
+  if (celestial.length) parts.push(`Celestial blades: ${groupPrice(celestial)} (a new look for the Glaive's power; forge the Glaive first)`);
+  if (pet.length) parts.push(`Moon Sprite pet: ${groupPrice(pet)}`);
+  for (const x of other) parts.push(`${esc(x.name)}: ${gText(x.priceG)}`);
+  return parts.join(' · ');
+}
+
+function earnHtml(s, config) {
+  const prizes = Array.isArray(config?.prizesG) && config.prizesG.length ? config.prizesG : null;
+  const rate = Number(config?.shardRateG);
+  const cap = Number(config?.dailyShardCap);
+  const bounty = Number(s.rewards?.firstBossPrizeG ?? s.bounty?.rewardG);
+  return [
+    prizes
+      ? `<p>Daily prizes: <b>${prizes.map((p) => formatG(p)).join(' / ')} G$</b> for the top 3 verified players of the day.</p>`
+      : '<p>Daily G$ prizes for the top 3 verified players of the day.</p>',
+    rate > 0 && cap > 0
+      ? `<p>Shard Harvest: ${gText(rate)} a Shard, up to ${gText(rate * cap)} a day.</p>`
+      : '<p>Shard Harvest: G$ for the Shards you collect.</p>',
+    bounty > 0
+      ? `<p>First-boss bounty: <b>${formatG(bounty)} G$</b>, once, from GoodDollar's Engagement Rewards.</p>`
+      : "<p>A one-time G$ bounty for your first boss, from GoodDollar's Engagement Rewards.</p>",
+  ].join('');
+}
+
+function nextStepHtml(s, blade, busy, txDisabled, now) {
+  switch (gateStep(s)) {
+    case 'connect':
+      return `<p>Connect your wallet to start.</p>${button('connect', 'CONNECT WALLET', { disabled: busy })}${s.hasWallet ? '' : warn(NO_WALLET)}`;
+    case 'verify':
+      return `<p>Prove you are human with GoodDollar's quick face scan: it is what lets you claim G$ and play. Moonshard never sees your face.</p>${button('verify', 'VERIFY (FACE SCAN)', { disabled: txDisabled })}`;
+    case 'checking':
+      return note('Checking where you stand…');
+    case 'unreachable':
+      return `${warn("Can't reach the server right now.")}${button('recheck', 'TRY AGAIN', { disabled: busy })}`;
+    case 'blade':
+      return bladeHtml(s, blade, txDisabled, now);
+    default:
+      return `${balanceLine(s)}<p class="gd-blessing">✔ You're all set: your blade is ready. Claim, play, and win G$ back.</p>`;
+  }
+}
+
+/**
+ * The G$ guide (owner: "the use of G$ should be very clear in the game"). Amounts come from the server (the shop's catalog,
+ * /api/config, the player's bounty share); one the server did not give is left out, never invented. `config` is the
+ * /api/config answer, or null.
+ */
+export function renderGuideHtml(s, { config = null, now = Date.now() } = {}) {
+  const busy = Boolean(s.busy);
+  const txDisabled = busy || s.wrongChain || s.needsReconnect;
+  const { shop } = s;
+  const open = Boolean(shop?.enabled);
+  const blade = open ? entryBlade(shop) : null;
+  const out = [
+    section('WHAT G$ IS', '<p>G$ is GoodDollar: a free daily income for verified humans, on the Celo network. In Moonshard you claim it, spend it on your blade and its looks, and win it back.</p>'),
+    section('CLAIM IT FREE, EVERY DAY', "<p>Every verified human can claim free G$ once a day. Claiming also brings the Citizen's Blessing: +25% forest materials that day.</p>"),
+  ];
+  if (!shop) {
+    out.push(section('SPEND IT', note('The prices could not be loaded right now.')));
+  } else if (!open) {
+    out.push(section('YOUR BLADE', '<p>On this server your first blade is free, and blades are forged from forest materials alone.</p>'));
+  } else {
+    if (blade) out.push(section('BUY YOUR BLADE', `<p>Your hero fights with the <b>${esc(blade.name)}</b>: ${gText(blade.priceG)}. No blade, no fight: it is the last step before you play.</p>`));
+    const forge = shop.items.filter((x) => x.kind === 'forge');
+    if (forge.length) {
+      out.push(section('FORGE STRONGER BLADES', `<p>${forge.map((x) => `<b>${esc(x.name)}</b>: forest materials + ${gText(x.priceG)}`).join(' · ')}. The materials only come from playing, so G$ alone never buys power.</p>`));
+    }
+    const looks = shop.items.filter((x) => x.kind === 'cosmetic');
+    if (looks.length) out.push(section('MOON SHOP (LOOKS ONLY)', `<p>${looksLine(looks)}. Nothing here adds power. Find them in the Forge.</p>`));
+  }
+  out.push(section('WIN IT BACK', earnHtml(s, config)));
+  if (open) {
+    out.push(section('WHERE YOUR G$ GOES', `<p>Every G$ you pay goes into the <a class="gd-link" href="${esc(explorerAddress(shop.vault))}" target="_blank" rel="noopener">prize vault ▸</a>, which pays the daily prizes and the Shard Harvests. All of it happens on the Celo chain.</p>`));
+  }
+  out.push(section('YOUR NEXT STEP', nextStepHtml(s, blade, busy, txDisabled, now)));
   out.push('<a class="gd-link" href="/stats.html" target="_blank" rel="noopener">PUBLIC STATS ▸</a>');
   return out.join('');
 }

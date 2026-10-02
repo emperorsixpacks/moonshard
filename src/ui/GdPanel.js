@@ -1,13 +1,16 @@
 import { gdService } from '../engine/GdService.js';
 import { describeOutcome } from '../gd/outcome.js';
 import { showToast } from './toast.js';
-import { renderPanelHtml } from './gdPanelView.js';
+import { renderGuideHtml, renderPanelHtml } from './gdPanelView.js';
 import { rememberGate } from '../engine/gateMemory.js';
+import { fetchConfig } from '../gd/leaderboard.js';
 
 export class GdPanel {
   constructor() {
     this.el = null;
     this.gate = null; // { label, launch } while the verified-human gate is showing
+    this.guide = false; // true while the G$ guide is showing
+    this.config = null; // /api/config, for the amounts the guide names
   }
 
   mount() {
@@ -18,7 +21,7 @@ export class GdPanel {
     this.el.innerHTML = `
       <div class="modal-card gd-card" role="dialog" aria-modal="true" aria-label="G$ wallet">
         <div class="modal-header">
-          <h3>G$ WALLET</h3>
+          <h3 id="gd-title">G$ WALLET</h3>
           <button id="gd-close" class="pixel-close-btn" type="button" aria-label="Close">✖</button>
         </div>
         <div id="gd-body" class="modal-body gd-body"></div>
@@ -42,7 +45,17 @@ export class GdPanel {
     this.open();
   }
 
-  open() {
+  /** The G$ guide: what G$ does in Moonshard, and this player's next step. */
+  openGuide() {
+    this.gate = null;
+    this.open({ guide: true });
+    if (!this.config) {
+      fetchConfig().then((config) => { this.config = config; this.render(); }).catch(() => { /* the guide says less */ });
+    }
+  }
+
+  open({ guide = false } = {}) {
+    this.guide = guide;
     this.mount();
     this.el.classList.remove('hidden');
     this.render();
@@ -51,6 +64,7 @@ export class GdPanel {
 
   close() {
     this.gate = null;
+    this.guide = false;
     this.el?.classList.add('hidden');
     // The button that was clicked is hidden now but would keep the keyboard until the browser notices, and this panel
     // swallows key presses meant for itself: give the keyboard back to the game at once.
@@ -59,9 +73,11 @@ export class GdPanel {
 
   render() {
     if (!this.el) return;
-    this.el.querySelector('#gd-body').innerHTML = renderPanelHtml(gdService.getStatus(), Date.now(), {
-      gate: this.gate ? { label: this.gate.label } : null,
-    });
+    const status = gdService.getStatus();
+    this.el.querySelector('#gd-title').textContent = this.guide ? 'G$ IN MOONSHARD' : 'G$ WALLET';
+    this.el.querySelector('#gd-body').innerHTML = this.guide
+      ? renderGuideHtml(status, { config: this.config, now: Date.now() })
+      : renderPanelHtml(status, Date.now(), { gate: this.gate ? { label: this.gate.label } : null });
   }
 
   async onClick(e) {

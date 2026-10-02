@@ -17,3 +17,4 @@ export const SHARD_RATE_GD = 2;
 export const DAILY_SHARD_CAP_GD = 100;
 
 export const explorerTx = (hash) => `https://celoscan.io/tx/${hash}`;
+export const explorerAddress = (address) => `https://celoscan.io/address/${address}`;

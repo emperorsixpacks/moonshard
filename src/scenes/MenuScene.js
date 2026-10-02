@@ -5,6 +5,7 @@ import { gdService } from '../engine/GdService.js';
 import { pauseService } from '../engine/PauseService.js';
 import { requirePlay, startIsBlocked } from '../engine/playGate.js';
 import { menuBadgeText } from '../ui/menuBadge.js';
+import { takeFirstVisit } from '../ui/guideOnce.js';
 
 /*
  * Sizes for the two canvases (480x270 landscape, 480x440 tall), in game units.
@@ -18,11 +19,11 @@ import { menuBadgeText } from '../ui/menuBadge.js';
 const LAYOUT = {
   land: {
     banner: { w: 310, h: 42, y: 33, title: '13px', titleDy: -12, sub: '6.5px', subDy: 1, badge: '4.5px', badgeDy: 12, stroke: 3 },
-    list: { gap: 4, pad: 3, rowH: 25, rowGap: 2, icon: '15px', iconDx: 19, label: '8px', labelDy: -5, desc: '4.5px', descDy: 6 },
+    list: { gap: 4, pad: 3, rowH: 22, rowGap: 2, icon: '14px', iconDx: 19, label: '8px', labelDy: -4.5, desc: '4.5px', descDy: 5 },
   },
   tall: {
     banner: { w: 424, h: 68, y: 48, title: '20px', titleDy: -21, sub: '11.5px', subDy: 2, badge: '6.8px', badgeDy: 21, stroke: 3 },
-    list: { gap: 6, pad: 4, rowH: 44, rowGap: 3, icon: '26px', iconDx: 30, label: '14px', labelDy: -9, desc: '6.3px', descDy: 10 },
+    list: { gap: 6, pad: 4, rowH: 40, rowGap: 3, icon: '24px', iconDx: 30, label: '14px', labelDy: -8, desc: '6.3px', descDy: 9 },
   },
   // Positions below are measured from the top edge of the modal panel (which is centred on the canvas)
   storyModal: {
@@ -179,20 +180,26 @@ export default class MenuScene extends Phaser.Scene {
         action: () => this.leaveFor('SurvivalScene')
       },
       {
+        icon: '💚',
+        text: '4. G$: EARN & SPEND',
+        desc: 'Claim • Buy Your Blade • Moon Shop • Prizes',
+        action: () => window.__gdPanel?.openGuide()
+      },
+      {
         icon: '⚒️',
-        text: '4. FORGE & SATCHEL',
-        desc: 'Craft Blades & Companion Relics',
+        text: '5. FORGE & SATCHEL',
+        desc: 'Forge Blades • Moon Shop Looks',
         action: () => this.leaveFor('ForgeScene')
       },
       {
         icon: '💰',
-        text: '5. LEADERBOARD',
-        desc: 'All-Time & Daily Rankings',
+        text: '6. LEADERBOARD',
+        desc: 'Daily G$ Prizes • All-Time Rankings',
         action: () => this.leaveFor('LeaderboardScene')
       },
       {
         icon: '⚙️',
-        text: '6. SETTINGS',
+        text: '7. SETTINGS',
         desc: 'Sound Effects & Background Music',
         action: () => this.openSettingsModal()
       }
@@ -245,6 +252,9 @@ export default class MenuScene extends Phaser.Scene {
       this.reopenModal = null;
       this[reopen]();
     }
+
+    // G$ is how this game is played: a first visit opens the G$ guide once, over the menu
+    if (takeFirstVisit()) window.__gdPanel?.openGuide();
   }
 
   /**
