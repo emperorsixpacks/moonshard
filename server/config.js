@@ -29,16 +29,78 @@ export const NONCE_TTL_MS = 5 * 60_000;
 export const IDENTITY_TTL_MS = 5 * 60_000;
 export const IDENTITY_CACHE_MAX = 5_000;
 
+/**
+ * How many points a human can score, derived from the game's own tables (src/config.js: MOBS, SURVIVAL; and
+ * src/scenes/SurvivalScene.js) so that the server's ceiling is a number anyone can recompute, not a guess. Every input
+ * is the worst case, all at once, which no real run comes near; server/test/runs.plausibility.test.js reads the client's
+ * tables and fails when one of them grows past the value copied here, so the ceiling cannot silently go stale.
+ *
+ *   per kill, at most   (85 + 40) x 4.0 = 500
+ *     85   BASALT_GOLEM, the most valuable regular mob (a boss is a one-off, below).
+ *     40   the largest bonus on one kill: a deflected-projectile kill (+40). A snail's ricochet is +50, but a snail
+ *          is worth 25, so 25 + 50 stays below 85 + 40. Backstab and stomp add 25, a counter 20.
+ *     4.0  MAX_COMBO. The multiplier applies to base + bonus and is reached after 15 kills in a row.
+ *   kills a second     2
+ *     The arena holds at most 4 foes at once (getMaxConcurrentForWave) and the endless spawner refills it once every
+ *     2 s, so over any stretch of time no more than 2 foes a second exist to be killed. (The 12 kills a second in
+ *     MAX_KILLS_PER_SEC is the looser limit on a bare count, which Story needs: its foes are placed, not spawned.)
+ *   time               + 10 a second (PTS_PER_SECOND)
+ *   => 2 x 500 + 10 = 1,010 points a second, sustained. The blanket limit it replaces was 1,500.
+ *
+ * One-off points that are not part of that rate, allowed once per run (SCORE_BURST_PTS):
+ *   - the wave-clear bonus of each of the 5 scripted waves: 100 + 50 x wave + 20 x (30 + 10 x wave - 1) at best
+ *     (the speed bonus for clearing in 1 s), 5,900 in all;
+ *   - the Survival boss (BOSS_GORGOK, 500 points) killed at the 4.0 combo: (500 + 40) x 4 = 2,160.
+ */
+const BOSS_PTS = 500;
+export const SCORE_MODEL = Object.freeze({
+  KILLS_PER_SEC: 2,
+  KILL_BASE_PTS_MAX: 85,
+  KILL_BONUS_PTS_MAX: 40,
+  COMBO_MAX: 4.0,
+  TIME_PTS_PER_SEC: 10,
+  WAVE_BONUS_PTS_MAX: [0, 1, 2, 3, 4].reduce((sum, wave) => sum + 100 + 50 * wave + 20 * (30 + 10 * wave - 1), 0),
+  BOSS_KILL_PTS_MAX: (BOSS_PTS + 40) * 4.0,
+});
+
 /** Game-design tunables. Amounts are wei of G$ (18 decimals). */
 export const GAME = {
   TICKET_MAX_AGE_MS: 40 * 60_000,
+  /** A submit shorter than this is refused outright (invalid_duration). */
   MIN_DURATION_MS: 5_000,
-  CLOCK_TOLERANCE_MS: 5_000,
-  MAX_PTS_PER_SEC: 1_500,
+  /**
+   * A run is ranked, and credits Shards, only after this much play: on the server's own clock since /runs/start AND in
+   * the duration the client claims. Both, so that waiting 30 s and then claiming 5 s of play (or the reverse) counts for
+   * nothing. A run under it is accepted onto the open board, unflagged, just not ranked or paid.
+   */
+  MIN_RANKED_ELAPSED_MS: 30_000,
+  /**
+   * How far a checkpoint time or a claimed duration may run ahead of the server's clock. An honest client never does:
+   * it starts counting when the /runs/start response arrives, after the server handled the request. This only absorbs
+   * rounding and clock-rate drift, so it is small: it was 5 s, equal to the old minimum run, which excluded nothing.
+   */
+  CLOCK_TOLERANCE_MS: 2_000,
+  /** Checkpoints are at least this far apart, except for MAX_SHORT_CHECKPOINT_GAPS of them per run (the closing one). */
+  MIN_CHECKPOINT_GAP_MS: 2_000,
+  MAX_SHORT_CHECKPOINT_GAPS: 1,
+  /**
+   * The wait between two /runs/start of one player and mode (429 slow_down); the server cannot tell a death from a
+   * restart, so each wait is the shortest one that no honest restart is shorter than.
+   *   Trial 10 s. A Survival run ends at the first death and an idle player is not first hit before about 6 s (the
+   *   boars of wave 1 charge from 3.2 s) and needs five hits, 1.2 s apart, to die: no Trial ends before about 10 s,
+   *   and the next one is a menu round trip further on.
+   *   Story 3 s. A Story life can end within seconds (a fall or a hazard near the start) and the player retries at
+   *   once, so it is shorter than any life that gets as far as the 5 s a submit needs. It still caps starts at 20 a
+   *   minute per player.
+   */
+  START_GAP_MS: { TRIAL: 10_000, STORY: 3_000 },
+  MAX_PTS_PER_SEC: SCORE_MODEL.KILLS_PER_SEC * (SCORE_MODEL.KILL_BASE_PTS_MAX + SCORE_MODEL.KILL_BONUS_PTS_MAX) * SCORE_MODEL.COMBO_MAX
+    + SCORE_MODEL.TIME_PTS_PER_SEC,
+  SCORE_BURST_PTS: SCORE_MODEL.WAVE_BONUS_PTS_MAX + SCORE_MODEL.BOSS_KILL_PTS_MAX,
   MAX_KILLS_PER_SEC: 12,
+  KILLS_SLACK: 5,
   MAX_SCORE: 100_000_000,
   MAX_CHECKPOINTS: 400,
-  CHECKPOINT_SLACK_PTS: 300,
   MIN_COVERAGE_RANKED: 0.5,
   MIN_COVERAGE_BOSS: 0.8,
   SHARDS_PER_KILL: 2,
@@ -48,10 +110,18 @@ export const GAME = {
   SHARD_RATE: G(2),
   PRIZES: [G(1000), G(600), G(300)],
   VOUCHER_TTL_SEC: 7 * 24 * 3600,
+  /**
+   * What a boss clear needs, in play time (claimed) AND server time. The chapter-1 boss arena opens only after every foe
+   * on the level is dead (StoryScene.unsealBossArena) and its gate is 2,310 px from the start at a run speed of 155 px/s:
+   * 14.9 s of unobstructed running, then about forty swings (320 ms each) for sixteen foes, seven more for the boss's
+   * 240 HP and its intro. On paper nothing clears faster than about 35 s and real play is slower, so 30 s is a floor
+   * beneath every legitimate clear: they all stay possible, and the figure is the one already in force.
+   */
   BOSS_MIN: { durationMs: 30_000, kills: 3 },
   ENGAGEMENT_BLOCK_WINDOW: 300n,
   ATTEST_MAX_AGE_MS: 24 * 3600_000,
-  ENGAGEMENT_REWARD_G: "5000", // informational: what the protocol pool pays today (read on-chain 2026-10-01)
+  // The first-boss bounty is not a constant here: the pool's reward and this app's share of it are read from the
+  // chain (see engagement.js), so the UI promises what the player will actually receive.
 };
 
 export const config = {

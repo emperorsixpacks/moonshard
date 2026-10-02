@@ -4,6 +4,7 @@ import { GAME } from "../config.js";
 import { HttpError, ah } from "./http.js";
 import { dayKey } from "./time.js";
 import { rankOf } from "./leaderboard.js";
+import { createRefreshCooldown } from "./auth.js";
 
 const UNIQUE_VIOLATION = "23505"; // Postgres SQLSTATE, same code from pg and PGlite
 
@@ -23,8 +24,21 @@ function sameTicket(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
+/** The ids /runs/start issues: crypto.randomUUID(), lowercase. */
+const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Throws 400 bad_run_id unless `id` is a run id the server could have issued. Checked before the id reaches the
+ * database: a NUL byte is not valid text for Postgres and used to turn a lookup into a 500.
+ * @returns {string} the id
+ */
+export function assertRunId(id) {
+  if (typeof id !== "string" || !RUN_ID.test(id)) throw new HttpError(400, "bad_run_id");
+  return id;
+}
+
 async function loadOwnedRun(ctx, req) {
-  const { rows } = await ctx.db.query("SELECT * FROM runs WHERE run_id = $1", [req.params.id]);
+  const { rows } = await ctx.db.query("SELECT * FROM runs WHERE run_id = $1", [assertRunId(req.params.id)]);
   const run = rows[0];
   if (!run || run.subject !== req.player.subject) throw new HttpError(404, "run_not_found");
   return run;
@@ -37,15 +51,47 @@ function assertOpen(ctx, run) {
 }
 
 const int = (v) => (Number.isFinite(Number(v)) && v !== null && v !== "" && typeof v !== "boolean" ? Math.trunc(Number(v)) : NaN);
-/** `db` is anything with query(): the pool, or the transaction handle when the flag must commit with other writes. */
-const addFlag = (db, runId, flags) =>
-  db.query(
-    "UPDATE runs SET flags = CASE WHEN flags = '' THEN $2 ELSE flags || ',' || $2 END WHERE run_id = $1",
-    [runId, flags.join(",")],
+
+/**
+ * Adds each flag to the run, once: a flag already on the run is not appended again, so a client that keeps posting
+ * bad checkpoints cannot grow the `flags` column (and rewrite the row every time) without bound.
+ * `db` is anything with query(): the pool, or the transaction handle when the flag must commit with other writes.
+ */
+async function addFlag(db, runId, flags) {
+  for (const flag of new Set(flags)) {
+    await db.query(
+      `UPDATE runs SET flags = CASE WHEN flags = '' THEN $2 ELSE flags || ',' || $2 END
+        WHERE run_id = $1 AND position(',' || $2 || ',' IN ',' || flags || ',') = 0`,
+      [runId, flag],
+    );
+  }
+}
+
+/**
+ * Is `next` more than a player could have scored, killed or collected in the `gapMs` since `last`?
+ * Points and kills are allowed their sustained rate over the gap plus a one-off allowance for the events the rate does
+ * not model (a boss kill, wave bonuses, a swing that clears the arena); Shards follow the kills.
+ */
+function jumpedSince(last, next, gapMs) {
+  const seconds = gapMs / 1000;
+  return (
+    next.score - last.score > GAME.MAX_PTS_PER_SEC * seconds + GAME.SCORE_BURST_PTS ||
+    next.kills - last.kills > GAME.MAX_KILLS_PER_SEC * seconds + GAME.KILLS_SLACK ||
+    next.shards - last.shards > GAME.SHARDS_PER_KILL * Math.max(0, next.kills - last.kills) + GAME.SHARDS_BASE_ALLOWANCE
   );
+}
 
 export function runRoutes(ctx) {
   const r = express.Router();
+
+  // One wait per (player, mode) between /runs/start calls (GAME.START_GAP_MS). Kept in this process, like the
+  // /me/refresh cooldown: it is abuse control, not an invariant. The invariant (one open run per player and mode) is
+  // the database's, and holds across processes. `config.startGapMs` overrides the waits (the start-race tests set 0).
+  const gaps = { ...GAME.START_GAP_MS, ...ctx.config.startGapMs };
+  const startCooldown = {
+    TRIAL: createRefreshCooldown({ now: () => ctx.now(), cooldownMs: gaps.TRIAL }),
+    STORY: createRefreshCooldown({ now: () => ctx.now(), cooldownMs: gaps.STORY }),
+  };
 
   r.post("/runs/start", ctx.requireAuth, ah(async (req, res) => {
     const { mode, chapter } = req.body || {};
@@ -55,11 +101,13 @@ export function runRoutes(ctx) {
       ch = Number(chapter);
       if (!Number.isInteger(ch) || ch < 1 || ch > 5) throw new HttpError(400, "bad_chapter");
     }
+    const p = req.player;
+    // After the request is known to be valid (a refused one must not use up the wait), before any database work.
+    if (!startCooldown[mode].tryAcquire(p.subject)) throw new HttpError(429, "slow_down");
     const now = ctx.now();
     const day = dayKey(now);
     const seed = mode === "TRIAL" ? day : `story-${ch}`;
     const runId = crypto.randomUUID();
-    const p = req.player;
     const voidThenInsert = () => ctx.db.tx(async (t) => {
       // Queue racing starts of this (subject, mode) behind one another until this transaction ends, so that
       // the UPDATE below always sees the previous start's committed run. Without it three or more racing
@@ -116,21 +164,40 @@ export function runRoutes(ctx) {
       const reason = new Set();
       let duplicates = 0;
 
+      // Checkpoints are at least MIN_CHECKPOINT_GAP_MS apart, so a run holds about elapsed / 2 s rows however it is
+      // posted. The one exception is the closing checkpoint the honest client sends when the run ends, which can land
+      // a moment after its last periodic one: MAX_SHORT_CHECKPOINT_GAPS gaps per run (counted over what is stored,
+      // time zero counting as the first predecessor) may be shorter.
+      let shortGaps = 0;
+      let before = 0;
+      for (const c of stored) {
+        if (c.t_ms - before < GAME.MIN_CHECKPOINT_GAP_MS) shortGaps += 1;
+        before = c.t_ms;
+      }
+
       for (const pt of points) {
         const t = int(pt?.t), score = int(pt?.score), kills = int(pt?.kills), shards = int(pt?.shards ?? 0);
         if ([t, score, kills, shards].some((x) => !Number.isInteger(x) || x < 0)) { reason.add("cp_malformed"); break; }
         if (known.has(`${t}|${score}|${kills}|${shards}`)) { duplicates += 1; continue; }
         if (t <= prev.t_ms) { reason.add("cp_time"); break; }
+        const tooClose = t - prev.t_ms < GAME.MIN_CHECKPOINT_GAP_MS;
+        if (tooClose && shortGaps >= GAME.MAX_SHORT_CHECKPOINT_GAPS) { reason.add("cp_gap"); break; }
         if (t > elapsed + GAME.CLOCK_TOLERANCE_MS) { reason.add("cp_future"); break; }
         if (score < prev.score || kills < prev.kills || shards < prev.shards) { reason.add("cp_regress"); break; }
         // No run can ever bank more than this, and an unbounded value would overflow the integer column.
         if (shards > GAME.MAX_SHARDS_PER_RUN) { reason.add("cp_shards"); break; }
         const dt = (t - prev.t_ms) / 1000;
-        if (score - prev.score > GAME.MAX_PTS_PER_SEC * dt + GAME.CHECKPOINT_SLACK_PTS) { reason.add("cp_score_rate"); break; }
-        if (kills - prev.kills > GAME.MAX_KILLS_PER_SEC * dt + 5) { reason.add("cp_kill_rate"); break; }
+        // Since the previous checkpoint: the sustained rate, plus a one-off allowance for events the rate does not model.
+        if (score - prev.score > GAME.MAX_PTS_PER_SEC * dt + GAME.SCORE_BURST_PTS) { reason.add("cp_score_rate"); break; }
+        if (kills - prev.kills > GAME.MAX_KILLS_PER_SEC * dt + GAME.KILLS_SLACK) { reason.add("cp_kill_rate"); break; }
+        // Since the start: the allowances above are not available at every checkpoint, or closely spaced checkpoints
+        // would add one each. Honest play stays far below the sustained rate over any stretch from the start.
+        if (score > GAME.MAX_PTS_PER_SEC * (t / 1000)) { reason.add("cp_score_total"); break; }
+        if (kills > GAME.MAX_KILLS_PER_SEC * (t / 1000) + GAME.KILLS_SLACK) { reason.add("cp_kill_rate"); break; }
         if (seq + 1 > GAME.MAX_CHECKPOINTS) { reason.add("cp_limit"); break; }
         seq += 1;
         fresh.push([run.run_id, seq, t, score, kills, shards]);
+        if (tooClose) shortGaps += 1;
         prev = { t_ms: t, score, kills, shards };
       }
 
@@ -140,7 +207,7 @@ export function runRoutes(ctx) {
           row,
         );
       }
-      if (reason.size) await addFlag(t, run.run_id, [...reason]);
+      await addFlag(t, run.run_id, reason);
       return { accepted: fresh.length, duplicates, reason };
     });
     if (reason.size) {
@@ -173,7 +240,8 @@ export function runRoutes(ctx) {
 
     const wantsBoss = b.bossCleared === true;
     if (wantsBoss && run.mode !== "STORY") throw new HttpError(400, "boss_requires_story");
-    if (wantsBoss && (durationMs < GAME.BOSS_MIN.durationMs || kills < GAME.BOSS_MIN.kills)) {
+    // The boss needs the play time (claimed) and the server's own time (measured): see GAME.BOSS_MIN.
+    if (wantsBoss && (durationMs < GAME.BOSS_MIN.durationMs || elapsed < GAME.BOSS_MIN.durationMs || kills < GAME.BOSS_MIN.kills)) {
       throw new HttpError(400, "boss_telemetry_insufficient");
     }
 
@@ -185,14 +253,26 @@ export function runRoutes(ctx) {
     ).rows[0];
     const coverage = last ? last.t_ms / durationMs : 0;
     const flags = run.flags ? run.flags.split(",") : [];
-    if (last && (score < last.score || kills < last.kills || shards < last.shards)) flags.push("totals_below_checkpoint");
+    if (last) {
+      const totals = { score, kills, shards };
+      if (score < last.score || kills < last.kills || shards < last.shards) flags.push("totals_below_checkpoint");
+      // The totals are the run's last point. Whatever they add to the last checkpoint must fit in the time since it,
+      // on the server's clock: a checkpoint posted at the very end (zero, say) does not cover the whole run's totals.
+      // Elapsed time, not the claimed duration: a run that was paused has less claimed play than wall time, and the
+      // client's checkpoints follow the wall clock. Plus the tolerance, for the same reason as everywhere else.
+      if (jumpedSince(last, totals, Math.max(0, elapsed - last.t_ms) + GAME.CLOCK_TOLERANCE_MS)) flags.push("totals_above_checkpoint");
+    }
     if (wantsBoss && coverage < GAME.MIN_COVERAGE_BOSS) flags.push("boss_low_coverage");
 
+    // Only a run that has been played for a while counts: the server's own clock since /runs/start AND the claimed play
+    // time must both reach MIN_RANKED_ELAPSED_MS. Shorter runs are still recorded (open board), unflagged, not ranked.
+    const playedLongEnough = elapsed >= GAME.MIN_RANKED_ELAPSED_MS && durationMs >= GAME.MIN_RANKED_ELAPSED_MS;
     const bossCleared = wantsBoss && flags.length === 0;
-    const rankedOk = Boolean(run.verified) && flags.length === 0 && (run.mode === "STORY" || coverage >= GAME.MIN_COVERAGE_RANKED);
-    // Shards are paid out in G$, so they need the evidence a ranked score needs: no flags and checkpoints
-    // covering at least half of the run. Without it, start + submit alone would bank a full day's cap.
-    const shardsCredited = Boolean(run.verified) && flags.length === 0 && coverage >= GAME.MIN_COVERAGE_RANKED;
+    const rankedOk = Boolean(run.verified) && flags.length === 0 && playedLongEnough
+      && (run.mode === "STORY" || coverage >= GAME.MIN_COVERAGE_RANKED);
+    // Shards are paid out in G$, so they need the evidence a ranked score needs: no flags, a run played for a while, and
+    // checkpoints covering at least half of it. Without it, start + submit alone would bank a full day's cap.
+    const shardsCredited = Boolean(run.verified) && flags.length === 0 && playedLongEnough && coverage >= GAME.MIN_COVERAGE_RANKED;
 
     let isNewBest = false;
     await ctx.db.tx(async (t) => {

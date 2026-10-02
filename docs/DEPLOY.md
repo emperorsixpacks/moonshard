@@ -25,14 +25,25 @@ DAILY_CAP=5000000000000000000000 \
 forge script script/Deploy.s.sol --rpc-url https://forno.celo.org --account moonshard-deployer --broadcast
 ```
 
-`MAX_PER_VOUCHER` and `DAILY_CAP` are wei of G$ (18 decimals): the values above are 1,000 G$ per voucher and 5,000 G$ per UTC day. Size them to what you fund. Then fund the vault and set `VAULT_ADDRESS` on the server:
+`MAX_PER_VOUCHER` and `DAILY_CAP` are wei of G$ (18 decimals): the values above are 1,000 G$ per voucher and 5,000 G$ per UTC day. Then fund the vault and set `VAULT_ADDRESS` on the server:
 
 ```bash
 cast send 0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A "transfer(address,uint256)" <VAULT_ADDRESS> 10000000000000000000000 \
   --account moonshard-deployer --rpc-url https://forno.celo.org
 ```
 
-The owner can later `setCaps`, `setSigner`, `pause` or `withdraw`.
+The owner can later `setCaps`, `setSigner`, `pause` or `withdraw`. `renounceOwnership` is disabled (it would leave the vault with no owner and no way to do any of those): hand the vault over with `transferOwnership`, then the new owner calls `acceptOwnership`.
+
+### Sizing the caps
+
+The vault enforces both caps on every redemption. A voucher above `MAX_PER_VOUCHER`, or one that would take a UTC day's redemptions above `DAILY_CAP`, **reverts on-chain**, so the winner is holding a voucher they can never redeem. The server signs whatever the game has earned, so the caps have to be big enough for it:
+
+- `MAX_PER_VOUCHER` must be at least **1,000 G$**: the rank-1 daily prize. (A player's shard harvest is at most 100 G$.)
+- `DAILY_CAP` must be at least **1,900 + 100 x the verified players you expect to redeem on one UTC day**. 1,900 G$ is the three daily prizes (1,000 + 600 + 300) and 100 G$ is one player's full shard harvest (50 shards x 2 G$, the daily cap per player). For example, 50 players need 6,900 G$ and 200 players need 21,900 G$.
+- The 5,000 G$ in the command above covers the prizes and 31 harvesting players a day. It is a launch size: raise it as the player base grows, with `cast send <VAULT_ADDRESS> "setCaps(uint256,uint256)" <maxPerVoucher> <dailyCap> --account <owner account> --rpc-url https://forno.celo.org`.
+- Do not size it far above what you need. The caps are also the most a leaked `VOUCHER_SIGNER_KEY` can drain: up to `DAILY_CAP` in each UTC day (and up to twice that across a UTC midnight), until you notice and call `setSigner` or `pause`. Likewise fund the vault for a few days of expected payouts, not more.
+
+When the API starts it reads `maxPerVoucher()` and `dailyCap()` from the vault and compares them with the prizes it signs. If they are too small it logs a `WARNING` with both numbers (it never refuses to start, and it only says so when the RPC answers). After every deploy or `setCaps`, restart the API and look for `vault caps ok` in its log.
 
 ## 2. Register the Engagement Rewards app
 

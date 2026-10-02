@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { encodeAbiParameters, encodeEventTopics, verifyTypedData, zeroAddress } from "viem";
 import { makeHarness, ENGAGEMENT } from "./helpers.js";
 import { engagementAbi } from "../src/chain.js";
@@ -44,7 +45,8 @@ test("no attestation without a cleared boss run, for other players' runs, unveri
     const p = await h.newPlayer({ verified: true });
     const q = await h.newPlayer({ verified: true });
     const u = await h.newPlayer();
-    const noRun = await h.api.post("/engagement/attest", { runId: "nope" }, { token: p.token });
+    // a well-formed id that no run has ("nope" is not a run id at all: 400 bad_run_id, see run-ids.test.js)
+    const noRun = await h.api.post("/engagement/attest", { runId: crypto.randomUUID() }, { token: p.token });
     assert.equal(noRun.status, 403);
     assert.equal(noRun.body.error, "boss_not_cleared");
 

@@ -1,8 +1,12 @@
 import { createServer } from "node:http";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { encodeAbiParameters, encodeEventTopics, parseAbi, verifyMessage } from "viem";
+import {
+  createPublicClient, custom, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, parseAbi, verifyMessage,
+  zeroAddress,
+} from "viem";
 import { createDb } from "../src/db.js";
 import { createApp } from "../src/app.js";
+import { createEngagementReward } from "../src/engagement.js";
 
 export const T0 = Date.parse("2026-10-05T12:00:00.000Z");
 export const UBI = "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1";
@@ -29,6 +33,61 @@ export function ubiClaimedLog({ claimer, amount = 1_000_000n, address = UBI, has
     transactionIndex: 0,
     removed: false,
   };
+}
+
+// The EngagementRewards getters the server reads, declared here on purpose in their FULL deployed shape (the SDK's ABI
+// of 0x25db...AE43), not imported from the server: the server decodes only the first nine fields of registeredApps,
+// and a fixture built from the server's own ABI could not show that this is enough.
+const engagementFixtureAbi = parseAbi([
+  "function rewardAmount() view returns (uint96)",
+  "function registeredApps(address) view returns (address owner, address rewardReceiver, uint96 totalRewardsClaimed, uint32 registeredAt, uint32 lastResetAt, uint8 userAndInviterPercentage, uint8 userPercentage, bool isRegistered, bool isApproved, string description, string url, string email, address app, address signer)",
+]);
+
+/**
+ * A viem client whose JSON-RPC is a fake EngagementRewards contract. `state` is live: change the reward, the app's
+ * percentages, `isRegistered` or `fail` between requests, and read `reads` / `appsAsked` to see what the server asked.
+ * Calls to any other contract, or any other method, throw.
+ */
+export function fakeEngagementRpc(initial = {}) {
+  const state = {
+    rewardAmount: 5000n * 10n ** 18n,
+    userAndInviterPercentage: 80,
+    userPercentage: 60,
+    isRegistered: true,
+    isApproved: true,
+    fail: false,
+    reads: { rewardAmount: 0, registeredApps: 0 },
+    appsAsked: [],
+    ...initial,
+  };
+  // retryCount 0: viem would otherwise retry a failed request in the background (150 ms, 300 ms, 600 ms), long enough
+  // for a test to flip `fail` back and see a "failed" call succeed behind its back.
+  const client = createPublicClient({
+    transport: custom({
+      async request({ method, params }) {
+        if (method !== "eth_call") throw new Error(`unexpected rpc method ${method}`);
+        const { to, data } = params[0];
+        if (to.toLowerCase() !== ENGAGEMENT.toLowerCase()) throw new Error(`call to an unexpected contract ${to}`);
+        if (state.fail) throw new Error("rpc down");
+        const { functionName, args } = decodeFunctionData({ abi: engagementFixtureAbi, data });
+        state.reads[functionName] += 1;
+        if (functionName === "rewardAmount") return encodeFunctionResult({ abi: engagementFixtureAbi, functionName, result: state.rewardAmount });
+        state.appsAsked.push(args[0].toLowerCase());
+        // an unknown app reads back as all zeros, as a Solidity mapping getter does
+        const on = state.isRegistered;
+        return encodeFunctionResult({
+          abi: engagementFixtureAbi,
+          functionName,
+          result: [
+            on ? args[0] : zeroAddress, on ? args[0] : zeroAddress, 0n, on ? 1_700_000_000 : 0, 0,
+            on ? state.userAndInviterPercentage : 0, on ? state.userPercentage : 0, on, on && state.isApproved,
+            on ? "Moonshard" : "", on ? "https://moonshard.example" : "", on ? "ops@moonshard.example" : "", on ? args[0] : zeroAddress, zeroAddress,
+          ],
+        });
+      },
+    }, { retryCount: 0 }),
+  });
+  return { state, client };
 }
 
 export function fakeClock(start = T0) {
@@ -104,6 +163,12 @@ export async function makeHarness(opts = {}) {
   // `opts.env` stands in for process.env (NODE_ENV and friends), so a test can build a "production" app and the suite
   // does not change behaviour when it is run with NODE_ENV=production in the shell.
   const { app, ctx } = createApp({ db, chain, config, now: clock, env: opts.env ?? { NODE_ENV: "test" } });
+  // The server reads the protocol's reward terms with its own RPC client (built from config.rpcUrl, which no test has).
+  // Give every harness a fake EngagementRewards instead; `engagementReader: "real"` leaves the server's own in place.
+  const engagementRpc = opts.engagementRpc ?? fakeEngagementRpc();
+  if (opts.engagementReader !== "real") {
+    ctx.engagementReward = createEngagementReward({ client: engagementRpc.client, address: ENGAGEMENT, app: ctx.appAccount?.address, now: clock });
+  }
   const server = await new Promise((resolve) => {
     const s = createServer(app).listen(0, "127.0.0.1", () => resolve(s));
   });
@@ -137,7 +202,7 @@ export async function makeHarness(opts = {}) {
   }
 
   return {
-    api, ctx, chain, clock, db, config, newPlayer,
+    api, ctx, chain, clock, db, config, newPlayer, engagementRpc,
     base,
     close: async () => {
       await new Promise((r) => server.close(r));

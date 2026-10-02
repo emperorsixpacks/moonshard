@@ -110,9 +110,13 @@ try {
   await shot('panel-claimed');
   await page.click('#gd-close');
 
-  console.log('▶ Daily Shard Trial in the real game (ticketed run, 25 s)');
+  console.log('▶ Daily Shard Trial in the real game (ticketed run, 35 s)');
   await startScene('SurvivalScene');
-  await page.waitForTimeout(25_000);
+  // The server ranks a run, and so settles a prize for it, only from 30 s of play. An idle player is killed after about
+  // 32 s, which would end the run on its own right at that line, so the player is made unhittable for the wait.
+  await page.waitForFunction(() => window.game.scene.getScene('SurvivalScene')?.player, null, { timeout: 30_000 });
+  await page.evaluate(() => { window.game.scene.getScene('SurvivalScene').player.invulnerableUntil = Number.MAX_SAFE_INTEGER; });
+  await page.waitForTimeout(35_000);
   await page.evaluate(() => window.game.scene.getScene('SurvivalScene').handleGameOver());
   await page.waitForTimeout(2500);
   await shot('gameover-trial');
@@ -145,7 +149,8 @@ try {
 
   await startScene('MenuScene');
   await openWallet();
-  await panelHas('CLAIM 5,000 G$ BOUNTY');
+  // the player's share of the pool's 5,000 G$ (registered at 80 / 60), read from the chain by the API: not the headline
+  await panelHas('CLAIM 2,400 G$ BOUNTY');
   await shot('panel-bounty');
   await page.click('[data-act="bounty"]');
   await panelHas('First-boss bounty claimed');

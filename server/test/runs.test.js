@@ -21,6 +21,7 @@ test("start returns a ticket, seed = UTC day, and voids the previous open run", 
     const a = await start(h, p);
     assert.equal(a.seed, "2026-10-05");
     assert.match(a.ticket, /^[0-9a-f]{64}$/);
+    h.clock.advance(10_000); // a Trial start waits 10 s after the previous one (see runs.limits.test.js)
     const b = await start(h, p);
     h.clock.advance(60_000);
     const stale = await submit(h, p, a);
