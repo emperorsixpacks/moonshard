@@ -11,9 +11,15 @@ const HOW_TO_FIX = "Generate one with: openssl rand -base64 32";
  *
  * JWT_SECRET signs sessions and run tickets, so a guessable one lets anyone forge both. The value
  * shipped in .env.example is a 32-character placeholder, so length alone would not catch a verbatim copy.
- * @param {{jwtSecret?: string}} config
+ *
+ * With NODE_ENV=production it also refuses two configurations that boot fine and then quietly lose or withhold money-relevant
+ * data: no DATABASE_URL (everything lives in memory and vanishes on the next restart; ALLOW_IN_MEMORY_DB=1 says a throwaway
+ * demo is meant), and a vault with no VOUCHER_SIGNER_KEY (prizes are settled and shown to the winners, and never signed).
+ * Outside production the second one is only a warning: it is what a person working on the client has.
+ * @param {{jwtSecret?: string, databaseUrl?: string, voucherSignerKey?: string, contracts?: {vault?: string}}} config
+ * @param {{env?: Record<string, string | undefined>, warn?: (message: string) => void}} [options]
  */
-export function assertSecureConfig(config) {
+export function assertSecureConfig(config, { env = process.env, warn = console.warn } = {}) {
   const secret = typeof config?.jwtSecret === "string" ? config.jwtSecret : "";
   if (secret.length < MIN_JWT_SECRET_LENGTH) {
     throw new Error(
@@ -22,6 +28,19 @@ export function assertSecureConfig(config) {
   }
   if (/change_me/i.test(secret)) {
     throw new Error(`JWT_SECRET is still the placeholder from .env.example. ${HOW_TO_FIX}`);
+  }
+
+  const production = env.NODE_ENV === "production";
+  if (production && !String(config?.databaseUrl ?? "").trim() && env.ALLOW_IN_MEMORY_DB !== "1") {
+    throw new Error(
+      "DATABASE_URL is empty, so every score, settled day and unredeemed Spoil would live in memory and vanish on the next restart. " +
+      "Set DATABASE_URL to a Postgres connection string (see docs/DEPLOY.md), or set ALLOW_IN_MEMORY_DB=1 if this production-mode server is a throwaway demo.",
+    );
+  }
+  if (config?.contracts?.vault && !config?.voucherSignerKey) {
+    const message = "VAULT_ADDRESS is set but VOUCHER_SIGNER_KEY is not: prizes would be settled and shown to the winners, but no voucher could ever be signed for them.";
+    if (production) throw new Error(`${message} Set VOUCHER_SIGNER_KEY (see docs/DEPLOY.md), or unset VAULT_ADDRESS.`);
+    warn(`[moonshard] WARNING: ${message}`);
   }
 }
 

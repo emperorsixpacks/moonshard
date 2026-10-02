@@ -172,6 +172,18 @@ test("H2: the per-IP request budget can be set (RATE_LIMIT_PER_MIN), and a bad v
   for (const [input, want] of cases) assert.equal(cfg.parseRateLimitPerMinute(input), want, `RATE_LIMIT_PER_MIN=${JSON.stringify(input)}`);
 });
 
+test("H2: CORS_ORIGINS is a list of origins, and a trailing slash pasted with one does not make it match nothing", () => {
+  // a browser sends Origin: https://site (never with a slash); "https://site/" would block the whole site with no diagnostic
+  const cases = [
+    [undefined, null], ["", null],
+    ["https://site.example", ["https://site.example"]],
+    ["https://site.example/", ["https://site.example"]],
+    [" https://a.example/ , https://b.example// ,, ", ["https://a.example", "https://b.example"]],
+    ["*", ["*"]],
+  ];
+  for (const [input, want] of cases) assert.deepEqual(cfg.parseCorsOrigins(input), want, `CORS_ORIGINS=${JSON.stringify(input)}`);
+});
+
 const wallet = (n) => "0x" + n.toString(16).padStart(40, "0");
 
 test("H2: the identity cache evicts its oldest entry once it holds more than maxEntries", async () => {
@@ -644,6 +656,9 @@ const FIX_COMMAND = "openssl rand -base64 32";
 const CONFIG_VARS = [
   "CORS_ORIGINS", "TRUST_PROXY", "DATABASE_URL", "DATABASE_CA", "CELO_RPC_URL", "CHAIN_ID", "IDENTITY_ADDRESS",
   "UBI_ADDRESS", "GD_TOKEN_ADDRESS", "ENGAGEMENT_ADDRESS", "VAULT_ADDRESS", "VOUCHER_SIGNER_KEY", "APP_SIGNER_KEY",
+  "RATE_LIMIT_PER_MIN",
+  // read at boot (src/boot.js): a suite run with NODE_ENV=production must not turn these tests into production boots
+  "NODE_ENV", "ALLOW_IN_MEMORY_DB",
 ];
 
 function childEnv(extra) {
@@ -675,14 +690,14 @@ test("H7: assertSecureConfig rejects missing, short and placeholder JWT secrets 
     "the placeholder in lower case": "change_me_" + "x".repeat(40),
   };
   for (const [label, jwtSecret] of Object.entries(rejected)) {
-    assert.throws(() => assertSecureConfig({ jwtSecret }), (err) => err.message.includes(FIX_COMMAND), label);
+    assert.throws(() => assertSecureConfig({ jwtSecret }, { env: {} }), (err) => err.message.includes(FIX_COMMAND), label); // env: this test is about the secret, not the shell it runs in
   }
   const accepted = {
     "exactly 32 characters": "a1B2".repeat(8),
     "the shape of `openssl rand -base64 32` output": "q3ZP0m8xWc1vYtL5nJr2KdH7sBfG9aUe4oVi6XyNu3E=",
     "64 hex characters": "0123456789abcdef".repeat(4),
   };
-  for (const [label, jwtSecret] of Object.entries(accepted)) assert.doesNotThrow(() => assertSecureConfig({ jwtSecret }), label);
+  for (const [label, jwtSecret] of Object.entries(accepted)) assert.doesNotThrow(() => assertSecureConfig({ jwtSecret }, { env: {} }), label);
 });
 
 test("H7: the server process exits 1 with the fix command on a short or placeholder JWT_SECRET, and never listens", async () => {

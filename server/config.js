@@ -7,6 +7,14 @@ dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), ".
 const env = process.env;
 const num = (v, d) => (v == null || v === "" ? d : Number(v));
 const list = (v) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean) : null);
+
+/**
+ * CORS_ORIGINS -> the origins allowed to read the API's answers. A browser sends Origin without a trailing slash, so
+ * "https://site.example/" pasted from an address bar would match nothing and silently block the whole site.
+ */
+export function parseCorsOrigins(v) {
+  return list(v)?.map((origin) => origin.replace(/\/+$/, "")) ?? null;
+}
 const G = (n) => BigInt(n) * 10n ** 18n;
 
 /**
@@ -137,7 +145,7 @@ export const GAME = {
 export const config = {
   port: num(env.PORT, 3001),
   jwtSecret: env.JWT_SECRET || "",
-  corsOrigins: list(env.CORS_ORIGINS) || "*",
+  corsOrigins: parseCorsOrigins(env.CORS_ORIGINS) || "*",
   trustProxy: parseTrustProxy(env.TRUST_PROXY),
   /** Per-IP request budgets: `general` for all of /api, `auth` (additionally) for /api/auth/*. */
   rateLimit: { enabled: true, windowMs: 60_000, general: parseRateLimitPerMinute(env.RATE_LIMIT_PER_MIN), auth: 30 },

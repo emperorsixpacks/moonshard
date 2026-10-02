@@ -16,6 +16,13 @@ test('builds the URL, sends bearer token and JSON body', async () => {
   assert.deepEqual(out, { ok: true });
 });
 
+test('an API root with a trailing slash (a very easy thing to paste into a build setting) still reaches /api/...', async () => {
+  const seen = [];
+  const fetchImpl = async (url) => { seen.push(url); return resp(200, { ok: true }); };
+  for (const base of ['https://x.test/', 'https://x.test//', 'https://x.test', '']) await apiFetch('/config', { base, fetchImpl });
+  assert.deepEqual(seen, ['https://x.test/api/config', 'https://x.test/api/config', 'https://x.test/api/config', '/api/config']);
+});
+
 test('HTTP errors become Error(code) with status and body', async () => {
   await assert.rejects(
     apiFetch('/x', { fetchImpl: async () => resp(409, { error: 'already_claimed', reason: 'r' }) }),

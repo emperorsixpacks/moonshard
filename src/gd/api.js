@@ -9,8 +9,9 @@ export async function apiFetch(path, {
 } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const root = String(base).replace(/\/+$/, ''); // "https://api.example/" would otherwise ask for //api/...
   try {
-    const res = await fetchImpl(`${base}/api${path}`, {
+    const res = await fetchImpl(`${root}/api${path}`, {
       method,
       headers: {
         'Content-Type': 'application/json',

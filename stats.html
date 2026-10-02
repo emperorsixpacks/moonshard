@@ -50,7 +50,7 @@
   <script type="module">
     import '@fontsource/press-start-2p/400.css';
     const meta = document.querySelector('meta[name="api-base"]')?.content || '';
-    const base = meta.startsWith('%') ? '' : meta;
+    const base = (meta.startsWith('%') ? '' : meta).replace(/\/+$/, ''); // no trailing slash: it would ask for //api/stats
     const fmt = (n) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
     // What each number is backed by is described in server/src/stats.js. "Verified humans" is everyone the identity
     // contract has ever vouched for, so it says so; only `verifiedActiveToday` means "a verified person played today".
