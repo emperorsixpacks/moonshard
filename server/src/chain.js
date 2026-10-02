@@ -16,6 +16,12 @@ export const engagementAbi = parseAbi([
   "event RewardClaimed(address indexed app, address indexed user, address indexed inviter, uint256 appReward, uint256 userAmount, uint256 inviterAmount)",
 ]);
 
+/** The G$ token: a Moon Shop purchase is a transfer() to the vault, proven by the token's own Transfer event. */
+export const tokenAbi = parseAbi([
+  "function transfer(address to, uint256 value) returns (bool)",
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
+]);
+
 export const vaultAbi = parseAbi([
   "function claimed(uint256) view returns (bool)",
   "event Claimed(uint256 indexed id, address indexed to, uint256 amount)",

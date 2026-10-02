@@ -14,6 +14,7 @@ import { ubiRoutes } from "./ubi.js";
 import { engagementRoutes } from "./engagement.js";
 import { rewardsRoutes } from "./rewards.js";
 import { statsRoutes } from "./stats.js";
+import { shopRoutes } from "./shop.js";
 
 const perIpLimiter = (windowMs, limit) =>
   rateLimit({
@@ -106,6 +107,7 @@ export function createApp({ db, chain, config, now = Date.now, env = process.env
   api.use(engagementRoutes(ctx));
   api.use(rewardsRoutes(ctx));
   api.use(statsRoutes(ctx));
+  api.use(shopRoutes(ctx));
   // ROUTES: later tasks mount their routers here.
   app.use("/api", api);
 

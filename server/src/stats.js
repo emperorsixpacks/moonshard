@@ -17,6 +17,8 @@ const CACHE_MS = 60_000;
  *     ubiClaimsTotal / ubiClaimsToday   recorded only after the claim's receipt shows the UBI scheme's UBIClaimed event.
  *     engagementClaims     recorded only after the receipt shows the Engagement Rewards RewardClaimed event.
  *     spoilsPaidG          recorded only from Claimed events of the vault in a confirmed receipt.
+ *     shopPurchases / shopSpentG   Moon Shop purchases, recorded only from the G$ token's Transfer event into the vault
+ *                          in a confirmed receipt (shop.js).
  *   Self-reported (free wallets count: anyone can make a wallet and sign in without verifying)
  *     walletsConnected     every wallet that ever signed in.
  *     runsToday            finished runs today, verified or not.
@@ -45,6 +47,7 @@ async function compute(ctx) {
   const engagement = await one("SELECT count(*)::int AS n FROM engagement_claims");
   const issued = await one("SELECT COALESCE(sum(amount::numeric), 0)::text AS t FROM spoils");
   const paid = await one("SELECT COALESCE(sum(amount::numeric), 0)::text AS t FROM spoil_claims");
+  const shop = await one("SELECT count(*)::int AS n, COALESCE(sum(amount::numeric), 0)::text AS t FROM purchases");
   const runRows = await q(
     "SELECT day, count(*)::int AS runs, count(DISTINCT subject)::int AS active FROM runs WHERE day >= $1 AND status = 'submitted' GROUP BY day",
     [days[0]],
@@ -62,6 +65,8 @@ async function compute(ctx) {
     engagementClaims: engagement.n,
     spoilsIssuedG: formatUnits(BigInt(issued.t.split(".")[0]), 18),
     spoilsPaidG: formatUnits(BigInt(paid.t.split(".")[0]), 18),
+    shopPurchases: shop.n,
+    shopSpentG: formatUnits(BigInt(shop.t.split(".")[0]), 18),
     series: days.map((day) => ({
       day,
       runs: runRows.find((r) => r.day === day)?.runs ?? 0,

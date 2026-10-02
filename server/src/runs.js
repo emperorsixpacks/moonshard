@@ -5,6 +5,7 @@ import { HttpError, ah } from "./http.js";
 import { dayKey } from "./time.js";
 import { rankOf } from "./leaderboard.js";
 import { createRefreshCooldown } from "./auth.js";
+import { hasBlade } from "./shop.js";
 
 const UNIQUE_VIOLATION = "23505"; // Postgres SQLSTATE, same code from pg and PGlite
 
@@ -102,6 +103,8 @@ export function runRoutes(ctx) {
       if (!Number.isInteger(ch) || ch < 1 || ch > 5) throw new HttpError(400, "bad_chapter");
     }
     const p = req.player;
+    // A hero fights with a blade paid for in G$ (shop.js). Before the wait below: a refused start must not use it up.
+    if (!(await hasBlade(ctx, p.subject))) throw new HttpError(403, "blade_required");
     // After the request is known to be valid (a refused one must not use up the wait), before any database work.
     // The refusal says how long to wait, so a client that restarts inside the wait can start its run once the wait is over
     // (a run without a ticket is not ranked) instead of guessing.

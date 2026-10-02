@@ -140,6 +140,26 @@ export const GAME = {
   ATTEST_MAX_AGE_MS: 24 * 3600_000,
   // The first-boss bounty is not a constant here: the pool's reward and this app's share of it are read from the
   // chain (see engagement.js), so the UI promises what the player will actually receive.
+  /**
+   * The Moon Shop: what G$ buys. Every purchase is a G$ transfer from the player to the prize vault, so what players spend
+   * goes back to the players who top the leaderboard. Open only when VAULT_ADDRESS is set (see shop.js).
+   *   blade     the blade a hero fights with. No run starts without it: buying it is the last step before play.
+   *   forge     the fee for forging a stronger blade. Its forest materials are earned in play: G$ alone forges nothing.
+   *   cosmetic  looks only. A Celestial blade has exactly the Glaive's power and needs the Glaive first, so it is a new
+   *             look for power already earned; skins and the pet change nothing in a fight.
+   * `requires`: an item that must be owned first. Listed before the items that require it.
+   */
+  SHOP: [
+    { id: "iron_starter", name: "Rusted Shortsword", kind: "blade", price: G(20) },
+    { id: "iron_broadsword", name: "Iron Broadsword", kind: "forge", price: G(30) },
+    { id: "forest_glaive", name: "Forest Glaive", kind: "forge", price: G(60) },
+    { id: "golden_albatross", name: "Golden Solar Blade", kind: "cosmetic", price: G(150), requires: "forest_glaive" },
+    { id: "corrupted_void", name: "Corrupted Void Edge", kind: "cosmetic", price: G(150), requires: "forest_glaive" },
+    { id: "skin_flame", name: "Crimson Flame Katana", kind: "cosmetic", price: G(100) },
+    { id: "skin_frost", name: "Frostmoon Crystal Saber", kind: "cosmetic", price: G(100) },
+    { id: "skin_verdant", name: "Verdant Jade Rapier", kind: "cosmetic", price: G(100) },
+    { id: "satchel_pet", name: "Moon Sprite", kind: "cosmetic", price: G(80) },
+  ],
 };
 
 export const config = {

@@ -4,6 +4,7 @@ import { GAME } from "../config.js";
 import { ah } from "./http.js";
 import { dayKey } from "./time.js";
 import { engagementRewardG, hasEngagementClaim, pendingBossRun } from "./engagement.js";
+import { ownedItems } from "./shop.js";
 
 export function rewardsRoutes(ctx) {
   const r = express.Router();
@@ -32,6 +33,7 @@ export function rewardsRoutes(ctx) {
       },
       blessing: blessing.rows.length > 0,
       pendingBossRunId: await pendingBossRun(ctx, p.subject),
+      owned: await ownedItems(ctx, p.subject), // Moon Shop items (shop.js)
     });
   }));
 
