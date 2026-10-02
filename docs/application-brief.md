@@ -1,7 +1,5 @@
 # Moonshard — GoodBuilders application brief (draft)
 
-> Derived from Luna Blade by ScriptedBro (MIT). Moonshard replaces its Nimiq layer with GoodDollar on Celo and adds identity-gated rewards, ticketed runs and public metrics. Credit is carried in `LICENSE`, `README.md` and `docs/ATTRIBUTIONS.md`.
->
 > Draft written against the Season 4 programme page (applications closed 2026-06-30). The next season's form had not been published when this was written, so re-check the criteria when it is.
 
 ## One-liner

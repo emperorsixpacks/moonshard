@@ -2,8 +2,6 @@
 
 A pixel action-platformer built with **Phaser 4**, where **GoodDollar (G$) on Celo** is how the game is played. It is for **verified humans**: connect a wallet (any EIP-1193 browser wallet, or WalletConnect) and pass GoodDollar's face verification, claim your daily G$ without leaving the game, **buy your blade with G$**, then play, forge stronger blades (forest materials plus a G$ fee), and buy looks in the **Moon Shop**. Every G$ a player pays goes into the prize vault on Celo. The prizes it can pay (a daily top 3 and a Shard Harvest, one human one slot) are built and tested, and switched off until the game has players (`PRIZES_ENABLED`).
 
-> **Derived from [Luna Blade](https://github.com/ScriptedBro/Luna-Blade) by ScriptedBro (MIT).** The gameplay and look are carried over; the Nimiq layer was replaced by GoodDollar, and the flow, reward logic and anti-cheat were rebuilt. See [`LICENSE`](LICENSE) and [`docs/ATTRIBUTIONS.md`](docs/ATTRIBUTIONS.md). **Art provenance is not fully cleared yet: do not publish this repository until the release gate in the attributions file is resolved.**
-
 ## What G$ does in the game
 
 | Feature | How it works | GoodDollar piece |
@@ -95,4 +93,4 @@ Deployment is described in [`docs/DEPLOY.md`](docs/DEPLOY.md) (not executed by t
 
 ## License
 
-MIT. Original copyright © 2026 ScriptedBro; additions © 2026 Moonshard contributors. Third-party art and audio are listed in [`docs/ATTRIBUTIONS.md`](docs/ATTRIBUTIONS.md).
+MIT, see [`LICENSE`](LICENSE). Third-party art and audio are listed in [`docs/ATTRIBUTIONS.md`](docs/ATTRIBUTIONS.md); some of the art's licences are still being cleared there, so keep this repository private until they are.
