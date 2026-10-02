@@ -42,7 +42,7 @@ Tests:
 |---|---|
 | `npm test` | client unit tests + server tests (in-memory Postgres) |
 | `npm run test:smoke` | first-visit browser check: no wallet, API down; a first visitor is stopped at the verified-human gate, every scene boots (started around the gate, as test tooling does), the panel opens, no console errors (needs no server or chain) |
-| `node test/client/browser/<name>.mjs` | real-browser checks that need no server or chain (the API is stubbed): `gate` (deep link, return from the face scan), `active-time` (paused time does not score), `survival-results`, `story-results` (what result screens say), `integration/runs-vs-real-server` (the run tracker against the real server app) |
+| `node test/client/browser/<name>.mjs` | real-browser checks that need no server or chain (the API is stubbed): `gate` (deep link, return from the face scan, a verification that lapses mid-session), `menu` (the rows against the gate with real clicks, turning the phone with a dialog open, the forge and leaderboard keeping their tab), `stats` (what the public stats page labels as on-chain or self-reported), `labels` (in-world labels stay readable on an upright phone), `active-time` (paused time does not score), `survival-results`, `story-results` (what result screens say), `integration/runs-vs-real-server` (the run tracker against the real server app, including a restart inside the server's pace) |
 | `npm run test:contracts` | Foundry tests for `MoonshardVault` |
 | `npm run test:fork` | end to end on a Celo mainnet fork: real Identity, UBI, Engagement Rewards, vault, SDKs (needs network) |
 | `npm run test:browser` | Playwright against that fork, writes screenshots to `docs/screenshots/` |
