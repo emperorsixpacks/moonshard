@@ -29,7 +29,7 @@ Spec → plan → three independent tracks in separate git worktrees (vault cont
 - Test servers use free ports: a fixed port was already taken by an unrelated app, and the first browser run silently drove that app until the readiness check was made to verify it was serving Moonshard.
 
 **Scope**
-- MiniPay support was added during execution on my own initiative, then **removed at the owner's request** (it was never required, and MiniPay cannot sign messages). It is not supported. The tested implementation exists in git history (`2a2269d`, reverted by `7bcae3d`).
+- MiniPay support was added during execution on my own initiative, then **removed at the owner's request** (it was never required, and MiniPay cannot sign messages). It is not supported. The tested implementation exists in git history (`44f9bc5`, reverted by `24cc6a5`).
 
 ## After the first build
 
