@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import {
-  createPublicClient, createWalletClient, encodeAbiParameters, http, keccak256, parseAbi, parseUnits, toHex,
+  createPublicClient, createWalletClient, encodeAbiParameters, getAddress, http, keccak256, parseAbi, parseUnits, toHex,
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { celo } from 'viem/chains';
@@ -74,7 +74,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // `whitelistPlayer: false` starts the test player unverified (the local launcher lets a person pass the face-scan step by hand).
 // `prizes: false` runs the API with the daily prizes and the Shard Harvest switched off (PRIZES_ENABLED), as deployed today.
-export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'https://forno.celo.org', port, apiPort = 0, whitelistPlayer = true, anvilArgs = [], prizes = true } = {}) {
+// `vault`: use a MoonshardVault that is already on Celo (the fork has a copy of it) instead of deploying a fresh one. Only
+// with prizes off: this server holds no key that vault trusts, and must not, since a voucher signed for a real vault is
+// valid on Celo itself.
+export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'https://forno.celo.org', port, apiPort = 0, whitelistPlayer = true, anvilArgs = [], prizes = true, vault: existingVault } = {}) {
+  if (existingVault && prizes) throw new Error('A vault that is already on Celo can only be used with prizes off.');
   port = port ?? (await freePort());
   const rpc = `http://127.0.0.1:${port}`;
   const anvil = spawn('anvil', ['--fork-url', upstream, '--port', String(port), '--chain-id', '42220', '--silent', ...anvilArgs], { stdio: 'ignore' });
@@ -159,10 +163,18 @@ export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'ht
     return contractAddress;
   }
 
+  async function useExistingVault(address) {
+    const code = await pub.getCode({ address });
+    if (!code || code === '0x') throw new Error(`There is no contract at ${address} on Celo.`);
+    const token = await pub.readContract({ address, abi: parseAbi(['function token() view returns (address)']), functionName: 'token' });
+    if (token.toLowerCase() !== ADDR.token.toLowerCase()) throw new Error(`${address} is not a vault for G$ (its token is ${token}).`);
+    return getAddress(address);
+  }
+
   if (whitelistPlayer) await whitelist(accounts.player.address);
   await registerApp();
-  const vault = await deployVault();
-  await fundG(vault, parseUnits('20000', 18));
+  const vault = existingVault ? await useExistingVault(existingVault) : await deployVault();
+  if (!existingVault) await fundG(vault, parseUnits('20000', 18));
 
   // API in-process, on a virtual clock the scripts can advance (settlement waits for UTC midnight).
   let offset = 0;

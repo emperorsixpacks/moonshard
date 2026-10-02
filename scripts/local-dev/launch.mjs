@@ -1,6 +1,8 @@
 // Run Moonshard locally with every G$ flow working and the face scan passing on a click, for trying the game by hand.
 //   npm run dev:local              (add --no-open to keep it from opening your browser)
 //   npm run dev:local -- --prizes  (the daily prizes and the Shard Harvest on: they are off, as on the deployed server)
+//   npm run dev:local -- --vault 0x...   (play against your deployed MoonshardVault, as it is on Celo, instead of a fresh one)
+//   npm run dev:local -- --port 6000     (the game's port; 5317 by default, not Vite's 5173 that other projects use)
 //
 // What it starts, all on free ports and all thrown away when you stop it (Ctrl-C):
 //   - a local copy ("fork") of Celo mainnet, with GoodDollar's real Identity, UBI and Engagement Rewards contracts;
@@ -21,6 +23,19 @@ const ROOT = new URL('../../', import.meta.url).pathname;
 const open = !process.argv.includes('--no-open');
 // The daily prizes and the Shard Harvest are off, as on the deployed server (PRIZES_ENABLED); --prizes turns them on here.
 const prizes = process.argv.includes('--prizes');
+const argValue = (name) => { const i = process.argv.indexOf(name); return i === -1 ? undefined : process.argv[i + 1]; };
+// --vault: the copy of Celo includes your deployed vault, so the game can pay into it without touching the real chain
+const existingVault = argValue('--vault');
+if (existingVault !== undefined && !/^0x[0-9a-fA-F]{40}$/.test(existingVault)) {
+  console.error(`--vault needs the vault's address (0x followed by 40 hex characters), not "${existingVault}".`);
+  process.exit(1);
+}
+if (existingVault && prizes) {
+  console.error('--vault and --prizes cannot go together: prizes need vouchers signed by a key the vault trusts, and a voucher\nsigned for your real vault would be valid on Celo itself. Try prizes with a fresh vault: npm run dev:local -- --prizes');
+  process.exit(1);
+}
+// the game's own port, so its address (and what the browser saves for it) is not shared with other projects on 5173
+const gamePort = Number(argValue('--port')) || 5317;
 const log = (...a) => console.log(...a);
 
 function openInBrowser(url) {
@@ -85,7 +100,7 @@ try {
 
   log('Copying Celo mainnet to a local fork (needs internet; the first minute is the slowest)...');
   // patient with the live chain: a slow copy of one account should be retried, not fail the session
-  const fork = await bootFork({ apiPort: 0, whitelistPlayer: false, anvilArgs: ['--retries', '8', '--timeout', '60000'], prizes });
+  const fork = await bootFork({ apiPort: 0, whitelistPlayer: false, anvilArgs: ['--retries', '8', '--timeout', '60000'], prizes, vault: existingVault });
   started.push(() => fork.shutdown());
   log('  vault deployed and funded, Engagement app registered, API running. Warming up...');
   await warmUp(fork);
@@ -111,7 +126,7 @@ try {
     root: ROOT,
     logLevel: 'warn',
     plugins: [localDevPlugin({ root: ROOT, getHelperUrl: () => helper.url, address: fork.accounts.player.address, sessionId: randomUUID() })],
-    server: { port: 5173, strictPort: false, open: false },
+    server: { port: gamePort, strictPort: false, open: false },
   });
   await vite.listen();
   started.push(() => vite.close());
@@ -127,7 +142,7 @@ try {
  Stats page    ${new URL('stats.html', gameUrl).href}
 
  Test player   ${fork.accounts.player.address}   (starts NOT verified)
- Vault         ${fork.contracts.vault}   (funded with 20,000 G$)
+ Vault         ${fork.contracts.vault}   ${existingVault ? '(your deployed vault, copied from Celo: payments here never reach the real one)' : '(a fresh one, funded with 20,000 G$)'}
 
  Try it: tap ENDLESS MODE, connect, "Verify (face scan)", click "Pass the face scan",
          claim your daily G$, buy your blade (20 G$), PLAY. The G$ guide is menu row 4.

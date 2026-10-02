@@ -18,7 +18,8 @@ const failures = [];
 const check = (ok, message) => { if (!ok) { failures.push(message); log(`   ✗ ${message}`); } else log(`   ✓ ${message}`); };
 
 // ---- start the launcher and wait until it says it is ready -----------------------------------------------------------
-const launcher = spawn(process.execPath, ['scripts/local-dev/launch.mjs', '--no-open'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+// extra arguments go to the launcher: `node test/client/browser/local-dev.mjs --vault 0x...` runs against a deployed vault
+const launcher = spawn(process.execPath, ['scripts/local-dev/launch.mjs', '--no-open', ...process.argv.slice(2)], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
 let output = '';
 const ready = await new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error(`the launcher was not ready after 5 minutes\n${output.slice(-1500)}`)), 300_000);

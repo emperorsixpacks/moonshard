@@ -36,7 +36,10 @@ cd .. && npm run dev:all                              # API on :3001 (in-memory 
 
 ```bash
 npm run dev:local      # needs internet (it copies Celo mainnet) and Foundry; Ctrl-C stops it and throws everything away
+npm run dev:local -- --vault 0x...   # the same, playing against your deployed MoonshardVault (as it is on Celo) instead of a fresh one
 ```
+
+Options: `--vault <address>` uses a vault that is already deployed (payments go to it on the copy, never on the real chain; prizes stay off with it, since a voucher signed for a real vault would be valid on Celo itself); `--prizes` turns the daily prizes and the Shard Harvest on (with a fresh vault); `--port <n>` picks the game's port (5317 by default, so it does not share an address, and the browser's saved data, with other projects on Vite's 5173); `--no-open` does not open the browser.
 
 This starts a local copy ("fork") of Celo mainnet with GoodDollar's real Identity, UBI and Engagement Rewards contracts, the vault deployed and funded, the API, and the game, and opens the game in your browser. The page gets a built-in test wallet (a throwaway key held by the launcher, used even if a wallet extension is installed), and the **Verify (face scan)** step leads to a stand-in page where one click marks the test player as a verified human on the fork. A second page (`http://127.0.0.1:5180/dev`) shows the test player's G$ in and out and a guide to where G$ appears in the game, with shortcuts to skip a day (so the day's prizes become Spoils to redeem), to record a chapter-1 boss clear, and to remove the verification again.
 
