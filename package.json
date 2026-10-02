@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Moonshard: The High Forest — a pixel action-platformer powered by GoodDollar (G$) on Celo",
+  "description": "Moonshard: The High Forest \u2014 a pixel action-platformer powered by GoodDollar (G$) on Celo",
   "scripts": {
     "dev": "vite",
     "dev:local": "node scripts/local-dev/launch.mjs",
@@ -16,7 +16,8 @@
     "test:fork": "node scripts/fork/e2e.mjs",
     "test:browser": "node scripts/fork/browser.mjs",
     "test:smoke": "node scripts/smoke.mjs",
-    "test:build": "node scripts/check-production-build.mjs"
+    "test:build": "node scripts/check-production-build.mjs",
+    "setup:deploy": "node scripts/setup-deploy-env.mjs"
   },
   "license": "MIT",
   "dependencies": {

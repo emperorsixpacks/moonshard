@@ -8,25 +8,32 @@
 
 - Node 22, Foundry (`forge`, `cast`), and the contract libraries: `cd contracts && forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 foundry-rs/forge-std --no-git`.
 - A Celo wallet with about 1 CELO for gas (in the rehearsal, starting from exactly 1 CELO, the deploy and the funding used 0.23 CELO at a high gas price), and the G$ for the prize pool.
-- Two **new** keys, each made with `cast wallet new` (it prints an address and a private key; keep both in a password manager):
-  - the **voucher signer**: its key is the server's `VOUCHER_SIGNER_KEY` and signs Spoil vouchers. A leaked key can only mint vouchers within the vault's on-chain caps.
-  - the **app signer**: its key is the server's `APP_SIGNER_KEY`, and its address is the Engagement Rewards "app". It only signs attestations and must hold no funds.
+- Optional: a free API key from etherscan.io (one Etherscan key covers Celoscan), to publish the vault's source code on Celoscan.
+
+The server has two keys of its own, made for you in step 1 and never holding funds: the **voucher signer** (`VOUCHER_SIGNER_KEY`) signs Spoil vouchers, and a leaked one can only mint vouchers within the vault's on-chain caps; the **app signer** (`APP_SIGNER_KEY`) is the Engagement Rewards "app" and only signs bounty attestations.
 
 ## 1. Deploy and fund `MoonshardVault`
 
 ```bash
-cd contracts
-cp .env.example .env      # then open contracts/.env and fill it in: every line is explained there
-forge script script/Deploy.s.sol --rpc-url https://forno.celo.org --broadcast
+npm run setup:deploy      # makes contracts/.env and server/.env.production (both ignored by git)
 ```
 
-What goes in `contracts/.env`:
+This makes the server's two keys and its session secret, writes them into `server/.env.production` (the deployed API's settings, used in step 3), and writes the two signers' addresses into `contracts/.env`. It prints only the addresses, and running it again never replaces anything. Then open `contracts/.env`, paste your wallet's private key after `DEPLOYER_PRIVATE_KEY=` and, optionally, your Etherscan key after `ETHERSCAN_API_KEY=`, and deploy:
+
+```bash
+cd contracts
+forge script script/Deploy.s.sol --rpc-url https://forno.celo.org --broadcast --verify
+```
+
+`--verify` publishes the vault's source code on Celoscan right after the deploy. If that part fails (a wrong or missing Etherscan key, a busy explorer), the command ends with an error, but **the vault is deployed**: its address is printed above the error, along with a `forge verify-contract ...` command that publishes the code later. Without an Etherscan key, Foundry publishes the code on Sourcify instead of Celoscan.
+
+What is in `contracts/.env`:
 
 | Setting | What it is |
 |---|---|
-| `DEPLOYER_PRIVATE_KEY` | the deploying wallet's private key, with or without `0x`. It pays the gas and owns the vault |
-| `VOUCHER_SIGNER` | the voucher signer's **address** (its key goes on the server, not here) |
-| `APP_SIGNER` | the app signer's **address** (used in step 2) |
+| `DEPLOYER_PRIVATE_KEY` | the deploying wallet's private key, with or without `0x`: **the one thing you fill in**. It pays the gas and owns the vault |
+| `VOUCHER_SIGNER`, `APP_SIGNER` | the server's two signers' **addresses**, filled in by `npm run setup:deploy` (their keys are in `server/.env.production`) |
+| `ETHERSCAN_API_KEY` | optional: publishes the vault's code on Celoscan (`--verify`) |
 | `MAX_PER_VOUCHER_G`, `DAILY_CAP_G` | the vault's limits in whole G$ (see "Sizing the caps"; 1000 and 5000 by default) |
 | `FUND_G` | G$ moved from the deploying wallet into the vault right after it is deployed (the prize pool); 0 to fund it later by sending G$ to the vault's address |
 | `APP_URL`, `APP_EMAIL` | for step 2; both are stored publicly on-chain |
@@ -40,6 +47,8 @@ for f in 'owner()(address)' 'signer()(address)' 'token()(address)' 'maxPerVouche
 ```
 
 *Rather not keep the key in a file?* Leave `DEPLOYER_PRIVATE_KEY` empty, import the key into Foundry's encrypted keystore once (`cast wallet import moonshard-deployer --interactive`), and add `--account moonshard-deployer --sender <its address>` to each `forge script` command.
+
+Put real values only in `contracts/.env`, never in `contracts/.env.example`: the example is the template, and it is pushed to GitHub with the code.
 
 The vault also receives every G$ players pay in the game (their blade, forge fees and Moon Shop looks, see below), so what players spend tops up the prizes. The owner can later `setCaps`, `setSigner`, `pause` or `withdraw`. `renounceOwnership` is disabled (it would leave the vault with no owner and no way to do any of those): hand the vault over with `transferOwnership`, then the new owner calls `acceptOwnership`.
 
@@ -78,7 +87,7 @@ GoodDollar must then approve the app (Discord `ubi.gd/GoodBuildersDiscord`, Tele
    - Host with a private CA: also set `DATABASE_CA` to the CA certificate as PEM text (`-----BEGIN CERTIFICATE-----` ... with real line breaks; the server checks it at start-up and refuses a value that lost them). It works together with `?sslmode=require`. `DATABASE_CA` on its own also turns TLS on.
    - **No `sslmode` in the URL and no `DATABASE_CA` means no TLS at all**: the password and every query cross the network in clear text. The server still starts, but prints a `WARNING ... NOT encrypted` line at boot unless the host is localhost. Accept that only on a private network you trust. `sslmode=disable` does the same on purpose and warns the same way (with `DATABASE_CA` set it is refused as contradictory).
    - The server creates and updates its own tables when it starts (`server/migrations/*.sql`, each file in its own transaction, safe if two instances start together). `002_indexes.sql` builds indexes with a plain `CREATE INDEX`, which blocks writes to that table while it runs: on a database that already holds a lot of runs or scores, deploy it in a quiet moment. `003_shop.sql` adds the `purchases` table of the Moon Shop.
-3. Variables: everything in `server/.env.example`. `NODE_ENV=production` (without a `CORS_ORIGINS` the API then sends no CORS headers at all, rather than allowing every origin as it does in development; it also makes the API refuse to start with no `DATABASE_URL`, since everything would vanish on a restart, or with a `VAULT_ADDRESS` but no `VOUCHER_SIGNER_KEY`, since prizes could never be signed; `ALLOW_IN_MEMORY_DB=1` overrides the first for a throwaway demo); `JWT_SECRET` from `openssl rand -base64 32`; `CORS_ORIGINS` = your site origin; `VAULT_ADDRESS`; `VOUCHER_SIGNER_KEY`; `APP_SIGNER_KEY`. Optional: `LOG_LEVEL=debug` to see the requests the API refused as the client's mistake; `RATE_LIMIT_PER_MIN` (default 300) if many players will share one public IP address, since they share that budget (a player who is refused waits the time the server names and sends their run again).
+3. Variables: open the service's Variables tab, choose "Raw Editor", and paste the lines of `server/.env.production` (made in step 1: `NODE_ENV=production`, the session secret and the two signer keys). Then fill in `VAULT_ADDRESS` (printed by step 1), `DATABASE_URL` and `CORS_ORIGINS` there. For reference, everything the API reads is described in `server/.env.example`. What they do: `NODE_ENV=production` (without a `CORS_ORIGINS` the API then sends no CORS headers at all, rather than allowing every origin as it does in development; it also makes the API refuse to start with no `DATABASE_URL`, since everything would vanish on a restart, or with a `VAULT_ADDRESS` but no `VOUCHER_SIGNER_KEY`, since prizes could never be signed; `ALLOW_IN_MEMORY_DB=1` overrides the first for a throwaway demo); `JWT_SECRET` signs sessions (32+ random characters, already made); `CORS_ORIGINS` = your site's origin; `VAULT_ADDRESS` = the vault; `VOUCHER_SIGNER_KEY` and `APP_SIGNER_KEY` = the server's two keys (already made). Optional: `LOG_LEVEL=debug` to see the requests the API refused as the client's mistake; `RATE_LIMIT_PER_MIN` (default 300) if many players will share one public IP address, since they share that budget (a player who is refused waits the time the server names and sends their run again).
 4. Check: `GET /health`, then `GET /api/config` shows your vault address and the engagement app address.
 
 ## 4. Web (Vercel)
