@@ -45,7 +45,7 @@ async function readJson(req) {
  * @param {{ fork: Awaited<ReturnType<import('../fork/lib.mjs').bootFork>>, settle: () => Promise<any[]>,
  *           startBlock: bigint, getGameUrl: () => string }} opts
  */
-export async function startHelper({ fork, settle, startBlock, getGameUrl }) {
+export async function startHelper({ fork, settle, startBlock, getGameUrl, prizes = true }) {
   const { pub, accounts, api } = fork;
   const player = accounts.player;
   const provider = localWalletProvider(fork.rpc, player, pub);
@@ -112,12 +112,15 @@ export async function startHelper({ fork, settle, startBlock, getGameUrl }) {
       await fork.rawRpc('evm_mine', []);
       advancedMs += seconds * 1000;
       const settled = (await settle()).filter((day) => day.settled);
+      if (!prizes) {
+        return { message: `Moved the clock forward ${SKIP_HOURS} hours: you can claim the daily G$ again. Prizes are off in this session, as on the deployed server, so the day closed with nothing to pay (start with --prizes to try them).` };
+      }
       if (!settled.length) {
         return { message: `Moved the clock forward ${SKIP_HOURS} hours. Nothing to settle: play a ranked Endless run (30 seconds or more) first, then skip again.` };
       }
-      const prizes = settled.reduce((n, day) => n + (day.prizes ?? 0), 0);
+      const prizeCount = settled.reduce((n, day) => n + (day.prizes ?? 0), 0);
       const harvests = settled.reduce((n, day) => n + (day.harvests ?? 0), 0);
-      return { message: `Moved the clock forward ${SKIP_HOURS} hours and settled ${settled.length} day: ${prizes} daily prize(s) and ${harvests} Shard Harvest(s) became Spoils. Reload the game, open the G$ wallet and press REDEEM.` };
+      return { message: `Moved the clock forward ${SKIP_HOURS} hours and settled ${settled.length} day: ${prizeCount} daily prize(s) and ${harvests} Shard Harvest(s) became Spoils. Reload the game, open the G$ wallet and press REDEEM.` };
     },
 
     /** What beating chapter 1's boss records on the server, done through the API like the browser run does. */
@@ -161,7 +164,7 @@ export async function startHelper({ fork, settle, startBlock, getGameUrl }) {
 
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/dev')) {
         const game = getGameUrl();
-        return send(res, 200, controlPage({ gameUrl: game, statsUrl: new URL('stats.html', game).href }), 'text/html');
+        return send(res, 200, controlPage({ gameUrl: game, statsUrl: new URL('stats.html', game).href, prizes }), 'text/html');
       }
       if (req.method === 'GET' && url.pathname === '/dev/state') return send(res, 200, await state());
 

@@ -22,7 +22,8 @@ const SHOP = {
     { id: 'satchel_pet', name: 'Moon Sprite', kind: 'cosmetic', priceG: '80', requires: null },
   ],
 };
-const CONFIG = { prizesG: ['1000', '600', '300'], shardRateG: '2', dailyShardCap: 50 };
+const CONFIG = { prizesEnabled: true, prizesG: ['1000', '600', '300'], shardRateG: '2', dailyShardCap: 50 };
+const CONFIG_OFF = { prizesEnabled: false, prizesG: [], shardRateG: '0', dailyShardCap: 0 };
 const visitor = {
   connected: false, verified: false, status: 'anonymous', offline: false, hasWallet: true, busy: null, wrongChain: false, needsReconnect: false,
   shop: SHOP, owned: null, balance: null, rewards: null, ubi: null, bounty: null, awaiting: { ubi: null, bounty: null, spoils: {}, shop: {} },
@@ -76,7 +77,9 @@ test('the first-boss bounty is named with the player\'s share when the server ga
 });
 
 test('without the server\'s numbers the guide says less, and invents nothing', () => {
-  const h = guide(visitor, null);
+  const unknown = guide(visitor, null); // nothing known about prizes: none is promised at all
+  assert.doesNotMatch(unknown, /1,000|top 3|Shard Harvest/);
+  const h = guide({ ...visitor, prizes: true }, null); // prizes on, their amounts not loaded
   assert.doesNotMatch(h, /1,000|up to 100 G\$ a day/);
   assert.match(h, /top 3/);
   const noShop = guide({ ...visitor, shop: null });
@@ -111,4 +114,15 @@ test('the guide opens by itself once, on the first visit', () => {
   assert.equal(takeFirstVisit(storage), true);
   assert.equal(takeFirstVisit(storage), false);
   assert.equal(takeFirstVisit({ getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } }), false, 'blocked storage: never pester');
+});
+
+test('with prizes off the guide promises none: claim, spend, the bounty, and where the G$ goes', () => {
+  for (const h of [guide(player(), CONFIG_OFF), guide({ ...player(), prizes: false }, null)]) {
+    assert.doesNotMatch(h, /Daily prizes|top 3|Shard Harvest|win it back/i);
+    assert.match(h, /CLAIM IT FREE, EVERY DAY/);
+    assert.match(h, /BUY YOUR BLADE/);
+    assert.match(h, /First-boss bounty: <b>2,400 G\$<\/b>/);
+    assert.match(h, /prize vault/i);
+    assert.doesNotMatch(h, /pays the daily prizes/);
+  }
 });

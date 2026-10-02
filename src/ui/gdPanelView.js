@@ -68,7 +68,7 @@ function dailyHtml(s, txDisabled, now) {
     ? '<p class="gd-blessing">✨ CITIZEN\'S BLESSING ACTIVE — +25% Forge materials today</p>'
     : note("Claim your daily G$ to receive the Citizen's Blessing (+25% Forge materials).");
   const c = s.rewards?.crystalStatus;
-  if (c) html += note(`Shards today: ${formatG(c.gdEarned)} / ${formatG(c.dailyCapGd)} G$ (paid after UTC midnight)`);
+  if (c && s.prizes === true) html += note(`Shards today: ${formatG(c.gdEarned)} / ${formatG(c.dailyCapGd)} G$ (paid after UTC midnight)`);
   if (s.stale?.ubi || s.stale?.rewards) html += note('Could not be refreshed just now — showing the last known info.');
   return html;
 }
@@ -121,7 +121,7 @@ function spoilsHtml(s, txDisabled) {
 function bladeHtml(s, blade, txDisabled, now) {
   const price = formatG(blade.priceG, 2);
   const out = [
-    `<p>Your hero fights with a blade paid for in G$: the <b>${esc(blade.name)}</b>, ${price} G$. What you pay goes into the prize vault that pays the daily prizes.</p>`,
+    `<p>Your hero fights with a blade paid for in G$: the <b>${esc(blade.name)}</b>, ${price} G$. What you pay goes into Moonshard's prize vault${s.prizes === true ? ', which pays the daily prizes' : ' on Celo'}.</p>`,
     balanceLine(s),
   ];
   const sent = s.awaiting?.shop?.[blade.id];
@@ -227,7 +227,8 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null } = {}) {
     } else {
       out.push(section('DAILY G$', dailyHtml(s, txDisabled, now)));
       out.push(section('FIRST-BOSS BOUNTY', bountyHtml(s, txDisabled, now)));
-      out.push(section('SPOILS', spoilsHtml(s, txDisabled)));
+      // Prizes are paid only while the server pays them (PRIZES_ENABLED); Spoils already won stay redeemable either way
+      if (s.prizes === true || s.spoils.length > 0) out.push(section('SPOILS', spoilsHtml(s, txDisabled)));
     }
 
     if (s.pendingCount > 0) {
@@ -266,11 +267,17 @@ function looksLine(looks) {
   return parts.join(' · ');
 }
 
+function bountyLine(s) {
+  const bounty = Number(s.rewards?.firstBossPrizeG ?? s.bounty?.rewardG);
+  return bounty > 0
+    ? `<p>First-boss bounty: <b>${formatG(bounty)} G$</b>, once, from GoodDollar's Engagement Rewards.</p>`
+    : "<p>A one-time G$ bounty for your first boss, from GoodDollar's Engagement Rewards.</p>";
+}
+
 function earnHtml(s, config) {
   const prizes = Array.isArray(config?.prizesG) && config.prizesG.length ? config.prizesG : null;
   const rate = Number(config?.shardRateG);
   const cap = Number(config?.dailyShardCap);
-  const bounty = Number(s.rewards?.firstBossPrizeG ?? s.bounty?.rewardG);
   return [
     prizes
       ? `<p>Daily prizes: <b>${prizes.map((p) => formatG(p)).join(' / ')} G$</b> for the top 3 verified players of the day.</p>`
@@ -278,9 +285,7 @@ function earnHtml(s, config) {
     rate > 0 && cap > 0
       ? `<p>Shard Harvest: ${gText(rate)} a Shard, up to ${gText(rate * cap)} a day.</p>`
       : '<p>Shard Harvest: G$ for the Shards you collect.</p>',
-    bounty > 0
-      ? `<p>First-boss bounty: <b>${formatG(bounty)} G$</b>, once, from GoodDollar's Engagement Rewards.</p>`
-      : "<p>A one-time G$ bounty for your first boss, from GoodDollar's Engagement Rewards.</p>",
+    bountyLine(s),
   ].join('');
 }
 
@@ -312,8 +317,11 @@ export function renderGuideHtml(s, { config = null, now = Date.now() } = {}) {
   const { shop } = s;
   const open = Boolean(shop?.enabled);
   const blade = open ? entryBlade(shop) : null;
+  // the daily prizes and the Shard Harvest are promised only while the server pays them (PRIZES_ENABLED)
+  const prizes = (config?.prizesEnabled ?? s.prizes) === true;
+  const loop = prizes ? 'and win it back' : 'and earn more by beating your first boss';
   const out = [
-    section('WHAT G$ IS', '<p>G$ is GoodDollar: a free daily income for verified humans, on the Celo network. In Moonshard you claim it, spend it on your blade and its looks, and win it back.</p>'),
+    section('WHAT G$ IS', `<p>G$ is GoodDollar: a free daily income for verified humans, on the Celo network. In Moonshard you claim it, spend it on your blade and its looks, ${loop}.</p>`),
     section('CLAIM IT FREE, EVERY DAY', "<p>Every verified human can claim free G$ once a day. Claiming also brings the Citizen's Blessing: +25% forest materials that day.</p>"),
   ];
   if (!shop) {
@@ -329,9 +337,12 @@ export function renderGuideHtml(s, { config = null, now = Date.now() } = {}) {
     const looks = shop.items.filter((x) => x.kind === 'cosmetic');
     if (looks.length) out.push(section('MOON SHOP (LOOKS ONLY)', `<p>${looksLine(looks)}. Nothing here adds power. Find them in the Forge.</p>`));
   }
-  out.push(section('WIN IT BACK', earnHtml(s, config)));
+  out.push(prizes ? section('WIN IT BACK', earnHtml(s, config)) : section('THE FIRST-BOSS BOUNTY', bountyLine(s)));
   if (open) {
-    out.push(section('WHERE YOUR G$ GOES', `<p>Every G$ you pay goes into the <a class="gd-link" href="${esc(explorerAddress(shop.vault))}" target="_blank" rel="noopener">prize vault ▸</a>, which pays the daily prizes and the Shard Harvests. All of it happens on the Celo chain.</p>`));
+    const vault = `<a class="gd-link" href="${esc(explorerAddress(shop.vault))}" target="_blank" rel="noopener">prize vault ▸</a>`;
+    out.push(section('WHERE YOUR G$ GOES', prizes
+      ? `<p>Every G$ you pay goes into Moonshard's ${vault}, which pays the daily prizes and the Shard Harvests. All of it happens on the Celo chain.</p>`
+      : `<p>Every G$ you pay goes into Moonshard's ${vault} on the Celo chain, where anyone can see it.</p>`));
   }
   out.push(section('YOUR NEXT STEP', nextStepHtml(s, blade, busy, txDisabled, now)));
   out.push('<a class="gd-link" href="/stats.html" target="_blank" rel="noopener">PUBLIC STATS ▸</a>');

@@ -3,7 +3,7 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { formatUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { GAME } from "../config.js";
+import { GAME, prizesOn } from "../config.js";
 import { errorHandler } from "./http.js";
 import { createIdentityResolver } from "./identity.js";
 import { authRoutes, makeRequireAuth } from "./auth.js";
@@ -86,6 +86,7 @@ export function createApp({ db, chain, config, now = Date.now, env = process.env
 
   const api = express.Router();
   api.get("/config", (_req, res) => {
+    const prizes = prizesOn(config); // the daily top 3 and the Shard Harvest: amounts are promised only while they are paid
     res.json({
       appName: "Moonshard",
       chainId: config.chainId,
@@ -93,9 +94,10 @@ export function createApp({ db, chain, config, now = Date.now, env = process.env
       ubi: config.contracts.ubi,
       vault: config.contracts.vault || null,
       engagement: { address: config.contracts.engagement, app: ctx.appAccount?.address ?? null },
-      prizesG: GAME.PRIZES.map((p) => formatUnits(p, 18)),
-      shardRateG: formatUnits(GAME.SHARD_RATE, 18),
-      dailyShardCap: GAME.DAILY_SHARD_CAP,
+      prizesEnabled: prizes,
+      prizesG: prizes ? GAME.PRIZES.map((p) => formatUnits(p, 18)) : [],
+      shardRateG: prizes ? formatUnits(GAME.SHARD_RATE, 18) : "0",
+      dailyShardCap: prizes ? GAME.DAILY_SHARD_CAP : 0,
     });
   });
   ctx.requireAuth = makeRequireAuth(ctx);

@@ -163,7 +163,7 @@ test('a refresh that fails keeps the last good data, marks it stale, and recover
   assert.equal(good.blessing, true);
   assert.equal(good.spoils.length, 1);
   assert.equal(good.bounty.pendingRunId, 'run-1');
-  assert.deepEqual(good.stale, { rewards: false, bounty: false, spoils: false, ubi: false, shop: false, balance: false });
+  assert.deepEqual(good.stale, { rewards: false, bounty: false, spoils: false, ubi: false, shop: false, balance: false, config: false });
 
   for (const path of ['/rewards/status', '/spoils', '/engagement/status']) server.handlers[path] = () => reply({ error: 'boom' }, 500);
   await gd.refreshAll();
@@ -171,11 +171,11 @@ test('a refresh that fails keeps the last good data, marks it stale, and recover
   assert.equal(s.blessing, true, 'a server hiccup must not take today\'s blessing away');
   assert.equal(s.spoils.length, 1, 'unredeemed Spoils must not vanish');
   assert.equal(s.bounty.pendingRunId, 'run-1', 'the bounty button must not disappear inside its 24 h window');
-  assert.deepEqual(s.stale, { rewards: true, bounty: true, spoils: true, ubi: false, shop: false, balance: false });
+  assert.deepEqual(s.stale, { rewards: true, bounty: true, spoils: true, ubi: false, shop: false, balance: false, config: false });
 
   server.handlers = {};
   await gd.refreshAll();
-  assert.deepEqual(gd.getStatus().stale, { rewards: false, bounty: false, spoils: false, ubi: false, shop: false, balance: false });
+  assert.deepEqual(gd.getStatus().stale, { rewards: false, bounty: false, spoils: false, ubi: false, shop: false, balance: false, config: false });
 });
 
 test('a refresh still in flight when the player disconnects does not bring the data back', async (t) => {

@@ -1,5 +1,6 @@
 // Run Moonshard locally with every G$ flow working and the face scan passing on a click, for trying the game by hand.
 //   npm run dev:local              (add --no-open to keep it from opening your browser)
+//   npm run dev:local -- --prizes  (the daily prizes and the Shard Harvest on: they are off, as on the deployed server)
 //
 // What it starts, all on free ports and all thrown away when you stop it (Ctrl-C):
 //   - a local copy ("fork") of Celo mainnet, with GoodDollar's real Identity, UBI and Engagement Rewards contracts;
@@ -18,6 +19,8 @@ import { localDevPlugin } from './plugin.mjs';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
 const open = !process.argv.includes('--no-open');
+// The daily prizes and the Shard Harvest are off, as on the deployed server (PRIZES_ENABLED); --prizes turns them on here.
+const prizes = process.argv.includes('--prizes');
 const log = (...a) => console.log(...a);
 
 function openInBrowser(url) {
@@ -82,7 +85,7 @@ try {
 
   log('Copying Celo mainnet to a local fork (needs internet; the first minute is the slowest)...');
   // patient with the live chain: a slow copy of one account should be retried, not fail the session
-  const fork = await bootFork({ apiPort: 0, whitelistPlayer: false, anvilArgs: ['--retries', '8', '--timeout', '60000'] });
+  const fork = await bootFork({ apiPort: 0, whitelistPlayer: false, anvilArgs: ['--retries', '8', '--timeout', '60000'], prizes });
   started.push(() => fork.shutdown());
   log('  vault deployed and funded, Engagement app registered, API running. Warming up...');
   await warmUp(fork);
@@ -94,6 +97,7 @@ try {
     startBlock,
     settle: () => settleDue(fork.api.ctx),
     getGameUrl: () => gameUrl,
+    prizes,
   });
   started.push(() => helper.close());
 

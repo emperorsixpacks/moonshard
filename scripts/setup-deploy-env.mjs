@@ -32,6 +32,9 @@ CORS_ORIGINS=
 CELO_RPC_URL=https://forno.celo.org
 CHAIN_ID=42220
 TRUST_PROXY=1
+# The daily prizes and the Shard Harvest, paid from the vault: off until the game has players (paying them needs G$ in the
+# vault). Set it to true to turn them on.
+PRIZES_ENABLED=false
 `;
 
 const SIGNERS = [
@@ -86,6 +89,8 @@ export function setupDeployEnv({ root, newKey = generatePrivateKey, newSecret = 
     addresses.push(`  ${signer.name} address: ${get(contracts, signer.address)}`);
   }
   if (!get(server, 'JWT_SECRET')) server = set(server, 'JWT_SECRET', newSecret());
+  // a file made before the prize switch existed: prizes off, as decided; a value the owner set is kept
+  if (!lineOf('PRIZES_ENABLED').test(server)) server = set(server, 'PRIZES_ENABLED', 'false');
 
   if (contracts !== contractsBefore || !contractsExisted) fs.writeFileSync(contractsPath, contracts, { mode: OWNER_ONLY });
   if (server !== serverBefore || !serverExisted) fs.writeFileSync(serverPath, server, { mode: OWNER_ONLY });

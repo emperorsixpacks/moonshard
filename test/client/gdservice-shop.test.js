@@ -116,3 +116,17 @@ test('with the shop closed, the first blade is free and the device keeps its own
   assert.equal(storage.isWeaponUnlocked('iron_starter'), true);
   assert.equal(storage.isWeaponUnlocked('iron_broadsword'), true);
 });
+
+test('whether the game pays prizes comes from the server, before anyone connects; unknown counts as no', async (t) => {
+  const on = await startService(t, { wallet: walletStub(), server: serverStub({ prizes: true }) });
+  await on.gd.refreshShop();
+  assert.equal(on.gd.getStatus().prizes, true);
+
+  const off = await startService(t, { wallet: walletStub(), server: serverStub({ prizes: false }) });
+  await off.gd.refreshShop();
+  assert.equal(off.gd.getStatus().prizes, false);
+
+  const down = await startService(t, { wallet: walletStub(), server: serverStub({ down: true }) });
+  await down.gd.refreshShop();
+  assert.equal(down.gd.getStatus().prizes, null, 'not known');
+});

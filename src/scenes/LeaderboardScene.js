@@ -222,6 +222,11 @@ export default class LeaderboardScene extends Phaser.Scene {
     this.styleTabs(tab);
   }
 
+  /** Whether this server pays the daily prizes and the Shard Harvest (PRIZES_ENABLED). Unknown counts as no. */
+  prizesOn() {
+    return (this.cfg?.prizesEnabled ?? gdService.getStatus().prizes) === true;
+  }
+
   /** The three daily prize amounts, from the config or else from the daily board itself, or null when neither has them. */
   dailyPrizes() {
     for (const source of [this.cfg?.prizesG, this.daily?.prizesG]) {
@@ -294,7 +299,10 @@ export default class LeaderboardScene extends Phaser.Scene {
     }
 
     this.renderPlayerStatus(w, h, myWallet, isDaily);
-    if (isDaily) this.renderSpoilsStatus(w, h);
+    if (isDaily && this.prizesOn()) this.renderSpoilsStatus(w, h);
+    // the Spoils button belongs to the prizes: shown, and tappable, only while the server pays them
+    for (const part of [this.spoilsBtn, this.spoilsTxt]) part?.setVisible(this.prizesOn());
+    if (this.spoilsBtn?.input) this.spoilsBtn.input.enabled = this.prizesOn();
   }
 
   /** The wallet's identicon in a `size` x `size` square, with a dot in its place until the picture has loaded. */
@@ -421,6 +429,11 @@ export default class LeaderboardScene extends Phaser.Scene {
     });
     this.bottomBarLayer.add(spoilsBtn);
     this.bottomBarLayer.add(spoilsTxt);
+    this.spoilsBtn = spoilsBtn;
+    this.spoilsTxt = spoilsTxt;
+    spoilsBtn.setVisible(this.prizesOn());
+    spoilsTxt.setVisible(this.prizesOn());
+    spoilsBtn.input.enabled = this.prizesOn();
   }
 
   addHeaderBackButton(L) {

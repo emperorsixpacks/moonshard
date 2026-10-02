@@ -1,5 +1,5 @@
 import { createPublicClient, formatUnits, http, parseAbi } from "viem";
-import { GAME } from "../config.js";
+import { GAME, prizesOn } from "../config.js";
 
 export const MIN_JWT_SECRET_LENGTH = 32;
 
@@ -37,7 +37,7 @@ export function assertSecureConfig(config, { env = process.env, warn = console.w
       "Set DATABASE_URL to a Postgres connection string (see docs/DEPLOY.md), or set ALLOW_IN_MEMORY_DB=1 if this production-mode server is a throwaway demo.",
     );
   }
-  if (config?.contracts?.vault && !config?.voucherSignerKey) {
+  if (config?.contracts?.vault && prizesOn(config) && !config?.voucherSignerKey) {
     const message = "VAULT_ADDRESS is set but VOUCHER_SIGNER_KEY is not: prizes would be settled and shown to the winners, but no voucher could ever be signed for them.";
     if (production) throw new Error(`${message} Set VOUCHER_SIGNER_KEY (see docs/DEPLOY.md), or unset VAULT_ADDRESS.`);
     warn(`[moonshard] WARNING: ${message}`);
@@ -78,6 +78,10 @@ function defaultVaultReader(config) {
 export async function checkVaultCaps({ config, prizes = GAME.PRIZES, read, log = console, timeoutMs = VAULT_CAPS_TIMEOUT_MS }) {
   const vault = config?.contracts?.vault;
   if (!vault) return { checked: false, reason: "no_vault" };
+  if (!prizesOn(config)) {
+    log.info("[moonshard] prizes are off (PRIZES_ENABLED): no vouchers are signed, so the vault's caps are not checked");
+    return { checked: false, reason: "prizes_off" };
+  }
 
   let maxPerVoucher;
   let dailyCap;

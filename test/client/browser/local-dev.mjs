@@ -2,8 +2,9 @@
 //   a first visitor sees the G$ guide, then is stopped by the gate; connecting uses the built-in test wallet even when a
 //   wallet extension owns window.ethereum (as MetaMask or Rabby do in a real browser) and must never be asked for anything;
 //   "Verify (face scan)" goes to the stand-in page, one click passes; with no G$ yet the gate offers today's claim, then the
-//   blade for 20 G$, then PLAY; the claim, the blade, the first-boss bounty and the Spoils each move real G$ on the local
-//   fork and show up in the launcher's ledger; removing the verification brings the gate back; the launcher
+//   blade for 20 G$, then PLAY; the claim, the blade and the first-boss bounty each move real G$ on the local fork and show
+//   up in the launcher's ledger; prizes are off, as on the deployed server (no Shards, no Spoils, nothing paid from the
+//   vault); removing the verification brings the gate back; the launcher
 //   refuses requests from pages that are not local, and stopping it leaves nothing running.
 //   node test/client/browser/local-dev.mjs        (run from the repository root; needs internet for the fork; takes ~5 minutes)
 import { request } from 'node:http';
@@ -144,25 +145,31 @@ try {
   const bounty = (await ledger()).find((row) => row.label.startsWith('First-boss bounty'));
   check(bounty?.amountG === '2,400', `the Engagement Rewards contract paid exactly the 2,400 G$ the game promised (${bounty?.amountG})`);
 
-  // ---- 5. a ranked run, the next day, and redeeming the Spoils -----------------------------------------------------
-  log('▶ a ranked run, the next day, redeeming Spoils');
+  // ---- 5. a ranked run and the next day, with prizes off (as on the deployed server) -------------------------------
+  log('▶ a ranked run and the next day, prizes off');
   await startScene('SurvivalScene');
   await page.waitForFunction(() => window.game.scene.getScene('SurvivalScene')?.player, null, { timeout: 30_000 });
+  check(await page.evaluate(() => window.game.scene.getScene('SurvivalScene').txtHarvest.visible === false), 'the Endless HUD has no Shard Harvest counter');
   // the server ranks a run only from 30 s of play, and an idle hero is killed at about 32 s: keep it alive for the wait
   await page.evaluate(() => { window.game.scene.getScene('SurvivalScene').player.invulnerableUntil = Number.MAX_SAFE_INTEGER; });
+  // kills that would drop Shards with prizes on (a boss always may): none drops
+  await page.evaluate(() => {
+    const scene = window.game.scene.getScene('SurvivalScene');
+    for (let i = 0; i < 60; i++) scene.onCrateBroken({ x: scene.player.x, y: scene.player.y });
+  });
+  check(await page.evaluate(() => window.game.scene.getScene('SurvivalScene').shardDrops.getLength() === 0), 'no Shard drops');
   await page.waitForTimeout(35_000);
   await page.evaluate(() => window.game.scene.getScene('SurvivalScene').handleGameOver());
   await page.waitForTimeout(2_500);
+  check(!/Shard/.test(await page.evaluate(() => window.game.scene.getScene('SurvivalScene').gameOverDetails?.text ?? '')), 'the result screen has no Shard line');
   const day = await post('/dev/next-day');
-  check(day.status === 200 && /settled 1 day/.test(day.body.message), `skipping a day settles the run into a prize (${day.body.message ?? day.body.error})`);
+  check(day.status === 200 && /claim the daily G\$ again/.test(day.body.message) && /Prizes are off/.test(day.body.message), `skipping a day pays nothing and lets you claim again (${day.body.message ?? day.body.error})`);
   await startScene('MenuScene');
   await openWallet();
-  await panelHas('REDEEM');
-  await page.click('[data-act="redeem"]');
-  await panelHas('CLAIMED');
+  await panelHas('VERIFIED HUMAN');
+  check(!/SPOILS|Shards today/.test(await page.innerText('#gd-panel')), 'the wallet has no Spoils and no Shard line');
   await closePanel();
-  const spoil = (await ledger()).find((row) => row.label.startsWith('Spoils redeemed'));
-  check(spoil?.amountG === '1,000', `the vault paid the rank-1 daily prize on the fork (${spoil?.amountG} G$)`);
+  check(!(await ledger()).some((row) => row.label.startsWith('Spoils redeemed')), 'and the vault paid nothing');
 
   // ---- 6. remove the verification: the gate is back -----------------------------------------------------------------
   log('▶ removing the verification brings the gate back');
@@ -182,8 +189,9 @@ try {
   await view.goto(ready.dev);
   await view.waitForFunction(() => document.querySelectorAll('#ledger tr').length >= 3, null, { timeout: 30_000 });
   const rows = await view.$$eval('#ledger tr', (trs) => trs.map((tr) => tr.innerText.replace(/\s+/g, ' ')));
-  check(rows.some((r) => /Daily UBI claim/.test(r)) && rows.some((r) => /First-boss bounty/.test(r)) && rows.some((r) => /Spoils redeemed/.test(r)),
-    `it lists the three kinds of G$ the player received (${rows.length} rows)`);
+  check(rows.some((r) => /Daily UBI claim/.test(r)) && rows.some((r) => /First-boss bounty/.test(r)),
+    `it lists the G$ the player received: the daily claim and the bounty (${rows.length} rows)`);
+  check(!rows.some((r) => /Spoils redeemed/.test(r)), 'and no prize, as prizes are off');
   check(rows.some((r) => /Moon Shop: Rusted Shortsword/.test(r)), 'and the G$ they paid for the blade');
   check((await view.innerText('#verified')) === 'no', 'and shows the player as not verified now');
 

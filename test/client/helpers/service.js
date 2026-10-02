@@ -72,6 +72,7 @@ export function serverStub(opts = {}) {
     shop: SHOP,
     owned: ['iron_starter'],
     buys: 'iron_starter',
+    prizes: true, // what GET /config says about the daily prizes and the Shard Harvest
     ...opts,
   };
   server.fetch = async (url, init = {}) => {
@@ -88,6 +89,9 @@ export function serverStub(opts = {}) {
     }
     const identity = { address: ADDR.toLowerCase(), verified: server.verified, status: server.verified ? 'verified' : 'unverified' };
     const authed = !path.startsWith('/auth/') && path !== '/config' && path !== '/shop';
+    const config = server.prizes
+      ? { appName: 'Moonshard', prizesEnabled: true, prizesG: ['1000', '600', '300'], shardRateG: '2', dailyShardCap: 50 }
+      : { appName: 'Moonshard', prizesEnabled: false, prizesG: [], shardRateG: '0', dailyShardCap: 0 };
     if (authed && !server.tokenOk(token)) return reply({ error: 'invalid_session' }, 401);
     switch (path) {
       case '/auth/nonce': return reply({ nonce: 'cd'.repeat(32), issuedAt: new Date().toISOString() });
@@ -95,6 +99,7 @@ export function serverStub(opts = {}) {
       case '/me': case '/me/refresh': return reply(identity);
       case '/rewards/status': return reply({ blessing: server.blessed, firstBossPrizeG: 2400, crystalStatus: { gdEarned: 0, dailyCapGd: 100, isCapped: false }, owned: [...server.owned] });
       case '/shop': return reply(server.shop);
+      case '/config': return reply(config);
       case '/engagement/status': return reply({ configured: true, canClaim: true, pendingRunId: 'run-1', rewardG: 2400 });
       case '/spoils':
         return reply({

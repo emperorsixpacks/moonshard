@@ -182,7 +182,7 @@ export default class MenuScene extends Phaser.Scene {
       {
         icon: '💚',
         text: '4. G$: EARN & SPEND',
-        desc: 'Claim • Buy Your Blade • Moon Shop • Prizes',
+        desc: 'Claim • Buy Your Blade • Moon Shop • Bounty',
         action: () => window.__gdPanel?.openGuide()
       },
       {
@@ -194,7 +194,7 @@ export default class MenuScene extends Phaser.Scene {
       {
         icon: '💰',
         text: '6. LEADERBOARD',
-        desc: 'Daily G$ Prizes • All-Time Rankings',
+        desc: 'Daily & All-Time Rankings',
         action: () => this.leaveFor('LeaderboardScene')
       },
       {

@@ -1,6 +1,6 @@
 import express from "express";
 import { formatUnits } from "viem";
-import { GAME } from "../config.js";
+import { GAME, prizesOn } from "../config.js";
 import { ah } from "./http.js";
 import { dayKey } from "./time.js";
 import { engagementRewardG, hasEngagementClaim, pendingBossRun } from "./engagement.js";
@@ -12,7 +12,8 @@ export function rewardsRoutes(ctx) {
   r.get("/rewards/status", ctx.requireAuth, ah(async (req, res) => {
     const p = req.player;
     const day = dayKey(ctx.now());
-    const rateGd = Number(formatUnits(GAME.SHARD_RATE, 18));
+    const prizes = prizesOn(ctx.config); // with prizes off, Shards are worth nothing and no harvest is shown
+    const rateGd = prizes ? Number(formatUnits(GAME.SHARD_RATE, 18)) : 0;
     const shardRow = await ctx.db.query("SELECT shards FROM shard_days WHERE day = $1 AND subject = $2", [day, p.subject]);
     const shards = shardRow.rows[0]?.shards ?? 0;
     const blessing = await ctx.db.query("SELECT 1 FROM blessings WHERE subject = $1 AND day = $2", [p.subject, day]);
@@ -24,10 +25,11 @@ export function rewardsRoutes(ctx) {
       status: p.status,
       firstBossClaimed: await hasEngagementClaim(ctx, p.subject),
       firstBossPrizeG: bounty === null ? null : Number(bounty),
+      prizesEnabled: prizes,
       crystalStatus: {
         gdEarned: Math.min(shards, GAME.DAILY_SHARD_CAP) * rateGd,
         dailyCapGd: GAME.DAILY_SHARD_CAP * rateGd,
-        isCapped: shards >= GAME.DAILY_SHARD_CAP,
+        isCapped: prizes && shards >= GAME.DAILY_SHARD_CAP,
         shards,
         rateGd,
       },

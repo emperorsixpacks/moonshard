@@ -88,6 +88,8 @@ export default class SurvivalScene extends Phaser.Scene {
     this.enemies = this.physics.add.group();
     this.projectiles = this.physics.add.group({ runChildUpdate: true });
     this.shardDrops = this.physics.add.group();
+    // Shards are the Shard Harvest's, a prize: they drop only while the server pays prizes (PRIZES_ENABLED)
+    this.prizesOn = gdService.getStatus().prizes === true;
     this.sessionCrystalsCollected = 0;
     this.crystalBankResult = null;
     this.rewardsStatus = null;
@@ -875,7 +877,7 @@ export default class SurvivalScene extends Phaser.Scene {
     }
 
     // Shard drop (2 G$ each, paid after UTC midnight) - rare drops!
-    if (this.shardDrops && enemy) {
+    if (this.prizesOn && enemy) {
       const isBoss = mobType === 'boss_gorgok';
       const eliteTypes = ['bog_lurker', 'dread_bat', 'crypt_wraith', 'basalt_golem', 'void_stalker', 'hornet_guard', 'skeleton_warrior', 'cinder_drake', 'astral_shade', 'mirelurker'];
       const isElite = eliteTypes.includes(mobType);
@@ -890,7 +892,7 @@ export default class SurvivalScene extends Phaser.Scene {
   }
 
   onCrateBroken(crate) {
-    if (this.shardDrops && Math.random() < 0.05) {
+    if (this.prizesOn && Math.random() < 0.05) {
       const crystal = new ShardDrop(this, crate.x, crate.y - 6);
       this.shardDrops.add(crystal);
     }
@@ -1043,6 +1045,7 @@ export default class SurvivalScene extends Phaser.Scene {
 
     // Shard Harvest Counter
     this.txtHarvest = value(harvest, '💎 +0 G$', '#38e1ff');
+    this.txtHarvest.setVisible(Boolean(this.prizesOn));
 
     this.txtCombo = this.add.text(w / 2, hud.barH + 14, '', {
       fontFamily: 'Press Start 2P',
@@ -1085,7 +1088,7 @@ export default class SurvivalScene extends Phaser.Scene {
   }
 
   updateCrystalHarvestHud() {
-    if (!this.txtHarvest) return;
+    if (!this.txtHarvest || !this.prizesOn) return;
     const st = this.rewardsStatus?.crystalStatus;
     const cap = Number(st?.dailyCapGd ?? DAILY_SHARD_CAP_GD);
     const sessionEarned = (this.sessionCrystalsCollected || 0) * SHARD_RATE_GD;
@@ -1381,7 +1384,9 @@ export default class SurvivalScene extends Phaser.Scene {
   gameOverDetailsText(proof) {
     let crystalLine = '';
     try {
-      if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
+      if (!this.prizesOn) {
+        crystalLine = ''; // no Shards drop while the server pays no prizes
+      } else if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
         crystalLine = `🔒 Daily Shard Cap Reached (${DAILY_SHARD_CAP_GD} G$ Max) • Resets 00:00 UTC`;
       } else {
         const st = gdService.getStatus();
@@ -1403,7 +1408,7 @@ export default class SurvivalScene extends Phaser.Scene {
       `Kills: 🐗${this.killCount.boar || 0} 🐌${this.killCount.snail || 0} 🐝${this.killCount.bee || 0} 🍄${this.killCount.mushroom || 0} 👁️${this.killCount.flying_eye || 0} 👺${this.killCount.goblin || 0}`,
       crystalLine,
       `${proof.label}`
-    ].join('\n');
+    ].filter((line) => line !== '').join('\n');
   }
 
   /** Redraw the result text when the server's answer arrives. Does nothing if that screen is gone or a newer run replaced it. */

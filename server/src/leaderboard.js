@@ -1,6 +1,6 @@
 import express from "express";
 import { formatUnits } from "viem";
-import { GAME } from "../config.js";
+import { GAME, prizesOn } from "../config.js";
 import { ah } from "./http.js";
 import { dayKey } from "./time.js";
 
@@ -125,7 +125,7 @@ export function leaderboardRoutes(ctx) {
       day,
       view,
       entries: await dailyBoard(ctx, day, view),
-      prizesG: GAME.PRIZES.map((p) => formatUnits(p, 18)),
+      prizesG: prizesOn(ctx.config) ? GAME.PRIZES.map((p) => formatUnits(p, 18)) : [],
     });
   }));
 

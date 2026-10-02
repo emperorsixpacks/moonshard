@@ -40,6 +40,7 @@ test('it makes both files, with each signer key in the server file and its addre
   assert.equal(value(contracts, 'APP_SIGNER'), privateKeyToAccount(appKey).address);
   assert.ok(value(server, 'JWT_SECRET').length >= 32, 'a session secret the API accepts');
   assert.equal(value(server, 'NODE_ENV'), 'production');
+  assert.equal(value(server, 'PRIZES_ENABLED'), 'false', 'no prizes until the game has players (owner decision)');
 
   assert.equal(value(contracts, 'DEPLOYER_PRIVATE_KEY'), '', 'the wallet key is the one thing left for the owner');
   assert.doesNotMatch(contracts, /TEMPLATE/, 'the real file does not call itself the template');
@@ -84,4 +85,23 @@ test('an address with no key behind it in the server file is not replaced, and t
   assert.equal(value(read('server/.env.production'), 'VOUCHER_SIGNER_KEY'), '', 'and no unrelated key is made for it');
   assert.match(out, /VOUCHER_SIGNER/);
   assert.match(out, /no key/i);
+});
+
+test('a server file made before the prize switch gets PRIZES_ENABLED=false added, and nothing else changes', () => {
+  const { root, read } = fixture();
+  setupDeployEnv({ root });
+  const older = read('server/.env.production').replace(/^PRIZES_ENABLED=.*\n/m, '');
+  fs.writeFileSync(path.join(root, 'server/.env.production'), older);
+  setupDeployEnv({ root });
+  const now = read('server/.env.production');
+  assert.equal(value(now, 'PRIZES_ENABLED'), 'false');
+  assert.equal(now.replace(/^PRIZES_ENABLED=.*\n/m, ''), older, 'every other line is kept as it was');
+});
+
+test('a PRIZES_ENABLED the owner set is kept', () => {
+  const { root, read } = fixture();
+  setupDeployEnv({ root });
+  fs.writeFileSync(path.join(root, 'server/.env.production'), read('server/.env.production').replace(/^PRIZES_ENABLED=.*$/m, 'PRIZES_ENABLED=true'));
+  setupDeployEnv({ root });
+  assert.equal(value(read('server/.env.production'), 'PRIZES_ENABLED'), 'true');
 });

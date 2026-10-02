@@ -35,10 +35,12 @@ const RANKED = { ok: true, isNewBest: true, rankedOk: true, bossCleared: false, 
  * `api.runs` the server's view of each run. Per-test behaviour: `api.latencyMs`, and `api.handlers[name]` (start,
  * checkpoints, submit) replaced by `async ({ call, run }) => ({ status, body, delayMs, hang })`.
  */
-export async function installApi(page, { verified = true, rewardG = '2400', firstBossClaimed = false, owned = ['iron_starter'], shop = SHOP } = {}) {
+export async function installApi(page, { verified = true, rewardG = '2400', firstBossClaimed = false, owned = ['iron_starter'], shop = SHOP, prizes = true } = {}) {
   const api = {
     calls: [],
     verified,
+    // whether the server pays the daily prizes and the Shard Harvest (PRIZES_ENABLED); off is the deployed default
+    prizes,
     // the Moon Shop: what GET /shop answers, and what the player owns (a player who plays has bought the blade)
     shop,
     owned: [...owned],
@@ -83,6 +85,7 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
         firstBossPrizeG: api.engagement.rewardG === null ? null : Number(api.engagement.rewardG), // the player's share, as the real server reports it
         blessing: false,
         owned: [...api.owned],
+        prizesEnabled: api.prizes,
       });
     }
     if (path === '/shop') return json(200, api.shop);
@@ -92,9 +95,13 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
     }
     if (path === '/spoils') return json(200, { spoils: [], vault: null });
     // the real shapes: server/src/leaderboard.js and the /config route in server/src/app.js
-    if (path === '/leaderboard/daily') return json(200, { day: '2026-10-05', view: 'ranked', entries: [], prizesG: ['1000', '600', '300'] });
+    if (path === '/leaderboard/daily') return json(200, { day: '2026-10-05', view: 'ranked', entries: [], prizesG: api.prizes ? ['1000', '600', '300'] : [] });
     if (path === '/leaderboard/alltime') return json(200, { view: 'ranked', entries: [] });
-    if (path === '/config') return json(200, { appName: 'Moonshard', chainId: 42220, prizesG: ['1000', '600', '300'], shardRateG: '2', dailyShardCap: 50 });
+    if (path === '/config') {
+      return json(200, api.prizes
+        ? { appName: 'Moonshard', chainId: 42220, prizesEnabled: true, prizesG: ['1000', '600', '300'], shardRateG: '2', dailyShardCap: 50 }
+        : { appName: 'Moonshard', chainId: 42220, prizesEnabled: false, prizesG: [], shardRateG: '0', dailyShardCap: 0 });
+    }
 
     if (method === 'POST' && path === '/runs/start') {
       const id = `run-${api.runs.size + 1}`;

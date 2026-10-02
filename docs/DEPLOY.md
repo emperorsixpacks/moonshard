@@ -35,7 +35,7 @@ What is in `contracts/.env`:
 | `VOUCHER_SIGNER`, `APP_SIGNER` | the server's two signers' **addresses**, filled in by `npm run setup:deploy` (their keys are in `server/.env.production`) |
 | `ETHERSCAN_API_KEY` | optional: publishes the vault's code on Celoscan (`--verify`) |
 | `MAX_PER_VOUCHER_G`, `DAILY_CAP_G` | the vault's limits in whole G$ (see "Sizing the caps"; 1000 and 5000 by default) |
-| `FUND_G` | G$ moved from the deploying wallet into the vault right after it is deployed (the prize pool); 0 to fund it later by sending G$ to the vault's address |
+| `FUND_G` | G$ moved from the deploying wallet into the vault right after it is deployed (the prize pool); 0 to fund it later by sending G$ to the vault's address. While prizes are off (the default) the vault pays nothing out, so it needs no G$ |
 | `APP_URL`, `APP_EMAIL` | for step 2; both are stored publicly on-chain |
 | `VAULT_OWNER` | optional: another owner, such as a Safe multisig. Empty: the deploying wallet owns the vault |
 
@@ -54,6 +54,8 @@ The vault also receives every G$ players pay in the game (their blade, forge fee
 
 ### Sizing the caps
 
+These matter once prizes are on (see "Turning prizes on" below); while they are off, the vault pays nothing out.
+
 The vault enforces both caps on every redemption. A voucher above the per-voucher limit (`MAX_PER_VOUCHER_G`), or one that would take a UTC day's redemptions above the daily limit (`DAILY_CAP_G`), **reverts on-chain**, so the winner is holding a voucher they can never redeem. The server signs whatever the game has earned, so the caps have to be big enough for it:
 
 - `MAX_PER_VOUCHER_G` must be at least **1000**: the rank-1 daily prize. (A player's shard harvest is at most 100 G$.)
@@ -68,6 +70,14 @@ When the API starts it reads `maxPerVoucher()` and `dailyCap()` from the vault a
 With `VAULT_ADDRESS` set, the API opens the Moon Shop: a player buys their first blade with G$ before they can play, pays a G$ fee to forge a stronger one, and can buy looks. Each payment is a plain G$ `transfer` from the player's wallet into the vault, with the item named after the transfer's arguments (`moonshard:<item>`); the API unlocks the item once the token's Transfer event shows the vault was paid. The API refuses to start a run for a player without a paid blade. With no `VAULT_ADDRESS` there is no shop: the first blade is free and blades are forged from materials alone.
 
 Items and prices are in `server/config.js` (`GAME.SHOP`); the game reads them from `GET /api/shop`, so a change needs only an API redeploy. Raising a price refuses a payment made at the old price by a player who had the page open at the time (`underpaid`, and the G$ stay in the vault): change prices in a quiet moment, and lower ones never cause this.
+
+### Turning prizes on
+
+The daily prizes (the top 3 verified runs of each UTC day: 1,000 / 600 / 300 G$) and the Shard Harvest (2 G$ a Shard, up to 100 G$ a player a day) are paid from the vault, and they are **off** until you turn them on: no Shards drop in the game, nothing mentions prizes, and the API signs no vouchers. Days played while prizes are off are closed with nothing owed, so turning them on never pays them. To turn them on:
+
+1. Put G$ in the vault: a few days of prizes (10,000 G$ covers about five days of the three prizes and some harvests).
+2. Check its caps against "Sizing the caps".
+3. Set `PRIZES_ENABLED=true` on the API (and `VOUCHER_SIGNER_KEY`, already in `server/.env.production`), restart it, and look for `vault caps ok` in its log.
 
 ## 2. Register the Engagement Rewards app
 
@@ -100,5 +110,5 @@ GoodDollar must then approve the app (Discord `ubi.gd/GoodBuildersDiscord`, Tele
 
 - Open the site in a browser with a Celo-compatible wallet and try to start a game mode: the verified-human gate should appear; connect, and confirm the panel shows your identity state and, for a verified account, offers PLAY.
 - As a verified account: claim the daily G$, buy the blade the gate asks for (20 G$, check it arrives in the vault on Celoscan), play a Daily Shard Trial, and look at `/stats.html` (G$ spent in the Moon Shop).
-- After the next UTC day plus 45 minutes, check that Spoils appear and can be redeemed.
+- With prizes on: after the next UTC day plus 45 minutes, check that Spoils appear and can be redeemed.
 - Do not make the repository public before the release gate in `docs/ATTRIBUTIONS.md` is cleared.

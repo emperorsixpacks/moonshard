@@ -94,3 +94,11 @@ test('times and addresses', () => {
   assert.equal(shortAddress('abc'), 'abc');
   assert.equal(shortAddress(undefined), '');
 });
+
+test('with prizes off the status pill names the boss bounty and no Shard Harvest', () => {
+  const text = rewardsPillText({
+    prizesEnabled: false, firstBossClaimed: false, firstBossPrizeG: 2400,
+    crystalStatus: { gdEarned: 0, dailyCapGd: 0, isCapped: false, shards: 12, rateGd: 0 },
+  });
+  assert.equal(text, '🏆 1st Boss: UNCLAIMED (2400 G$)');
+});

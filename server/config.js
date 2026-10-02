@@ -42,6 +42,19 @@ export function parseRateLimitPerMinute(v, fallback = 300) {
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback;
 }
 
+/**
+ * PRIZES_ENABLED -> whether the game pays prizes from the vault: the daily top 3 and the Shard Harvest. Off unless it says
+ * so ("true", "1", "yes" or "on"): the owner's decision (2026-10-02) is no prizes until the game has players, and paying
+ * them needs a funded vault (docs/DEPLOY.md). The daily G$ claim (GoodDollar's), the first-boss bounty (GoodDollar's pool)
+ * and the Moon Shop (payments INTO the vault) are not prizes and work either way.
+ */
+export function parsePrizesEnabled(v) {
+  return /^(true|1|yes|on)$/i.test(String(v ?? "").trim());
+}
+
+/** Whether this server pays prizes. A config object that does not say (one built by hand, in a test) pays them. */
+export const prizesOn = (config) => config?.prizesEnabled !== false;
+
 export const JWT_TTL_SEC = 12 * 60 * 60;
 export const NONCE_TTL_MS = 5 * 60_000;
 export const IDENTITY_TTL_MS = 5 * 60_000;
@@ -181,4 +194,5 @@ export const config = {
   },
   voucherSignerKey: env.VOUCHER_SIGNER_KEY || "",
   appSignerKey: env.APP_SIGNER_KEY || "",
+  prizesEnabled: parsePrizesEnabled(env.PRIZES_ENABLED),
 };

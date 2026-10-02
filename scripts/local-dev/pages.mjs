@@ -76,7 +76,7 @@ ${error ? '' : `<script>
 </body></html>`;
 }
 
-export function controlPage({ gameUrl, statsUrl }) {
+export function controlPage({ gameUrl, statsUrl, prizes = true }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Moonshard local test</title><style>${STYLE}</style></head>
 <body><main>
@@ -98,11 +98,13 @@ export function controlPage({ gameUrl, statsUrl }) {
   </div>
 
   <div class="card"><h2>Shortcuts</h2>
-    <button id="next-day">Skip to the next day and settle Spoils</button>
+    <button id="next-day">${prizes ? 'Skip to the next day and settle Spoils' : 'Skip to the next day'}</button>
     <button id="boss">Record a chapter-1 boss clear</button>
     <button id="revoke" class="ghost">Remove my verification (see the gate again)</button>
     <p id="msg"></p>
-    <p class="muted">The first two save waiting: a day boundary pays the daily prizes and Shard Harvest as Spoils, and the boss clear is what beating chapter 1's boss records. Use them between runs, then reload the game and open the G$ wallet.</p>
+    <p class="muted">${prizes
+      ? 'The first two save waiting: a day boundary pays the daily prizes and Shard Harvest as Spoils, and the boss clear is what beating chapter 1&#39;s boss records. Use them between runs, then reload the game and open the G$ wallet.'
+      : 'The first two save waiting: a day boundary lets you claim the daily G$ again, and the boss clear is what beating chapter 1&#39;s boss records. Use them between runs, then reload the game and open the G$ wallet.'}</p>
   </div>
 
   <div class="card"><h2>G$ in and out of your wallet</h2>
@@ -112,15 +114,15 @@ export function controlPage({ gameUrl, statsUrl }) {
 
   <div class="card"><h2>Where G$ appears in the game</h2>
     <ol>
-      <li><b>The G$ guide.</b> Menu row 4 (and a card on your first visit): what G$ is, how you claim it, what it buys, how you win it back, and where every G$ you pay goes.</li>
+      <li><b>The G$ guide.</b> Menu row 4 (and a card on your first visit): what G$ is, how you claim it, what it buys${prizes ? ', how you win it back' : ''}, and where every G$ you pay goes.</li>
       <li><b>The gate.</b> Tap Endless, Story or Tutorial. Connect (the test wallet signs in), then "Verify (face scan)" goes to the stand-in page; one click and you are back as a verified human. Only verified humans play, and every reward is keyed to one human.</li>
       <li><b>Daily claim.</b> With no G$ yet, the gate offers CLAIM DAILY G$ (later: the G$ button, top right). The real GoodDollar claim contract pays your daily UBI to your wallet; the server confirms the transaction and grants today's Citizen's Blessing (+25% Forge materials).</li>
       <li><b>Your blade.</b> The last step of the gate: BUY RUSTED SHORTSWORD for 20 G$, a real G$ transfer into the prize vault that names the item. Then PLAY. It shows up in the list above as "Moon Shop: Rusted Shortsword".</li>
       <li><b>The Forge.</b> Stronger blades: forest materials plus a G$ fee (30 and 60 G$). Looks in the Moon Shop: sword skins 100 G$, Celestial blades 150 G$ (after the Glaive), the Moon Sprite 80 G$. All of it goes into the prize vault.</li>
-      <li><b>Shard Harvest.</b> In Endless mode, pick up the &#128142; Shards for at least 30 seconds of play: each is worth 2 G$ (50 a day, 100 G$). The game-over screen says "pending"; it is paid as a Spoil after the day settles.</li>
-      <li><b>Daily prizes.</b> The top 3 verified runs of the day win 1,000 / 600 / 300 G$, also paid as Spoils. See the Leaderboard.</li>
+${prizes ? `      <li><b>Shard Harvest.</b> In Endless mode, pick up the &#128142; Shards for at least 30 seconds of play: each is worth 2 G$ (50 a day, 100 G$). The game-over screen says "pending"; it is paid as a Spoil after the day settles.</li>
+      <li><b>Daily prizes.</b> The top 3 verified runs of the day win 1,000 / 600 / 300 G$, also paid as Spoils. See the Leaderboard.</li>` : `      <li><b>Prizes: off.</b> The daily top 3 and the Shard Harvest are switched off in this session, as on the deployed server (PRIZES_ENABLED): no Shards drop and nothing is paid from the vault. To try them here, start with <code>npm run dev:local -- --prizes</code>.</li>`}
       <li><b>First-boss bounty.</b> Beat chapter 1's boss, then CLAIM in the wallet panel. The Engagement Rewards pool pays 5,000 G$ per claim and your share is 2,400, read from the contract.</li>
-      <li><b>Redeeming Spoils.</b> After a day settles, the wallet panel lists your Spoils with REDEEM. The server signs a voucher and the MoonshardVault contract pays you on-chain, within its per-voucher and per-day caps.</li>
+${prizes ? `      <li><b>Redeeming Spoils.</b> After a day settles, the wallet panel lists your Spoils with REDEEM. The server signs a voucher and the MoonshardVault contract pays you on-chain, within its per-voucher and per-day caps.</li>` : ''}
       <li><b>Public stats.</b> The stats page counts the G$ spent in the Moon Shop, next to the claims, bounties and Spoils paid.</li>
     </ol>
   </div>

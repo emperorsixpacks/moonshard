@@ -20,7 +20,7 @@ const status = (over = {}) => ({
   spoils: [spoil()], vault: { address: '0x00000000000000000000000000000000000ba5e1' },
   stale: { rewards: false, bounty: false, spoils: false, ubi: false },
   pendingCount: 0, awaiting: { ubi: null, bounty: null, spoils: {}, shop: {} }, blessing: false,
-  shop: SHOP, owned: ['iron_starter'], balance: '57.5',
+  shop: SHOP, owned: ['iron_starter'], balance: '57.5', prizes: true,
   ...over,
 });
 
@@ -291,4 +291,30 @@ test('the item name and price from the server are escaped', () => {
 
 test('a verified player sees the G$ in their wallet in the panel', () => {
   assert.match(html(), /Your G\$: <b>57\.5<\/b>/);
+});
+
+/* ---- prizes switched off on the server (PRIZES_ENABLED): nothing promises them ---- */
+
+test('with prizes off the panel shows no Shard harvest and no Spoils section', () => {
+  for (const prizes of [false, null]) {
+    const h = html({ prizes, spoils: [] });
+    assert.doesNotMatch(h, /Shards today/, String(prizes));
+    assert.doesNotMatch(h, /<h4>SPOILS<\/h4>/, String(prizes));
+    assert.doesNotMatch(h, /top 3/i, String(prizes));
+    assert.match(h, /CLAIM DAILY G\$/, 'the daily claim is GoodDollar\'s, not a prize: it stays');
+    assert.match(h, /FIRST-BOSS BOUNTY/, 'so does the bounty');
+  }
+});
+
+test('...but Spoils a player already won stay listed, and redeemable', () => {
+  const h = html({ prizes: false });
+  assert.match(h, /<h4>SPOILS<\/h4>/);
+  assert.match(h, /data-act="redeem" data-id="7"/);
+});
+
+test('with prizes off the blade step says where the G$ goes without promising daily prizes', () => {
+  const h = gated({ prizes: false, owned: [] });
+  assert.match(h, /prize vault/i);
+  assert.doesNotMatch(h, /daily prizes/i);
+  assert.match(gated({ prizes: true, owned: [] }), /daily prizes/i, 'with prizes on, it says what the vault pays');
 });

@@ -1,6 +1,6 @@
 import express from "express";
 import { encodeAbiParameters, formatUnits, keccak256, parseAbiParameters, parseEventLogs } from "viem";
-import { GAME } from "../config.js";
+import { GAME, prizesOn } from "../config.js";
 import { HttpError, ah } from "./http.js";
 import { dayKey } from "./time.js";
 import { vaultAbi } from "./chain.js";
@@ -106,6 +106,11 @@ export function createClaimedReader({
  * (no `settled_days` marker) and settles, bound to the right vault, once VAULT_ADDRESS is set.
  */
 export async function settleDay(ctx, day) {
+  // Prizes off: the day is closed with nothing owed, so turning prizes on later never pays a day played without them.
+  if (!prizesOn(ctx.config)) {
+    const marker = await ctx.db.query("INSERT INTO settled_days(day) VALUES ($1) ON CONFLICT DO NOTHING RETURNING day", [day]);
+    return { day, settled: marker.rows.length > 0, prizes: 0, harvests: 0, reason: "prizes_off" };
+  }
   const vault = ctx.config.contracts.vault;
   if (!vault) return { day, settled: false, reason: "no_vault" };
   return ctx.db.tx(async (t) => {
@@ -141,7 +146,7 @@ export async function settleDay(ctx, day) {
 
 /** Settle every day that can no longer receive submissions (ticket window + 1 min passed). */
 export async function settleDue(ctx) {
-  if (!ctx.config.contracts.vault) return []; // see settleDay
+  if (prizesOn(ctx.config) && !ctx.config.contracts.vault) return []; // see settleDay
   const cutoff = dayKey(ctx.now() - GAME.TICKET_MAX_AGE_MS - 60_000);
   const { rows } = await ctx.db.query(
     `SELECT day FROM (SELECT day FROM scores UNION SELECT day FROM shard_days) d

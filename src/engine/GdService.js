@@ -26,7 +26,7 @@ async function loadWalletConnect() {
 const wallet = createWalletManager({ getFallbackProvider: GD.reownProjectId ? loadWalletConnect : null });
 
 /** The pieces of server/chain data that refresh independently. `ok`/`fail` = number of the newest refresh that succeeded/failed. */
-const FIELDS = ['rewards', 'bounty', 'spoils', 'ubi', 'shop', 'balance'];
+const FIELDS = ['rewards', 'bounty', 'spoils', 'ubi', 'shop', 'balance', 'config'];
 /** Fields read from the chain, not from our API: their failures say nothing about whether the server is there. */
 const CHAIN_READS = new Set(['ubi', 'balance']);
 const freshMeta = () => Object.fromEntries(FIELDS.map((f) => [f, { ok: 0, fail: 0 }]));
@@ -56,7 +56,7 @@ class GdServiceManager {
       sessionAddress: null, status: 'anonymous', verified: false, identityLoaded: false, offline: false,
       needsReconnect: false, sessionExpired: false,
       busy: null, rewards: null, ubi: null, bounty: null, spoils: [], vault: null,
-      shop: null, balance: null,
+      shop: null, balance: null, config: null,
     };
     // Refreshes can overlap (panel open, run end, claim, wallet events). Each one gets a number; a field is only
     // replaced by a newer answer, and a failure marks the field stale instead of replacing it with "nothing".
@@ -178,6 +178,8 @@ class GdServiceManager {
       spoils: connected ? this.s.spoils : [],
       vault: connected ? this.s.vault : null,
       shop: this.s.shop,
+      // whether this server pays prizes (the daily top 3 and the Shard Harvest); null until it has said
+      prizes: this.s.config ? this.s.config.prizesEnabled !== false : null,
       owned: connected ? (this.s.rewards?.owned ?? null) : null,
       balance: connected ? this.s.balance : null,
       stale: Object.fromEntries(FIELDS.map((f) => [f, connected && this.meta[f].fail > this.meta[f].ok])),
@@ -246,7 +248,7 @@ class GdServiceManager {
   /** Forget everything that belongs to a signed-in account (the data, not the wallet connection). */
   resetData() {
     this.s = { ...this.s, rewards: null, ubi: null, bounty: null, spoils: [], vault: null, balance: null };
-    this.meta = { ...freshMeta(), shop: this.meta.shop }; // what the shop sells is not the account's
+    this.meta = { ...freshMeta(), shop: this.meta.shop, config: this.meta.config }; // the server's, not the account's
     setBlessed(false);
   }
 
@@ -319,6 +321,7 @@ class GdServiceManager {
     const jobs = {
       rewards: apiFetch('/rewards/status', { token }),
       ...(this.s.shop ? {} : { shop: apiFetch('/shop') }), // the same for the whole deployment: once loaded, kept
+      ...(this.s.config ? {} : { config: apiFetch('/config') }),
       balance: this.readBalance(),
       ...(verified
         ? {
@@ -366,14 +369,16 @@ class GdServiceManager {
     }
   }
 
-  /** What G$ buys on this server. Public, so it is shown before anyone connects. A failure keeps the last answer. */
+  /**
+   * What G$ buys on this server, and whether it pays prizes (/config). Public, so it is known before anyone connects.
+   * A failure keeps the last answer.
+   */
   async refreshShop() {
     const seq = ++this.seq;
-    try {
-      this.applyField(seq, 'shop', { ok: true, value: await apiFetch('/shop') });
-    } catch (err) {
-      this.applyField(seq, 'shop', { ok: false, error: err });
-    }
+    const [shop, config] = await Promise.allSettled([apiFetch('/shop'), apiFetch('/config')]);
+    const outcome = (r) => (r.status === 'fulfilled' ? { ok: true, value: r.value } : { ok: false, error: r.reason });
+    this.applyField(seq, 'shop', outcome(shop));
+    this.applyField(seq, 'config', outcome(config));
     this.notify();
   }
 

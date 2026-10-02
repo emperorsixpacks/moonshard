@@ -10,12 +10,16 @@ export function positiveNumber(value) {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** "1st Boss" and "Harvest" status line for a connected player. An amount or cap the server did not send is left out. */
+/**
+ * "1st Boss" and "Harvest" status line for a connected player. An amount or cap the server did not send is left out, and so
+ * is the Shard Harvest (a prize) while the server pays no prizes.
+ */
 export function rewardsPillText(status) {
   const prize = positiveNumber(status.firstBossPrizeG);
   const bossText = status.firstBossClaimed
     ? `CLAIMED${prize === null ? '' : ` (+${prize} G$)`}`
     : `UNCLAIMED${prize === null ? '' : ` (${prize} G$)`}`;
+  if (status.prizesEnabled === false) return `🏆 1st Boss: ${bossText}`;
   const cap = positiveNumber(status.crystalStatus?.dailyCapGd);
   const earned = Number(status.crystalStatus?.gdEarned || 0).toFixed(0);
   const amount = cap === null ? `${earned} G$` : `${earned} / ${cap.toFixed(0)} G$`;

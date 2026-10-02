@@ -184,6 +184,8 @@ export default class StoryScene extends Phaser.Scene {
     this.enemies = this.physics.add.group();
     this.projectiles = this.physics.add.group({ runChildUpdate: true });
     this.shardDrops = this.physics.add.group();
+    // Shards are the Shard Harvest's, a prize: they drop only while the server pays prizes (PRIZES_ENABLED)
+    this.prizesOn = gdService.getStatus().prizes === true;
     this.sessionCrystalsCollected = 0;
     this.runResult = null; // what the server answered when the run was settled (see settleRun); null while it is still out
     this.runResultPromise = null;
@@ -2266,6 +2268,7 @@ export default class StoryScene extends Phaser.Scene {
       color: '#38e1ff'
     }).setOrigin(harvest.ox, 0.5);
     this.hudContainer.add(this.txtHarvest);
+    this.txtHarvest.setVisible(Boolean(this.prizesOn));
 
     // Combo Counter (Center Screen, below Boss Health Bar)
     this.txtCombo = this.add.text(w / 2, hud.barH + 42, '', {
@@ -2292,7 +2295,7 @@ export default class StoryScene extends Phaser.Scene {
   }
 
   updateHudHarvest() {
-    if (!this.txtHarvest) return;
+    if (!this.txtHarvest || !this.prizesOn) return;
     const st = this.rewardsStatus?.crystalStatus;
     const cap = Number(st?.dailyCapGd ?? DAILY_SHARD_CAP_GD);
     const sessionEarned = (this.sessionCrystalsCollected || 0) * SHARD_RATE_GD;
@@ -2540,7 +2543,7 @@ export default class StoryScene extends Phaser.Scene {
       this.updateHudMaterials();
 
       // Shard drop (2 G$ each, paid after UTC midnight) - rare drops!
-      if (this.shardDrops) {
+      if (this.prizesOn) {
         const isBoss = enemy.mobType && enemy.mobType.startsWith('boss');
         const eliteTypes = ['bog_lurker', 'dread_bat', 'crypt_wraith', 'basalt_golem', 'void_stalker', 'hornet_guard', 'skeleton_warrior', 'cinder_drake', 'astral_shade', 'mirelurker'];
         const isElite = eliteTypes.includes(enemy.mobType);
@@ -2561,14 +2564,14 @@ export default class StoryScene extends Phaser.Scene {
     storage.addMaterials({ bark: 1 });
     this.updateHudMaterials();
 
-    if (this.shardDrops && Math.random() < 0.05) {
+    if (this.prizesOn && Math.random() < 0.05) {
       const crystal = new ShardDrop(this, enemy.x, enemy.y - 8);
       this.shardDrops.add(crystal);
     }
   }
 
   onCrateBroken(crate) {
-    if (this.shardDrops && Math.random() < 0.05) {
+    if (this.prizesOn && Math.random() < 0.05) {
       const crystal = new ShardDrop(this, crate.x, crate.y - 6);
       this.shardDrops.add(crystal);
     }
@@ -3026,6 +3029,7 @@ export default class StoryScene extends Phaser.Scene {
    * Shard line says it itself.
    */
   shardsBadge({ underBountyLine = false } = {}) {
+    if (!this.prizesOn) return null; // no Shards drop while the server pays no prizes
     if (this.isDailyHarvestCapped || this.rewardsStatus?.crystalStatus?.isCapped) {
       return { text: `🔒 Daily Shard Cap reached (${DAILY_SHARD_CAP_GD} G$) • Resets 00:00 UTC`, color: TONE_COLOR.warn };
     }

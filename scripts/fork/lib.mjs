@@ -73,7 +73,8 @@ const ACCESS_CONTROL_LOCATION = '0x02dd7bc7dec4dceedda775e58dd541e08a116c6c53815
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // `whitelistPlayer: false` starts the test player unverified (the local launcher lets a person pass the face-scan step by hand).
-export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'https://forno.celo.org', port, apiPort = 0, whitelistPlayer = true, anvilArgs = [] } = {}) {
+// `prizes: false` runs the API with the daily prizes and the Shard Harvest switched off (PRIZES_ENABLED), as deployed today.
+export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'https://forno.celo.org', port, apiPort = 0, whitelistPlayer = true, anvilArgs = [], prizes = true } = {}) {
   port = port ?? (await freePort());
   const rpc = `http://127.0.0.1:${port}`;
   const anvil = spawn('anvil', ['--fork-url', upstream, '--port', String(port), '--chain-id', '42220', '--silent', ...anvilArgs], { stdio: 'ignore' });
@@ -171,6 +172,7 @@ export async function bootFork({ upstream = process.env.CELO_UPSTREAM_RPC || 'ht
     contracts: { identity: ADDR.identity, ubi: ADDR.ubi, token: ADDR.token, engagement: ADDR.engagement, vault },
     voucherSignerKey: pk.voucherSigner,
     appSignerKey: pk.appSigner,
+    prizesEnabled: prizes,
   };
   const db = await createDb('');
   const chain = createChain(config);

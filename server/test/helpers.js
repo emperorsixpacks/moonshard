@@ -185,6 +185,7 @@ export async function makeHarness(opts = {}) {
     },
     voucherSignerKey: generatePrivateKey(),
     appSignerKey: generatePrivateKey(),
+    prizesEnabled: true, // prizes off is the deployed default; most tests here are about prizes (prizes.test.js covers off)
     ...opts.config,
   };
   // `opts.env` stands in for process.env (NODE_ENV and friends), so a test can build a "production" app and the suite
