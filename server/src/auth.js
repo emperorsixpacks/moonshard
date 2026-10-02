@@ -45,6 +45,11 @@ export function createRefreshCooldown({
       }
       return true;
     },
+    /** How long until `key` would be admitted again, in ms: 0 when it would be admitted now (or never was). */
+    retryAfterMs(key) {
+      const last = store.get(key);
+      return last === undefined ? 0 : Math.max(0, cooldownMs - (now() - last));
+    },
   };
 }
 

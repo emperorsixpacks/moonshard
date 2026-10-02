@@ -103,7 +103,11 @@ export function runRoutes(ctx) {
     }
     const p = req.player;
     // After the request is known to be valid (a refused one must not use up the wait), before any database work.
-    if (!startCooldown[mode].tryAcquire(p.subject)) throw new HttpError(429, "slow_down");
+    // The refusal says how long to wait, so a client that restarts inside the wait can start its run once the wait is over
+    // (a run without a ticket is not ranked) instead of guessing.
+    if (!startCooldown[mode].tryAcquire(p.subject)) {
+      throw new HttpError(429, "slow_down", { retryAfterMs: startCooldown[mode].retryAfterMs(p.subject) });
+    }
     const now = ctx.now();
     const day = dayKey(now);
     const seed = mode === "TRIAL" ? day : `story-${ch}`;

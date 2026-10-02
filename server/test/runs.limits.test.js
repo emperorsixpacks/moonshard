@@ -32,9 +32,23 @@ test("a Trial start less than 10 s after the previous one is 429 slow_down; at e
     assert.equal((await start(h, p)).status, 200);
     h.clock.advance(9_999);
     const refused = await start(h, p);
-    assert.deepEqual([refused.status, refused.body], [429, { error: "slow_down" }]);
+    assert.deepEqual([refused.status, refused.body], [429, { error: "slow_down", retryAfterMs: 1 }]);
     h.clock.advance(1); // 10,000 ms after the start that was accepted: the refusal above did not restart the wait
     assert.equal((await start(h, p)).status, 200);
+  } finally { await h.close(); }
+});
+
+test("a refused start says how long to wait, counted from the start that was accepted", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer();
+    assert.equal((await start(h, p)).status, 200);
+    h.clock.advance(4_000);
+    assert.deepEqual((await start(h, p)).body, { error: "slow_down", retryAfterMs: 6_000 });
+    h.clock.advance(1_000);
+    assert.deepEqual((await start(h, p)).body, { error: "slow_down", retryAfterMs: 5_000 }, "the refusal in between did not move it");
+    h.clock.advance(5_000);
+    assert.equal((await start(h, p)).status, 200, "waiting exactly that long is enough");
   } finally { await h.close(); }
 });
 
@@ -59,7 +73,7 @@ test("a Story start waits only 3 s, whichever chapter it is for", async () => {
     const p = await h.newPlayer();
     assert.equal((await start(h, p, "STORY", 1)).status, 200);
     h.clock.advance(2_999);
-    assert.deepEqual((await start(h, p, "STORY", 2)).body, { error: "slow_down" });
+    assert.deepEqual((await start(h, p, "STORY", 2)).body, { error: "slow_down", retryAfterMs: 1 });
     h.clock.advance(1);
     assert.equal((await start(h, p, "STORY", 2)).status, 200);
   } finally { await h.close(); }
