@@ -67,18 +67,31 @@ Two independent reviews (client money paths; server and vault) and the owner's o
 - A restart inside the server's new start pace played a whole run without a ticket. The 429 now carries `retryAfterMs` and the run tracker waits it out once, in the background.
 - Small ones: the wallet panel told a player whose verification could not be checked that they "can still play"; the leaderboard's Spoils panel and rewards pill stated prize and cap figures from fixed text; four 7-unit floating labels were about 6 CSS px on an upright phone; a story-results check could be failed by an idle hero being killed.
 
+**Independent integration review** (after everything was merged: one reviewer, read-only, reproducing each finding in a scratch copy; it also confirmed the run protocol, the Spoils and vault paths, the contract caps, the gate's coverage and the production bundle clean, and an 8-seed random walk over every scene found nothing else). All ten findings were fixed, each with a test that failed first:
+- The boss banner, wallet panel and leaderboard promised "2,400 G$" while GoodDollar had not approved the app, so the contract would refuse the claim: the server now reports no amount for an app that is not registered *and* approved, and the screens say the bounty cannot be claimed right now.
+- A rate-limit 429 (players behind one public IP share a budget) lost a finished run: the 429 now names its wait in the body, and the run tracker holds the run and resends the closing checkpoint, the submit or the ticket request once; `RATE_LIMIT_PER_MIN` sets the budget.
+- A restart the gate refused left the Story end screens, the intro prompt and the Endless shortcuts dead (they took themselves apart before asking) and let the run tick behind the pause menu: they now ask first, and a refusal opens the gate over a screen that still works. Chasing a flaky test also showed that closing the wallet panel left keyboard focus on its hidden close button for a frame, swallowing the next key: focus now returns to the game at once.
+- Leaving a run from the pause menu dropped it (score and Shards gone): it is now settled like a death.
+- A production boot without `DATABASE_URL` ran on memory and lost everything on restart, and one with a vault but no signer showed prizes it could never sign: both are refused under `NODE_ENV=production`.
+- One slow spell pinned the picture to the blurry 1x buffer for good: a smaller size is now kept only if it clearly helped, and a remembered size expires after two hours.
+- A trailing slash in `VITE_API_URL` or `CORS_ORIGINS` was a silent total outage: both are normalised.
+- A tap during the chapter card's fade-out started the opening dialogue twice; an RPC outage read as "not claimable" and hid the claim button; a dialogue box or a paused scene torn down at an awkward moment threw. All fixed.
+
+**Trying it by hand.** `npm run dev:local` starts a local fork of Celo mainnet (the real GoodDollar contracts), the vault, the API and the game, with a built-in test wallet and a stand-in for the face scan that passes on a click, plus a page showing the test player's G$ in and out. It exists only in that launcher's own dev server; `npm run test:build` fails if any of it reaches a production build.
+
 ## What was verified, and how
 
 | Claim | Evidence |
 |---|---|
 | Vault contract | `forge test`: 23 pass (incl. fuzz); mutation-checked; the cap selectors are pinned literally |
-| API | `cd server && npm test`: 234 pass, also with `NODE_ENV=production`; the first hardening suite was run against real Postgres 16, this pass's pool, TLS and index tests against PGlite, a fake Postgres wire-protocol server and a private CA minted with `openssl` |
-| Client | `node --test "test/client/**/*.test.js"`: 360 pass |
+| API | `cd server && npm test`: 250 pass, also with `NODE_ENV=production`; the first hardening suite was run against real Postgres 16, this pass's pool, TLS and index tests against PGlite, a fake Postgres wire-protocol server and a private CA minted with `openssl` |
+| Client | `node --test "test/client/**/*.test.js"`: 406 pass |
 | Real contracts + SDKs | `npm run test:fork`: Celo mainnet fork, real Identity/UBI/Engagement contracts and SDKs; the server's `/engagement/status` promised 2,400 G$ read from the real contract and the real `nonContractAppClaim` paid exactly that; a next-day settlement paid 1,100 G$ through the vault |
 | Real browser, whole stack | `npm run test:browser`: gate, connect, verify, claim, a 35 s ranked trial, tutorial, story, bounty, Spoils redemption, mobile layout, stats; no console errors |
-| Real browser, no server | `node test/client/browser/<name>.mjs` for `gate`, `menu`, `stats`, `labels`, `active-time`, `survival-results`, `story-results`, `integration/runs-vs-real-server` (the run tracker against the real server app); see the README |
+| Real browser, no server | `node test/client/browser/<name>.mjs` for `gate`, `gate-restart`, `menu`, `stats`, `labels`, `hires`, `pause-exit`, `scene-teardown`, `story-intro-card`, `active-time`, `survival-results`, `story-results`, `integration/runs-vs-real-server` (the run tracker against the real server app, including its real rate limiter); see the README |
 | First visit | `npm run test:smoke`: no wallet, API down; a first visitor is stopped by the gate; every scene boots; the panel does not leak clicks |
-| Production build | `vite build` succeeds, and the development-only gate bypass is not in the shipped JavaScript (it appears only in the source map) |
+| Production build | `npm run test:build`: the shipped JavaScript has GoodDollar's real face-verification code and none of the development-only gate bypass, test wallet or stand-in face scan |
+| Local test launcher | `node test/client/browser/local-dev.mjs`: `npm run dev:local` driven end to end (gate, stand-in face scan, real claim, bounty and Spoils on the fork) with a wallet extension present that must never be asked for anything |
 
 ## Not verified
 
