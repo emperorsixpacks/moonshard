@@ -4,7 +4,7 @@ How Moonshard was actually built, where it deviated from `docs/superpowers/plans
 
 ## How it was built
 
-Spec → plan → three independent tracks in separate git worktrees (vault contract; API server; client core), merged, then the UI and scene wiring, a Celo-mainnet-fork end-to-end test and a real-browser run, a server hardening pass, and an independent review. A second pass followed (see "After the first build"): two independent reviews, the owner's own use of the game, and a display overhaul. A third pass fixed what the server and vault review found and what only showed when the parallel fixes were merged together. Everything is committed locally; nothing was pushed or deployed.
+Spec → plan → three independent tracks in separate git worktrees (vault contract; API server; client core), merged, then the UI and scene wiring, a Celo-mainnet-fork end-to-end test and a real-browser run, a server hardening pass, and an independent review. A second pass followed (see "After the first build"): two independent reviews, the owner's own use of the game, and a display overhaul. A third pass fixed what the server and vault review found and what only showed when the parallel fixes were merged together. Everything is committed; it was pushed to the private repository `JemIIahh/moonshard` on 2026-10-02, and nothing is deployed.
 
 ## Deviations from the plan
 
@@ -135,7 +135,7 @@ What the owner decided (above), built test first at every level, then proven on 
 ## Still needs you
 
 1. **Check the Moon Shop prices** before launch: `server/config.js` `GAME.SHOP` (blade 20, forge fees 30 and 60, Celestial blades 150, skins 100, pet 80 G$). They were set to the design you approved; changing them needs only an API redeploy.
-2. Where and when to push (the JemIIahh fork or a new repo; credit ScriptedBro/Luna Blade).
+2. ~~Where to push.~~ Done 2026-10-02: the private repository `JemIIahh/moonshard`. Keep it private until item 8 is done.
 3. Fund `MoonshardVault` with G$ and choose prize sizes and caps (`docs/DEPLOY.md`: `MAX_PER_VOUCHER` at least 1,000 G$, `DAILY_CAP` at least 1,900 + 100 x the verified players you expect to redeem on one day).
 4. Register the Engagement Rewards app (`scripts/register-engagement-app.mjs`) and get GoodDollar's approval; re-test the two Engagement behaviours above on the live contract.
 5. Deploy the API and the web app (`docs/DEPLOY.md`), with `NODE_ENV=production` and a Reown project id (`VITE_REOWN_PROJECT_ID`): without WalletConnect a phone with no wallet app cannot get past the gate.
