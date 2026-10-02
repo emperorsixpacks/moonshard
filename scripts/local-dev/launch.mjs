@@ -125,7 +125,8 @@ try {
  Test player   ${fork.accounts.player.address}   (starts NOT verified)
  Vault         ${fork.contracts.vault}   (funded with 20,000 G$)
 
- Try it: tap ENDLESS MODE, connect, "Verify (face scan)", click "Pass the face scan", PLAY.
+ Try it: tap ENDLESS MODE, connect, "Verify (face scan)", click "Pass the face scan",
+         claim your daily G$, buy your blade (20 G$), PLAY. The G$ guide is menu row 4.
  The face scan is a stand-in that exists only in this session. Press Ctrl-C to stop; everything resets.
 ================================================================================`);
   log(`LOCAL_DEV_READY ${JSON.stringify({ game: gameUrl, dev, api: fork.api.url, rpc: fork.rpc, player: fork.accounts.player.address, vault: fork.contracts.vault })}`);
