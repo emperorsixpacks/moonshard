@@ -50,6 +50,19 @@ test('it makes both files, with each signer key in the server file and its addre
   assert.ok(printed.includes(privateKeyToAccount(voucherKey).address), 'the addresses are printed');
 });
 
+test('both files can be read by their owner only, including files that existed before with looser permissions', () => {
+  const { root } = fixture();
+  const mode = (file) => fs.statSync(path.join(root, file)).mode & 0o777;
+  setupDeployEnv({ root });
+  assert.equal(mode('contracts/.env'), 0o600);
+  assert.equal(mode('server/.env.production'), 0o600);
+  fs.chmodSync(path.join(root, 'contracts/.env'), 0o644);
+  fs.chmodSync(path.join(root, 'server/.env.production'), 0o644);
+  setupDeployEnv({ root }); // nothing to fill in: the permissions are tightened all the same
+  assert.equal(mode('contracts/.env'), 0o600);
+  assert.equal(mode('server/.env.production'), 0o600);
+});
+
 test('running it again changes nothing: keys and settings already there are kept', () => {
   const { root, read } = fixture();
   setupDeployEnv({ root });

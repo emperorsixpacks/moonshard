@@ -10,7 +10,7 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
  *   server/.env.production  the deployed API's settings, pasted into the host's variables (Railway) later.
  * The server's two signing keys and its session secret are made here and written straight into server/.env.production, and
  * the two signers' addresses into contracts/.env. Git ignores both files. No secret is printed, and a value that is already
- * there is never replaced, so running it again is harmless.
+ * there is never replaced, so running it again is harmless. Both files are made readable by their owner only.
  */
 
 const CONTRACTS_HEADER = `# YOUR deploy settings. Git ignores this file: it never leaves your computer and is not pushed to GitHub.
@@ -45,6 +45,9 @@ const get = (text, key) => (text.match(lineOf(key)) ?? [])[1]?.trim() ?? '';
 const set = (text, key, value) => (lineOf(key).test(text)
   ? text.replace(lineOf(key), () => `${key}=${value}`)
   : `${text.replace(/\n*$/, '\n')}${key}=${value}\n`);
+
+/** Readable and writable by the file's owner only: these files hold private keys. */
+const OWNER_ONLY = 0o600;
 
 /** The template turned into the real file: its header says it is the template, which the copy is not. */
 const fromTemplate = (template) => `${CONTRACTS_HEADER}${template.slice(template.indexOf('\n\n'))}`;
@@ -84,8 +87,11 @@ export function setupDeployEnv({ root, newKey = generatePrivateKey, newSecret = 
   }
   if (!get(server, 'JWT_SECRET')) server = set(server, 'JWT_SECRET', newSecret());
 
-  if (contracts !== contractsBefore || !contractsExisted) fs.writeFileSync(contractsPath, contracts);
-  if (server !== serverBefore || !serverExisted) fs.writeFileSync(serverPath, server);
+  if (contracts !== contractsBefore || !contractsExisted) fs.writeFileSync(contractsPath, contracts, { mode: OWNER_ONLY });
+  if (server !== serverBefore || !serverExisted) fs.writeFileSync(serverPath, server, { mode: OWNER_ONLY });
+  // `mode` applies only when a file is created: tighten files that were already there too (or were made by an older run)
+  fs.chmodSync(contractsPath, OWNER_ONLY);
+  fs.chmodSync(serverPath, OWNER_ONLY);
 
   const deployerKey = get(contracts, 'DEPLOYER_PRIVATE_KEY');
   return [
