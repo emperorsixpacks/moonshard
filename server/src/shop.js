@@ -49,10 +49,14 @@ export async function ownedItems(ctx, subject) {
   return owned;
 }
 
-/** Whether this player may start a run: they own the entry blade, or the shop is closed and every blade is free. */
+/**
+ * Whether this player may start a run: they own the entry blade, or there is none to buy (the shop is closed, or sells no
+ * blade) and the first blade is free. src/engine/playGateRules.js asks the same on the client.
+ */
 export async function hasBlade(ctx, subject) {
   if (!shopOpen(ctx)) return true;
   const blades = GAME.SHOP.filter((item) => item.kind === "blade").map((item) => item.id);
+  if (blades.length === 0) return true;
   const owned = await ownedItems(ctx, subject);
   return blades.some((id) => owned.includes(id));
 }

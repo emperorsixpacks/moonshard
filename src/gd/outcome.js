@@ -7,8 +7,8 @@ import { explainError } from './format.js';
  * network), and each needs different words. Returns `{ text, type }` for a toast, or null when nothing should be said.
  */
 
-const DONE = { ubi: '💚 G$ claimed', bounty: '🌟 Bounty claimed', redeem: '🏆 Spoils redeemed' };
-const SENT = { ubi: '💚 Claim sent', bounty: '🌟 Bounty claim sent', redeem: '🏆 Redemption sent' };
+const DONE = { ubi: '💚 G$ claimed', bounty: '🌟 Bounty claimed', redeem: '🏆 Spoils redeemed', buy: '🗡 Paid' };
+const SENT = { ubi: '💚 Claim sent', bounty: '🌟 Bounty claim sent', redeem: '🏆 Redemption sent', buy: '🗡 Payment sent' };
 const GENERIC = 'Something went wrong. Please try again.';
 
 const link = (hash) => (hash ? `  ${explorerTx(hash).replace('https://', '')}` : '');
@@ -20,7 +20,9 @@ function paid(act, res, blessing) {
   if (res.reconnectNeeded) return { text: `${lead} on-chain. Reconnect your wallet to finish recording it.${tx}`, type: 'warn' };
 
   if (res.confirmed) {
-    const text = act === 'ubi' ? (blessing ? "💚 G$ claimed — Citizen's Blessing active!" : '💚 G$ claimed!') : `${lead}!`;
+    let text = `${lead}!`;
+    if (act === 'ubi') text = blessing ? "💚 G$ claimed — Citizen's Blessing active!" : '💚 G$ claimed!';
+    if (act === 'buy') text = `🗡 ${res.item || 'It'} is yours!`;
     return { text: `${text}${tx}`, type: 'info' };
   }
 
@@ -34,9 +36,9 @@ function paid(act, res, blessing) {
   }
 
   if (res.confirmPending) {
-    const text = act === 'ubi'
-      ? `${lead}! Your blessing applies as soon as the server confirms (retrying automatically).`
-      : `${lead}! The server will record it shortly (retrying automatically).`;
+    let text = `${lead}! The server will record it shortly (retrying automatically).`;
+    if (act === 'ubi') text = `${lead}! Your blessing applies as soon as the server confirms (retrying automatically).`;
+    if (act === 'buy') text = `${lead}! ${res.item || 'Your item'} unlocks as soon as the server confirms (retrying automatically).`;
     return { text: `${text}${tx}`, type: 'info' };
   }
 
@@ -55,6 +57,7 @@ export function describeOutcome(act, res, { blessing = false } = {}) {
     case 'ubi':
     case 'bounty':
     case 'redeem':
+    case 'buy':
       return paid(act, res, blessing);
     default:
       return null;

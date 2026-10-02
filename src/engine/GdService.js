@@ -598,7 +598,7 @@ class GdServiceManager {
       await this.ensureWallet();
       const { buyItem } = await this.loaders.shop();
       const out = await buyItem({ wallet, vault: shop.vault, item, onHash: (h) => this.pending.add('shop', h) });
-      return this.afterPaid('shop', out.hash, { unconfirmed: out.unconfirmed, key });
+      return { ...(await this.afterPaid('shop', out.hash, { unconfirmed: out.unconfirmed, key })), item: item.name };
     });
   }
 

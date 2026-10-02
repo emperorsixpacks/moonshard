@@ -86,6 +86,7 @@ export class GdPanel {
       ubi: () => gdService.claimUbi(),
       bounty: () => gdService.claimBounty(),
       redeem: () => gdService.redeem(el.dataset.id),
+      buy: () => gdService.buy(el.dataset.id),
     };
     const res = await actions[act]?.();
     if (!res) return;

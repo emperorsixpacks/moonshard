@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { GAME } from "../config.js";
 import { makeHarness, TOKEN, transferCalldata, transferLog, VAULT } from "./helpers.js";
 
 /*
@@ -56,6 +57,17 @@ test("a server with no prize vault has no shop: nothing is for sale and no blade
     assert.equal(r.body.error, "shop_closed");
     const run = await h.api.post("/runs/start", { mode: "TRIAL" }, { token: p.token });
     assert.equal(run.status, 200, "plays without a blade");
+  } finally { await h.close(); }
+});
+
+test("a shop that sells no blade asks for none: runs start without one", async (t) => {
+  const saved = [...GAME.SHOP];
+  GAME.SHOP.splice(0, GAME.SHOP.length, ...saved.filter((item) => item.kind !== "blade"));
+  t.after(() => GAME.SHOP.splice(0, GAME.SHOP.length, ...saved));
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true, blade: false });
+    assert.equal((await h.api.post("/runs/start", { mode: "TRIAL" }, { token: p.token })).status, 200);
   } finally { await h.close(); }
 });
 

@@ -7,6 +7,10 @@ import { renderPanelHtml } from '../../src/ui/gdPanelView.js';
 const ADDR = '0xabcdef0123456789abcdef0123456789abcdef01';
 const spoil = (over = {}) => ({ id: '7', kind: 'TRIAL_PRIZE', day: '2026-10-05', rank: 1, amountG: '1000', claimed: false, voucher: { to: ADDR }, ...over });
 
+const BLADE = { id: 'iron_starter', name: 'Rusted Shortsword', kind: 'blade', priceG: '20', requires: null };
+const SHOP = { enabled: true, token: '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A', vault: '0x00000000000000000000000000000000000ba5e1', items: [BLADE] };
+const H = `0x${'ab'.repeat(32)}`;
+
 const status = (over = {}) => ({
   connected: true, address: ADDR, shortAddress: '0xabcd…ef01', status: 'verified', verified: true, wrongChain: false,
   hasWallet: true, needsReconnect: false, offline: false, sessionExpired: false, busy: null, host: 'browser', language: 'en',
@@ -15,7 +19,8 @@ const status = (over = {}) => ({
   bounty: { configured: true, canClaim: true, claimedHere: false, pendingRunId: 'run-1', rewardG: '2400' },
   spoils: [spoil()], vault: { address: '0x00000000000000000000000000000000000ba5e1' },
   stale: { rewards: false, bounty: false, spoils: false, ubi: false },
-  pendingCount: 0, awaiting: { ubi: null, bounty: null, spoils: {} }, blessing: false,
+  pendingCount: 0, awaiting: { ubi: null, bounty: null, spoils: {}, shop: {} }, blessing: false,
+  shop: SHOP, owned: ['iron_starter'], balance: '57.5',
   ...over,
 });
 
@@ -214,4 +219,76 @@ test('a visitor with no wallet at all is told how to get in, not just that nothi
   assert.match(h, /No wallet detected/);
   assert.match(h, /GoodWallet/);
   assert.match(h, /browser wallet/i);
+});
+
+/* ---- the blade, paid for in G$: the gate's third step when the server has a Moon Shop ---- */
+
+test('with a Moon Shop the way in has four steps; a verified human without a blade is at step three: buy it with G$', () => {
+  const h = gated({ owned: [] });
+  assert.match(h, /3\. Buy your blade with G\$/);
+  assert.match(h, /4\. Play ENDLESS MODE/);
+  assert.match(h, /gd-step-now[^<]*>[^<]*3\./);
+  assert.match(h, /data-act="buy" data-id="iron_starter"/);
+  assert.match(h, /BUY RUSTED SHORTSWORD — 20 G\$/);
+  assert.match(h, /Your G\$: <b>57\.5<\/b>/);
+  assert.match(h, /prize vault/i, 'where the G$ goes');
+  assert.doesNotMatch(h, /data-act="play"/);
+});
+
+test('a player short of G$ is offered today\'s free claim first, not a purchase that would fail', () => {
+  const h = gated({ owned: [], balance: '5', ubi: { entitlementG: '114.5', canClaim: true, nextClaimAt: null } });
+  assert.match(h, /need 20 G\$/);
+  assert.match(h, /data-act="ubi"/);
+  assert.doesNotMatch(h, /data-act="buy"/);
+});
+
+test('...and once today\'s claim is made, is told when the next one comes', () => {
+  const h = gated({ owned: [], balance: '5', ubi: { entitlementG: '0', canClaim: false, nextClaimAt: 90 * 60_000 } });
+  assert.doesNotMatch(h, /data-act="buy"|data-act="ubi"/);
+  assert.match(h, /next free G\$ .*1h 30m/i);
+});
+
+test('a balance that rounds up to the price is still short of it', () => {
+  const h = gated({ owned: [], balance: '19.999', ubi: { entitlementG: '0', canClaim: false, nextClaimAt: null } });
+  assert.doesNotMatch(h, /data-act="buy"/);
+  assert.match(h, /Your G\$: <b>19\.99<\/b>/);
+});
+
+test('with the balance unknown the purchase is offered (the wallet checks it before anything is sent)', () => {
+  assert.match(gated({ owned: [], balance: null }), /data-act="buy"/);
+});
+
+test('a blade payment on its way replaces the buy button', () => {
+  const h = gated({ owned: [], awaiting: { ubi: null, bounty: null, spoils: {}, shop: { iron_starter: H } } });
+  assert.doesNotMatch(h, /data-act="buy"/);
+  assert.match(h, /waiting for the network/i);
+  assert.match(h, /VIEW TRANSACTION/);
+});
+
+test('a verified human with a blade gets PLAY at step four', () => {
+  const h = gated({});
+  assert.match(h, /gd-step-done[^<]*>[^<]*3\. Buy your blade/);
+  assert.match(h, /gd-step-now[^<]*>[^<]*4\. Play ENDLESS MODE/);
+  assert.match(h, /data-act="play"/);
+});
+
+test('a server with no Moon Shop keeps the three-step way in: the first blade is free', () => {
+  const h = gated({ shop: { enabled: false, token: SHOP.token, vault: null, items: [] }, owned: [] });
+  assert.doesNotMatch(h, /Buy your blade/);
+  assert.match(h, /3\. Play ENDLESS MODE/);
+  assert.match(h, /data-act="play"/);
+});
+
+test('while a verified player\'s blade is being looked up, the gate says so', () => {
+  assert.match(gated({ owned: null }), /Checking your blade/);
+  assert.match(gated({ owned: null }), /gd-step-now[^<]*>[^<]*3\./);
+});
+
+test('the item name and price from the server are escaped', () => {
+  const h = gated({ owned: [], shop: { ...SHOP, items: [{ ...BLADE, name: '<img src=x>', priceG: '20<b>' }] } });
+  assert.doesNotMatch(h, /<img src=x>|20<b>/);
+});
+
+test('a verified player sees the G$ in their wallet in the panel', () => {
+  assert.match(html(), /Your G\$: <b>57\.5<\/b>/);
 });

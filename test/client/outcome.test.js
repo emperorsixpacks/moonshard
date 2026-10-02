@@ -82,3 +82,26 @@ test('connecting is acknowledged; silent actions return nothing', () => {
   assert.match(describeOutcome('reconnect', { ok: true }, {}).text, /reconnected/);
   for (const act of ['disconnect', 'switch', 'verify']) assert.equal(describeOutcome(act, { ok: true }, {}), null, act);
 });
+
+test('a purchase says what was bought once the server has recorded it, and what is still to come when it has not', () => {
+  const done = describeOutcome('buy', paid({ confirmed: true, item: 'Rusted Shortsword' }));
+  assert.equal(done.type, 'info');
+  assert.match(done.text, /Rusted Shortsword is yours/);
+  assert.match(done.text, /celoscan/);
+
+  const queued = describeOutcome('buy', paid({ confirmPending: true, item: 'Rusted Shortsword' }));
+  assert.match(queued.text, /Paid/);
+  assert.match(queued.text, /unlocks as soon as the server confirms/);
+  assert.doesNotMatch(queued.text, /is yours/);
+
+  const sent = describeOutcome('buy', paid({ submitted: true, item: 'Rusted Shortsword' }));
+  assert.match(sent.text, /Payment sent/);
+
+  const refused = describeOutcome('buy', paid({ confirmRejected: 'underpaid', item: 'Rusted Shortsword' }));
+  assert.equal(refused.type, 'warn');
+  assert.match(refused.text, /less than the price/);
+  assert.doesNotMatch(refused.text, /underpaid/);
+
+  const dead = describeOutcome('buy', paid({ reconnectNeeded: true, item: 'Rusted Shortsword' }));
+  assert.match(dead.text, /Reconnect/);
+});

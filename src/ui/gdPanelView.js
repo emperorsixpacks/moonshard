@@ -1,7 +1,7 @@
 import { explorerTx } from '../gd/config.js';
 import { explainError, formatCountdown, formatG } from '../gd/format.js';
 import { identiconSvg } from '../gd/identicon.js';
-import { canPlay, gateStep } from '../engine/playGateRules.js';
+import { canPlay, entryBlade, gateStep } from '../engine/playGateRules.js';
 
 /**
  * The wallet panel as a pure function of the service status (no DOM, no service import), so every state it can be
@@ -34,19 +34,25 @@ const reasonText = (reason) => (/\s/.test(String(reason)) ? String(reason).slice
 
 const txLink = (hash) => `<a class="gd-link" href="${esc(explorerTx(hash))}" target="_blank" rel="noopener">VIEW TRANSACTION ▸</a>`;
 
+/** G$ in a wallet, rounded down: a balance shown as "20" must be able to pay 20. */
+const walletG = (g) => formatG(Math.floor(Number(g) * 100) / 100, 2);
+const balanceLine = (s) => (s.balance == null ? '' : `<p>Your G$: <b>${walletG(s.balance)}</b></p>`);
+/** Known to hold less than `priceG` (an unknown balance is not short: the wallet checks before anything is sent). */
+const isShort = (s, priceG) => s.balance != null && Number(s.balance) < Number(priceG);
+
 function dailyHtml(s, txDisabled, now) {
   const ubi = s.ubi;
-  let html;
+  let html = balanceLine(s);
   if (s.awaiting?.ubi) {
-    html = `<p>Claim sent ✓ — waiting for the network to confirm.</p>${txLink(s.awaiting.ubi)}`;
+    html += `<p>Claim sent ✓ — waiting for the network to confirm.</p>${txLink(s.awaiting.ubi)}`;
   } else if (!ubi) {
-    html = note('UBI status unavailable right now.');
+    html += note('UBI status unavailable right now.');
   } else if (ubi.canClaim) {
-    html = `<p>Your daily G$ is ready: <b>${formatG(ubi.entitlementG, 2)} G$</b></p>${button('ubi', 'CLAIM DAILY G$', { disabled: txDisabled })}`;
+    html += `<p>Your daily G$ is ready: <b>${formatG(ubi.entitlementG, 2)} G$</b></p>${button('ubi', 'CLAIM DAILY G$', { disabled: txDisabled })}`;
   } else if (ubi.nextClaimAt) {
-    html = `<p>Claimed today. Next claim in <b>${formatCountdown(ubi.nextClaimAt - now)}</b></p>`;
+    html += `<p>Claimed today. Next claim in <b>${formatCountdown(ubi.nextClaimAt - now)}</b></p>`;
   } else {
-    html = '<p>Claimed today.</p>';
+    html += '<p>Claimed today.</p>';
   }
   html += s.blessing
     ? '<p class="gd-blessing">✨ CITIZEN\'S BLESSING ACTIVE — +25% Forge materials today</p>'
@@ -99,13 +105,42 @@ function spoilsHtml(s, txDisabled) {
 }
 
 /**
- * The verified-human gate, shown when the player tries to start a game mode: three steps, the current one marked,
- * and the one action that moves them forward. `gate.label` names the mode they asked for.
+ * The gate's blade step: the blade a hero fights with is paid for in G$. A player known to be short of the price is not
+ * offered a purchase that would fail: today's free claim comes first, or when the next one does.
  */
-function gateHtml(s, gate, busy, txDisabled) {
+function bladeHtml(s, blade, txDisabled, now) {
+  const price = formatG(blade.priceG, 2);
+  const out = [
+    `<p>Your hero fights with a blade paid for in G$: the <b>${esc(blade.name)}</b>, ${price} G$. What you pay goes into the prize vault that pays the daily prizes.</p>`,
+    balanceLine(s),
+  ];
+  const sent = s.awaiting?.shop?.[blade.id];
+  if (sent) {
+    out.push(`<p>Payment sent ✓ — waiting for the network to confirm.</p>${txLink(sent)}`);
+  } else if (!isShort(s, blade.priceG)) {
+    out.push(button('buy', `BUY ${esc(String(blade.name).toUpperCase())} — ${price} G$`, { id: blade.id, disabled: txDisabled }));
+  } else {
+    out.push(warn(`You need ${price} G$.`));
+    if (s.awaiting?.ubi) out.push(`<p>Claim sent ✓ — waiting for the network to confirm.</p>${txLink(s.awaiting.ubi)}`);
+    else if (s.ubi?.canClaim) out.push(`<p>Claim today's free G$ first: <b>${formatG(s.ubi.entitlementG, 2)} G$</b></p>${button('ubi', 'CLAIM DAILY G$', { disabled: txDisabled })}`);
+    else if (s.ubi?.nextClaimAt) out.push(note(`Your next free G$ comes in ${formatCountdown(s.ubi.nextClaimAt - now)}. You can also add G$ to this wallet from another one.`));
+    else out.push(note('Add G$ to this wallet to buy it.'));
+  }
+  return out.join('');
+}
+
+/**
+ * The way into the game, shown when the player tries to start a game mode: the steps, the current one marked, and the one
+ * action that moves them forward. With a Moon Shop on the server the blade is a step of its own. `gate.label` names the
+ * mode they asked for.
+ */
+function gateHtml(s, gate, busy, txDisabled, now) {
   const step = gateStep(s);
-  const at = { connect: 0, checking: 1, unreachable: 1, verify: 1, ready: 2 }[step];
-  const steps = ['1. Connect your wallet', '2. Prove you are human', `3. Play ${gate.label}`].map((text, i) => {
+  const blade = s.shop?.enabled ? entryBlade(s.shop) : null;
+  const titles = ['1. Connect your wallet', '2. Prove you are human', ...(blade ? ['3. Buy your blade with G$'] : []), `${blade ? 4 : 3}. Play ${gate.label}`];
+  const about = s.verified ? 2 : 1; // "checking" and "unreachable" are about the blade once the player is verified
+  const at = { connect: 0, checking: about, unreachable: about, verify: 1, blade: 2, ready: titles.length - 1 }[step];
+  const steps = titles.map((text, i) => {
     const cls = i < at ? 'gd-step-done' : i === at ? 'gd-step-now' : 'gd-step-todo';
     const mark = i < at ? '✔' : i === at ? '▶' : '○';
     return `<li class="${cls}">${mark} ${text}</li>`;
@@ -115,16 +150,19 @@ function gateHtml(s, gate, busy, txDisabled) {
     action = button('connect', 'CONNECT WALLET', { disabled: busy });
     if (!s.hasWallet) action += warn(NO_WALLET);
   } else if (step === 'checking') {
-    action = note('Checking your verification…');
+    action = note(s.verified ? 'Checking your blade…' : 'Checking your verification…');
   } else if (step === 'unreachable') {
-    action = `${warn("Can't reach the server to check your verification.")}${button('recheck', 'TRY AGAIN', { disabled: busy })}`;
+    action = `${warn(`Can't reach the server to check your ${s.verified ? 'blade' : 'verification'}.`)}${button('recheck', 'TRY AGAIN', { disabled: busy })}`;
+  } else if (step === 'blade') {
+    action = bladeHtml(s, blade, txDisabled, now);
   } else if (step === 'verify') {
     const expired = s.status === 'expired';
     action = `<p>${expired ? 'Your GoodDollar verification has expired. Verify again to play.' : "GoodDollar's quick face scan proves you are a real person. Moonshard never sees your face."}</p>${button('verify', 'VERIFY (FACE SCAN)', { disabled: txDisabled })}${button('recheck', "I'M DONE — CHECK AGAIN", { disabled: busy, cls: 'gd-ghost' })}`;
   } else {
     action = button('play', `PLAY ${esc(gate.label)} ▶`, { disabled: busy });
   }
-  return section('VERIFIED HUMANS ONLY', `<p>Moonshard is played by real people: one human, one slot. Connect your wallet and prove you are human with GoodDollar to play.</p><ol class="gd-steps">${steps.join('')}</ol>${action}`);
+  const then = blade ? ', then buy your blade with G$,' : '';
+  return section('VERIFIED HUMANS ONLY', `<p>Moonshard is played by real people: one human, one slot. Connect your wallet and prove you are human with GoodDollar${then} to play.</p><ol class="gd-steps">${steps.join('')}</ol>${action}`);
 }
 
 export function renderPanelHtml(s, now = Date.now(), { gate = null } = {}) {
@@ -145,7 +183,7 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null } = {}) {
   if (gate) {
     if (!s.connected && s.sessionExpired) out.push(warn('Your session ended. Connect your wallet again to keep playing.'));
     if (s.connected && s.needsReconnect && gateStep(s) !== 'ready') out.push(warn('Reconnect your wallet to continue.'));
-    out.push(gateHtml(s, gate, busy, txDisabled));
+    out.push(gateHtml(s, gate, busy, txDisabled, now));
     if (s.connected) out.push(button('disconnect', 'DISCONNECT', { disabled: busy, cls: 'gd-ghost' }));
   } else if (!s.connected) {
     if (s.sessionExpired) out.push(warn('Your session ended. Connect your wallet again to keep earning.'));

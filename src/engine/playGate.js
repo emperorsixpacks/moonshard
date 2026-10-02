@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { gdService } from './GdService.js';
-import { GATED_SCENES, blocksStart, canPlay, gateLabel } from './playGateRules.js';
+import { GATED_SCENES, blocksStart, canPlay, gateLabel, resumesAfterScan } from './playGateRules.js';
 import { takeGate } from './gateMemory.js';
 
 /**
@@ -71,12 +71,12 @@ export function installPlayGate() {
 
 /**
  * Coming back from GoodDollar's face scan the page has reloaded: if the player had asked to play something and is now
- * a verified human, offer that mode again with a single "PLAY" tap.
+ * a verified human, offer that mode again: a single "PLAY" tap, or the blade step first if they have no blade yet.
  */
 export async function resumeRememberedGate() {
   await gdService.ready;
   const wanted = takeGate(globalThis.sessionStorage);
-  if (!wanted || !canPlay(gdService.getStatus())) return;
+  if (!wanted || !resumesAfterScan(gdService.getStatus())) return;
   openGate({ ...wanted, label: gateLabel(wanted.key), launch: () => goTo(globalThis.window.game.scene, wanted.key, wanted.data) });
 }
 

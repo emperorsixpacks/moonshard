@@ -7,8 +7,9 @@ import { menuBadgeText } from '../../src/ui/menuBadge.js';
  * verified-human gate uses), so a visitor is not invited to "earn G$" by a game that will not let them in yet.
  */
 
+const SHOP = { enabled: true, items: [{ id: 'iron_starter', name: 'Rusted Shortsword', kind: 'blade', priceG: '20', requires: null }] };
 const status = (over = {}) => ({
-  connected: true, verified: true, status: 'verified', offline: false, shortAddress: '0x12ab…ef90', ubi: null, ...over,
+  connected: true, verified: true, status: 'verified', offline: false, shortAddress: '0x12ab…ef90', ubi: null, shop: SHOP, owned: ['iron_starter'], ...over,
 });
 
 test('a visitor is told to connect and verify in order to play', () => {
@@ -43,6 +44,13 @@ test('a verified human sees their address, or that the daily G$ can be claimed',
   assert.doesNotMatch(menuBadgeText(status({ ubi: { canClaim: false } })), /DAILY G\$ READY/);
 });
 
+test('a verified human with no blade yet is told to buy it, with its price in G$', () => {
+  const text = menuBadgeText(status({ owned: [] }));
+  assert.match(text, /BLADE/);
+  assert.match(text, /20 G\$/);
+  assert.match(menuBadgeText(status({ owned: null })), /CHECKING YOUR BLADE/);
+});
+
 test('a verified player who is offline still sees the verified line (they can play; only the checks are stale)', () => {
   assert.match(menuBadgeText(status({ offline: true })), /VERIFIED/);
 });
@@ -56,6 +64,9 @@ test('every line fits the title banner on the narrowest canvas', () => {
     status({ verified: false, status: 'unknown', offline: true }),
     status(),
     status({ ubi: { canClaim: true } }),
+    status({ owned: [] }),
+    status({ owned: [], shop: { ...SHOP, items: [{ ...SHOP.items[0], priceG: '1500' }] } }),
+    status({ owned: null }),
   ];
   for (const s of cases) {
     const text = menuBadgeText(s);
