@@ -45,6 +45,14 @@ This starts a local copy ("fork") of Celo mainnet with GoodDollar's real Identit
 
 The game's source is untouched: the launcher swaps the one module that builds GoodDollar's face-scan link (`src/gd/identity.js`) and the one line that picks the wallet, inside its own dev server only. A normal `npm run dev` or build has none of it, and `npm run test:build` fails if any of it, or the development-only gate bypass, reaches a production build.
 
+### Play on the real Celo network, on your computer
+
+```bash
+npm run dev:celo       # the game and its API on your computer, on Celo itself, against your deployed vault (server/.env.production)
+```
+
+Nothing is stood in: **Connect** uses your wallet extension (MetaMask, Rabby, ...), **Verify (face scan)** is GoodDollar's real face verification, the daily claim pays real G$, and buying the blade sends a real 20 G$ to your vault (which you own and can withdraw from). The API runs locally in development mode (in-memory database, prizes off, a fresh session secret) and holds no production key. `--vault 0x...` picks another vault, `--port <n>` the game's port (5318 by default), `--no-open` keeps the browser closed.
+
 Contracts (Foundry):
 
 ```bash
