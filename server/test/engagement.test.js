@@ -78,6 +78,25 @@ test("contract says not claimable (cooldown / unapproved app) -> 409 with the re
   } finally { await h.close(); }
 });
 
+test("the chain cannot be asked: status says unknown (not 'cannot claim') and attest says try again, with no signature", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    const runId = await clearBoss(h, p);
+    h.chain.state.engagement = { ok: null, reason: "chain_unavailable" };
+    const st = await h.api.get("/engagement/status", { token: p.token });
+    assert.equal(st.body.canClaim, null, "unknown is not the same as no");
+    assert.equal(st.body.reason, "chain_unavailable");
+    assert.equal(st.body.pendingRunId, runId, "the boss kill is still there to claim");
+    const r = await h.api.post("/engagement/attest", { runId }, { token: p.token });
+    assert.equal(r.status, 503);
+    assert.equal(r.body.error, "chain_unavailable");
+    assert.equal(r.body.appSignature, undefined);
+    h.chain.state.engagement = { ok: true, reason: null }; // the node is back
+    assert.equal((await h.api.post("/engagement/attest", { runId }, { token: p.token })).status, 200);
+  } finally { await h.close(); }
+});
+
 test("confirm records a real RewardClaimed event once; a later attest says already_claimed", async () => {
   const h = await makeHarness();
   try {

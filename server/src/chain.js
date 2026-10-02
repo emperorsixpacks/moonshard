@@ -1,4 +1,4 @@
-import { createPublicClient, http, parseAbi, zeroAddress } from "viem";
+import { BaseError, ContractFunctionRevertedError, createPublicClient, http, parseAbi, zeroAddress } from "viem";
 
 export const identityAbi = parseAbi([
   "function getWhitelistedRoot(address) view returns (address)",
@@ -23,9 +23,11 @@ export const vaultAbi = parseAbi([
 
 const NOT_FOUND = /NotFound/;
 
-/** @param {import("../config.js").config} config */
-export function createChain(config) {
-  const client = createPublicClient({ transport: http(config.rpcUrl) });
+/**
+ * @param {import("../config.js").config} config
+ * @param {{ client?: import("viem").PublicClient }} [options] `client` is for tests: a viem client over a fake transport
+ */
+export function createChain(config, { client = createPublicClient({ transport: http(config.rpcUrl) }) } = {}) {
   const { identity: identityAddr, engagement: engagementAddr, vault: vaultAddr } = config.contracts;
 
   return {
@@ -71,6 +73,11 @@ export function createChain(config) {
 
     blockNumber: () => client.getBlockNumber(),
 
+    /**
+     * Can this user claim from this app? ok: true / false when the contract answered (a "no" is a bool, or a revert with its
+     * reason, such as a cooldown), and ok: null when the node did not answer at all (down, timed out): that is not a "no",
+     * and must not read as one.
+     */
     async canClaimEngagement(app, user) {
       try {
         const ok = await client.readContract({
@@ -78,7 +85,9 @@ export function createChain(config) {
         });
         return { ok, reason: ok ? null : "not_claimable" };
       } catch (err) {
-        return { ok: false, reason: err?.cause?.reason || err?.shortMessage || err?.message || "not_claimable" };
+        const reverted = err instanceof BaseError ? err.walk((e) => e instanceof ContractFunctionRevertedError) : null;
+        if (!reverted) return { ok: null, reason: "chain_unavailable" };
+        return { ok: false, reason: reverted.reason || reverted.shortMessage || "not_claimable" };
       }
     },
 

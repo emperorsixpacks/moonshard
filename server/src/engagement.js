@@ -173,6 +173,7 @@ export function engagementRoutes(ctx) {
     if (await hasEngagementClaim(ctx, p.subject)) throw new HttpError(409, "already_claimed");
 
     const can = await ctx.chain.canClaimEngagement(ctx.appAccount.address, p.root);
+    if (can.ok === null) throw new HttpError(503, "chain_unavailable"); // the node did not answer: not a "no", try again
     if (!can.ok) throw new HttpError(409, "not_claimable", { reason: can.reason });
 
     const validUntilBlock = (await ctx.chain.blockNumber()) + GAME.ENGAGEMENT_BLOCK_WINDOW;
