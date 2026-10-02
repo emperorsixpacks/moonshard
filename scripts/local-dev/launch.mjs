@@ -102,7 +102,7 @@ try {
   // patient with the live chain: a slow copy of one account should be retried, not fail the session
   const fork = await bootFork({ apiPort: 0, whitelistPlayer: false, anvilArgs: ['--retries', '8', '--timeout', '60000'], prizes, vault: existingVault });
   started.push(() => fork.shutdown());
-  log('  vault deployed and funded, Engagement app registered, API running. Warming up...');
+  log(`  ${existingVault ? 'your vault found on the copy' : 'vault deployed and funded'}, Engagement app registered, API running. Warming up...`);
   await warmUp(fork);
   const startBlock = await fork.pub.getBlockNumber();
 
