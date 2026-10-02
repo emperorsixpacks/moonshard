@@ -123,6 +123,13 @@ try {
   check(/not banked/.test(await shardsLineOf()) && !/pending/.test(await shardsLineOf()), `flagged run: "${await shardsLineOf()}"`);
   check(/flagged/.test(await label()), `flagged label: "${await label()}"`);
 
+  // an honest run that ended before the minimum play time: not ranked, no Shards, and not called flagged
+  submitBehaviour({ body: { ...ranked, rankedOk: false, isNewBest: false, flags: [], shardsCredited: false, tooShort: true, minPlayMs: 30_000 } });
+  await playAndDie({ shards: 3 });
+  await wait(500);
+  check(/3 Shards not banked/.test(await shardsLineOf()) && /too short \(under 30 s\)/.test(await shardsLineOf()) && !/flagged|pending/.test(await shardsLineOf()), `too-short run: "${await shardsLineOf()}"`);
+  check(/too short to rank \(play 30 s\)/.test(await label()) && !/flagged/.test(await label()), `too-short label: "${await label()}"`);
+
   submitBehaviour({ status: 400, body: { error: 'invalid_score_rate' } });
   await playAndDie({ shards: 3 });
   await wait(500);

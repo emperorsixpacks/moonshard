@@ -213,6 +213,43 @@ test('survivalLabel: flagged runs and interrupted uploads are named', () => {
   assert.equal(label({ result: { ...ok, rankedOk: false, flags: [], checkpointFailed: true } }), 'Open Board #3 — not ranked (upload was interrupted)');
 });
 
+// ----------------------------------------------------------------------------------------- a run that was too short
+// The server ranks a run, and banks its Shards, only after a minimum of play (server/config.js MIN_RANKED_ELAPSED_MS). A run
+// that ends sooner is not a flagged run: it simply did not play long enough, and the screen must not suggest otherwise.
+
+const tooShort = { ...ok, bossCleared: false, rankedOk: false, flags: [], shardsCredited: false, tooShort: true, minPlayMs: 30_000 };
+
+test('shardsLine: a run that ended before the minimum play time says so, and is not called flagged', () => {
+  const l = line({ result: tooShort });
+  assert.match(l.text, /3 Shards not banked/);
+  assert.match(l.text, /too short \(under 30 s\)/);
+  assert.doesNotMatch(l.text, /flagged/i);
+  assert.equal(l.tone, 'warn');
+  assert.equal(line({ result: tooShort, brief: true }).text, '3 Shards not banked', 'brief still leaves the reason to the line above');
+});
+
+test('shardsLine: a flagged run is still called flagged, even when it was short as well', () => {
+  assert.match(line({ result: { ...tooShort, flags: ['cp_regress'] } }).text, /flagged/i);
+});
+
+test('shardsLine: the minimum comes from the server; without it the line still says "too short"', () => {
+  assert.match(line({ result: { ...tooShort, minPlayMs: 45_000 } }).text, /under 45 s/);
+  const { minPlayMs, ...withoutMinimum } = tooShort;
+  const l = line({ result: withoutMinimum });
+  assert.match(l.text, /too short/);
+  assert.doesNotMatch(l.text, /under|\d+ s/, 'no number is made up');
+});
+
+test('survivalLabel: a run that was too short says how long to play, and a flagged one is still flagged', () => {
+  assert.equal(label({ result: tooShort }), 'Open Board #3 — too short to rank (play 30 s)');
+  assert.equal(label({ result: { ...tooShort, minPlayMs: undefined } }), 'Open Board #3 — too short to rank');
+  assert.equal(label({ result: { ...tooShort, flags: ['cp_regress'] } }), 'Open Board #3 — run flagged, not ranked');
+});
+
+test('an unverified player is still told to verify, not that the run was short', () => {
+  assert.equal(label({ ...UNVERIFIED, result: tooShort }), 'Open Board #3 — verify to compete for G$');
+});
+
 // ----------------------------------------------------------------------------------------- notRecordedWhy
 
 test('notRecordedWhy: every reason the tracker can give has words', () => {

@@ -393,6 +393,11 @@ export function notRecordedWhy(result) {
 
 const notRecorded = (result) => !result || result.ticketed !== true || Boolean(result.error);
 const flagsOf = (result) => (Array.isArray(result?.flags) ? result.flags : []);
+/** The minimum play time the server asked for, as "30 s", or null when it did not say (so no number is made up). */
+const minimumPlay = (result) => {
+  const ms = Number(result?.minPlayMs);
+  return Number.isFinite(ms) && ms > 0 ? `${Math.round(ms / 1000)} s` : null;
+};
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
@@ -436,7 +441,9 @@ export function shardsLine({ shards, rateG, connected, verified, result, brief =
     default: {
       let why;
       if (notRecorded(result)) why = `run not recorded (${notRecordedWhy(result).toLowerCase()})`;
-      else if (flagsOf(result).length > 0 || result.rankedOk === false) why = 'run flagged';
+      else if (flagsOf(result).length > 0) why = 'run flagged';
+      else if (result.tooShort === true) why = minimumPlay(result) ? `run too short (under ${minimumPlay(result)})` : 'run too short';
+      else if (result.rankedOk === false) why = 'run flagged'; // a server that gives no reason: the earlier reading
       else why = 'too little of the run reached the server';
       return { icon: '💎', tone: 'warn', text: brief ? `${count} not banked` : `${count} not banked • ${why}` };
     }
@@ -475,6 +482,9 @@ export function survivalLabel({ connected, verified, result, slow = false, sessi
   const board = `Open Board #${result.rank?.open ?? '-'}`;
   if (flagsOf(result).length > 0) return `${board} — run flagged, not ranked`;
   if (result.checkpointFailed) return `${board} — not ranked (upload was interrupted)`;
+  if (verified && result.tooShort === true) {
+    return minimumPlay(result) ? `${board} — too short to rank (play ${minimumPlay(result)})` : `${board} — too short to rank`;
+  }
   return verified ? `${board} — run not ranked` : `${board} — verify to compete for G$`;
 }
 
