@@ -36,16 +36,26 @@ const isTransient = (err) => !Number.isInteger(err?.status) || err.status === 0 
 
 /** The longest pause the tracker will sit out before asking for a ticket again: a longer one means something else is wrong. */
 const MAX_START_WAIT_MS = 15_000;
+/** A finished run is worth holding on to: the longest wait before sending it again is a whole rate-limit window and a little more. */
+const MAX_SETTLE_WAIT_MS = 65_000;
 
 /**
- * The server paces /runs/start per player and mode: a start too soon after the last one is 429 `slow_down` with the time
- * left in `retryAfterMs`. Returns that wait when the error is that refusal and the wait is one to trust, else null.
+ * The time the server named in a 429 (`retryAfterMs` in the body, which a page on another origin can read; the Retry-After
+ * header it cannot unless exposed), when the refusal is one of `codes` and the wait is one to trust, else null.
  */
-function slowDownWait(err) {
-  if (err?.status !== 429 || err?.message !== 'slow_down') return null;
+function namedWait(err, codes, maxMs) {
+  if (err?.status !== 429 || !codes.includes(err?.message)) return null;
   const ms = err.body?.retryAfterMs;
-  return typeof ms === 'number' && Number.isFinite(ms) && ms >= 0 && ms <= MAX_START_WAIT_MS ? Math.ceil(ms) : null;
+  return typeof ms === 'number' && Number.isFinite(ms) && ms >= 0 && ms <= maxMs ? Math.ceil(ms) : null;
 }
+
+/**
+ * Asking for a ticket: the server paces starts per player and mode (`slow_down`) and limits requests per IP address
+ * (`rate_limited`); both say when to come back.
+ */
+const startWait = (err) => namedWait(err, ['slow_down', 'rate_limited'], MAX_START_WAIT_MS);
+/** Sending a finished run: only the per-IP limiter applies (the start pace is about starting). */
+const settleWait = (err) => namedWait(err, ['rate_limited'], MAX_SETTLE_WAIT_MS);
 
 /**
  * Tracks one server-ticketed run. Anonymous / offline runs are simply unticketed: every method is
@@ -249,7 +259,7 @@ export class RunTracker {
     try {
       return await send();
     } catch (err) {
-      const wait = slowDownWait(err);
+      const wait = startWait(err);
       if (wait === null) throw err;
       await this._pause(wait);
       if (epoch !== this.epoch) return null;
@@ -283,8 +293,12 @@ export class RunTracker {
       const batch = [...run.pending.splice(0), closing].slice(-POINTS_PER_POST);
       let sent = await this._post(run, batch);
       // Coverage decides ranking and the boss bounty, so the closing batch gets one more try. The server skips points it
-      // already stored, so repeating the identical batch is safe even if the first attempt was handled.
-      if (!sent.ok && sent.transient) sent = await this._post(run, batch);
+      // already stored, so repeating the identical batch is safe even if the first attempt was handled. A refusal by the
+      // per-IP limiter names the time to wait first: the player's address shares that budget with others.
+      if (!sent.ok && (sent.transient || sent.wait !== null)) {
+        if (sent.wait !== null) await this._sleep(sent.wait);
+        sent = await this._post(run, batch);
+      }
 
       const body = { ticket: run.ticket, ...totals, durationMs, bossCleared };
       const outcome = await this._submit(run, body);
@@ -309,11 +323,14 @@ export class RunTracker {
       return { ok: true };
     } catch (err) {
       this._noteError('checkpoint', err, run.token);
-      return { ok: false, transient: isTransient(err) };
+      return { ok: false, transient: isTransient(err), wait: settleWait(err) };
     }
   }
 
-  /** POST the submit, once more if the first attempt hit network trouble. Never rejects: { ok: true, res } or { ok: false, err }. */
+  /**
+   * POST the submit, once more if the first attempt hit network trouble or the per-IP limiter (after the time it named).
+   * Never rejects: { ok: true, res } or { ok: false, err }.
+   */
   async _submit(run, body) {
     const attempt = () => this.api(`/runs/${run.runId}/submit`, { method: 'POST', token: run.token, body });
     let last;
@@ -323,11 +340,24 @@ export class RunTracker {
       } catch (err) {
         last = err;
         this._noteError('submit', err, run.token);
+        const wait = settleWait(err);
+        if (wait !== null && tries === 0) {
+          await this._sleep(wait); // the limiter said when to come back; the server did not handle this submit
+          continue;
+        }
         // 409 already_submitted: the first attempt did land. Anything the server refused on purpose is final.
         if (!isTransient(err)) break;
       }
     }
     return { ok: false, err: last };
+  }
+
+  /** Resolves after `ms`. Unlike _pause it cannot be cancelled: a finished run keeps waiting after the scene is left. */
+  _sleep(ms) {
+    return new Promise((resolve) => {
+      if (typeof this.timers.setTimeout === 'function') this.timers.setTimeout(resolve, ms);
+      else setTimeout(resolve, ms);
+    });
   }
 
   _stamp(run, at = this.now()) {

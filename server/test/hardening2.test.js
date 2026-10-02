@@ -110,6 +110,16 @@ test("H1: checkpoint coverage must reach half the run: 49% banks nothing, exactl
 
 const limited = (general, authBudget) => ({ rateLimit: { enabled: true, windowMs: 60_000, general, auth: authBudget } });
 
+/**
+ * A 429 says when the client may come back, in the body: a page on another origin (the game on Vercel, the API on Railway)
+ * cannot read the Retry-After header unless it is exposed, and a run that is being submitted needs to know how long to wait.
+ */
+function assertRateLimited(body) {
+  assert.equal(body.error, "rate_limited");
+  assert.ok(Number.isFinite(body.retryAfterMs) && body.retryAfterMs > 0 && body.retryAfterMs <= 60_000, `retryAfterMs ${body.retryAfterMs}`);
+  assert.deepEqual(Object.keys(body).sort(), ["error", "retryAfterMs"]);
+}
+
 test("H2: /api is limited per IP, /api/auth more strictly, with a JSON 429 that browsers can read", async () => {
   const h = await makeHarness({ config: limited(6, 2) });
   try {
@@ -117,13 +127,13 @@ test("H2: /api is limited per IP, /api/auth more strictly, with a JSON 429 that 
     assert.equal((await h.api.get("/auth/nonce")).status, 200);
     const strict = await h.api.get("/auth/nonce"); // 3rd auth hit: over the auth budget of 2
     assert.equal(strict.status, 429);
-    assert.deepEqual(strict.body, { error: "rate_limited" });
+    assertRateLimited(strict.body);
 
     // 3 of the general budget of 6 are used up by the auth calls above (the limiters stack)
     for (let i = 0; i < 3; i++) assert.equal((await h.api.get("/config")).status, 200);
     const general = await h.api.get("/config");
     assert.equal(general.status, 429);
-    assert.deepEqual(general.body, { error: "rate_limited" });
+    assertRateLimited(general.body);
 
     // the limiter sits behind CORS, so a cross-origin page sees the 429 instead of an opaque network error
     const cors = await fetch(`${h.base}/api/config`, { headers: { origin: "http://localhost:5173" } });
@@ -155,6 +165,11 @@ test("H2: TRUST_PROXY is parsed into what Express expects (a hop count, never th
     ["loopback, 10.0.0.0/8", "loopback, 10.0.0.0/8"],
   ];
   for (const [input, want] of cases) assert.deepEqual(cfg.parseTrustProxy(input), want, `TRUST_PROXY=${JSON.stringify(input)}`);
+});
+
+test("H2: the per-IP request budget can be set (RATE_LIMIT_PER_MIN), and a bad value keeps the default", () => {
+  const cases = [[undefined, 300], ["", 300], ["600", 600], [" 1200 ", 1200], ["1", 1], ["0", 300], ["-5", 300], ["lots", 300], ["12.7", 12]];
+  for (const [input, want] of cases) assert.equal(cfg.parseRateLimitPerMinute(input), want, `RATE_LIMIT_PER_MIN=${JSON.stringify(input)}`);
 });
 
 const wallet = (n) => "0x" + n.toString(16).padStart(40, "0");

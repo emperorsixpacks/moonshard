@@ -21,7 +21,13 @@ const perIpLimiter = (windowMs, limit) =>
     limit,
     standardHeaders: "draft-7",
     legacyHeaders: false,
-    handler: (_req, res) => res.status(429).json({ error: "rate_limited" }),
+    // The wait is in the body, not only in Retry-After: a page on another origin cannot read that header unless it is
+    // exposed, and a client that is submitting a finished run needs to know how long to hold on to it.
+    handler: (req, res) => {
+      const resetAt = req.rateLimit?.resetTime;
+      const retryAfterMs = resetAt ? Math.max(1, Math.ceil(resetAt.getTime() - Date.now())) : windowMs;
+      res.status(429).json({ error: "rate_limited", retryAfterMs });
+    },
   });
 
 /**

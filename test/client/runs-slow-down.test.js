@@ -111,9 +111,9 @@ test('a refusal that names no wait, or an absurd one, is not retried', async () 
   }
 });
 
-test('only the pace refusal is waited out: a general rate limit, an outage and a bad request are not', async () => {
+test('only a refusal that names a wait is waited out: a limiter answer without one, an outage and a bad request are not', async () => {
   const cases = [
-    [Object.assign(new Error('rate_limited'), { status: 429, body: { error: 'rate_limited', retryAfterMs: 3_000 } }), 'rate_limited'],
+    [Object.assign(new Error('rate_limited'), { status: 429, body: { error: 'rate_limited' } }), 'rate_limited'], // (with a wait it is retried: runs-rate-limit.test.js)
     [Object.assign(new Error('internal_error'), { status: 500, body: { retryAfterMs: 3_000 } }), 'server_error'],
     [Object.assign(new Error('bad_mode'), { status: 400, body: { retryAfterMs: 3_000 } }), 'rejected'],
     [Object.assign(new Error('network_error'), { status: 0 }), 'offline'],

@@ -187,6 +187,35 @@ try {
     check(res.ticketed && res.rankedOk === true && res.flags.length === 0, `the run is ranked, unflagged (${JSON.stringify({ rankedOk: res.rankedOk, flags: res.flags })})`);
   }
 
+  log('▶ the per-IP limiter refuses the closing checkpoint and the submit: the finished run is held and sent when the window rolls');
+  {
+    // a short real window, so the wait the server names is a real, short one
+    const hl = await makeHarness({ config: { rateLimit: { enabled: true, windowMs: 1_500, general: 40, auth: 40 } } });
+    try {
+      const p = await hl.newPlayer({ verified: true });
+      const timers = { fns: [], setInterval(fn) { this.fns.push(fn); return this.fns.length; }, clearInterval(id) { this.fns[id - 1] = null; } };
+      const seen = [];
+      const api = async (path, opts) => {
+        try { const r = await apiFetch(path, { ...opts, base: hl.base }); seen.push(`${path.split('/').pop()} 200`); return r; } catch (e) { seen.push(`${path.split('/').pop()} ${e.status}`); throw e; }
+      };
+      const t = new RunTracker({ api, getToken: () => p.token, now: () => hl.clock(), timers, intervalMs: 10_000 });
+      const run = await t.start({ mode: 'TRIAL' });
+      for (let i = 1; i <= 4; i += 1) {
+        hl.clock.advance(10_000);
+        t.update({ score: i * 100, kills: i * 2, shards: i });
+        for (const fn of timers.fns) if (fn) await fn();
+      }
+      for (let i = 0; i < 60; i += 1) await hl.api.get('/config'); // the same address (a school, a carrier) has used up its budget
+      hl.clock.advance(5_000);
+      const res = await t.finish({ score: 450, kills: 9, shards: 4, durationMs: 45_000 });
+      const refused = seen.filter((x) => / 429$/.test(x)).length;
+      check(refused >= 1, `the limiter really did refuse the run's own requests (${seen.slice(-5).join(', ')})`);
+      check(res.ticketed && res.rankedOk === true && !res.checkpointFailed && !res.error, `and the run was still recorded and ranked (${JSON.stringify({ rankedOk: res.rankedOk, error: res.error, checkpointFailed: res.checkpointFailed })})`);
+      const row = (await hl.db.query('SELECT status, ranked_ok, flags FROM runs WHERE run_id = $1', [run.runId])).rows[0];
+      check(row.status === 'submitted' && row.ranked_ok === true && row.flags === '', `the server holds it as submitted, ranked, unflagged (${JSON.stringify(row)})`);
+    } finally { await hl.close(); }
+  }
+
   if (!observe) {
     assert.deepEqual(failures, [], `${failures.length} check(s) failed`);
     log('\n✅ the tracker and the real server agree');

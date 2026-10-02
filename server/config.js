@@ -24,6 +24,16 @@ export function parseTrustProxy(v) {
   return s;
 }
 
+/**
+ * RATE_LIMIT_PER_MIN -> the per-IP request budget for /api. Players behind one public address (a mobile carrier, a school, a
+ * household) share it, and one active player costs about 14 requests a minute, so a launch with shared addresses may need
+ * more than the default. Anything that is not a number of at least 1 keeps the default.
+ */
+export function parseRateLimitPerMinute(v, fallback = 300) {
+  const n = num(v, fallback);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback;
+}
+
 export const JWT_TTL_SEC = 12 * 60 * 60;
 export const NONCE_TTL_MS = 5 * 60_000;
 export const IDENTITY_TTL_MS = 5 * 60_000;
@@ -130,7 +140,7 @@ export const config = {
   corsOrigins: list(env.CORS_ORIGINS) || "*",
   trustProxy: parseTrustProxy(env.TRUST_PROXY),
   /** Per-IP request budgets: `general` for all of /api, `auth` (additionally) for /api/auth/*. */
-  rateLimit: { enabled: true, windowMs: 60_000, general: 300, auth: 30 },
+  rateLimit: { enabled: true, windowMs: 60_000, general: parseRateLimitPerMinute(env.RATE_LIMIT_PER_MIN), auth: 30 },
   databaseUrl: env.DATABASE_URL || "",
   rpcUrl: env.CELO_RPC_URL || "https://forno.celo.org",
   chainId: num(env.CHAIN_ID, 42220),
