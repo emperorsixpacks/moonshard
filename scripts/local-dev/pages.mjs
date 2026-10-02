@@ -107,7 +107,7 @@ export function controlPage({ gameUrl, statsUrl }) {
 
   <div class="card"><h2>G$ in and out of your wallet</h2>
     <table><thead><tr><th>What</th><th class="num">G$</th><th>Block</th></tr></thead><tbody id="ledger"></tbody></table>
-    <p id="empty" class="muted">Nothing yet. Claim your daily G$ in the game's wallet panel and it shows up here. The game has no way to spend G$ yet: only earning.</p>
+    <p id="empty" class="muted">Nothing yet. Claim your daily G$ in the game's wallet panel and it shows up here, and so does every G$ you pay into the prize vault: your blade, forge fees and Moon Shop looks.</p>
   </div>
 
   <div class="card"><h2>Where G$ appears in the game</h2>

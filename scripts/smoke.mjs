@@ -40,6 +40,11 @@ const startScene = async (key, data) => {
 try {
   await page.goto(WEB);
   await page.waitForFunction(() => window.game?.scene?.isActive('MenuScene'), null, { timeout: 60_000 });
+
+  console.log('▶ a first visit opens the G$ guide');
+  await page.waitForFunction(() => document.querySelector('#gd-panel')?.innerText.includes('WHAT G$ IS'), null, { timeout: 15_000 });
+  await shot('guide');
+  await page.click('#gd-close');
   await page.waitForTimeout(800);
   await shot('menu');
 

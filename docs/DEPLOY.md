@@ -32,7 +32,7 @@ cast send 0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A "transfer(address,uint256)"
   --account moonshard-deployer --rpc-url https://forno.celo.org
 ```
 
-The owner can later `setCaps`, `setSigner`, `pause` or `withdraw`. `renounceOwnership` is disabled (it would leave the vault with no owner and no way to do any of those): hand the vault over with `transferOwnership`, then the new owner calls `acceptOwnership`.
+The vault also receives every G$ players pay in the game (their blade, forge fees and Moon Shop looks, see below), so what players spend tops up the prizes. The owner can later `setCaps`, `setSigner`, `pause` or `withdraw`. `renounceOwnership` is disabled (it would leave the vault with no owner and no way to do any of those): hand the vault over with `transferOwnership`, then the new owner calls `acceptOwnership`.
 
 ### Sizing the caps
 
@@ -44,6 +44,12 @@ The vault enforces both caps on every redemption. A voucher above `MAX_PER_VOUCH
 - Do not size it far above what you need. The caps are also the most a leaked `VOUCHER_SIGNER_KEY` can drain: up to `DAILY_CAP` in each UTC day (and up to twice that across a UTC midnight), until you notice and call `setSigner` or `pause`. Likewise fund the vault for a few days of expected payouts, not more.
 
 When the API starts it reads `maxPerVoucher()` and `dailyCap()` from the vault and compares them with the prizes it signs. If they are too small it logs a `WARNING` with both numbers (it never refuses to start, and it only says so when the RPC answers). After every deploy or `setCaps`, restart the API and look for `vault caps ok` in its log.
+
+### The Moon Shop
+
+With `VAULT_ADDRESS` set, the API opens the Moon Shop: a player buys their first blade with G$ before they can play, pays a G$ fee to forge a stronger one, and can buy looks. Each payment is a plain G$ `transfer` from the player's wallet into the vault, with the item named after the transfer's arguments (`moonshard:<item>`); the API unlocks the item once the token's Transfer event shows the vault was paid. The API refuses to start a run for a player without a paid blade. With no `VAULT_ADDRESS` there is no shop: the first blade is free and blades are forged from materials alone.
+
+Items and prices are in `server/config.js` (`GAME.SHOP`); the game reads them from `GET /api/shop`, so a change needs only an API redeploy. Raising a price refuses a payment made at the old price by a player who had the page open at the time (`underpaid`, and the G$ stay in the vault): change prices in a quiet moment, and lower ones never cause this.
 
 ## 2. Register the Engagement Rewards app
 
@@ -61,19 +67,19 @@ GoodDollar must then approve the app (Discord `ubi.gd/GoodBuildersDiscord`, Tele
    - Host with a public CA (most managed Postgres): nothing more to set.
    - Host with a private CA: also set `DATABASE_CA` to the CA certificate as PEM text (`-----BEGIN CERTIFICATE-----` ... with real line breaks; the server checks it at start-up and refuses a value that lost them). It works together with `?sslmode=require`. `DATABASE_CA` on its own also turns TLS on.
    - **No `sslmode` in the URL and no `DATABASE_CA` means no TLS at all**: the password and every query cross the network in clear text. The server still starts, but prints a `WARNING ... NOT encrypted` line at boot unless the host is localhost. Accept that only on a private network you trust. `sslmode=disable` does the same on purpose and warns the same way (with `DATABASE_CA` set it is refused as contradictory).
-   - The server creates and updates its own tables when it starts (`server/migrations/*.sql`, each file in its own transaction, safe if two instances start together). `002_indexes.sql` builds indexes with a plain `CREATE INDEX`, which blocks writes to that table while it runs: on a database that already holds a lot of runs or scores, deploy it in a quiet moment.
+   - The server creates and updates its own tables when it starts (`server/migrations/*.sql`, each file in its own transaction, safe if two instances start together). `002_indexes.sql` builds indexes with a plain `CREATE INDEX`, which blocks writes to that table while it runs: on a database that already holds a lot of runs or scores, deploy it in a quiet moment. `003_shop.sql` adds the `purchases` table of the Moon Shop.
 3. Variables: everything in `server/.env.example`. `NODE_ENV=production` (without a `CORS_ORIGINS` the API then sends no CORS headers at all, rather than allowing every origin as it does in development; it also makes the API refuse to start with no `DATABASE_URL`, since everything would vanish on a restart, or with a `VAULT_ADDRESS` but no `VOUCHER_SIGNER_KEY`, since prizes could never be signed; `ALLOW_IN_MEMORY_DB=1` overrides the first for a throwaway demo); `JWT_SECRET` from `openssl rand -base64 32`; `CORS_ORIGINS` = your site origin; `VAULT_ADDRESS`; `VOUCHER_SIGNER_KEY`; `APP_SIGNER_KEY`. Optional: `LOG_LEVEL=debug` to see the requests the API refused as the client's mistake; `RATE_LIMIT_PER_MIN` (default 300) if many players will share one public IP address, since they share that budget (a player who is refused waits the time the server names and sends their run again).
 4. Check: `GET /health`, then `GET /api/config` shows your vault address and the engagement app address.
 
 ## 4. Web (Vercel)
 
 1. Import the repo; framework Vite; build command `npm run build`; output directory `dist`.
-2. Environment variables from `.env.example`: `VITE_API_URL` = the Railway URL; `VITE_VAULT_ADDRESS` = the deployed `MoonshardVault` (the app then refuses to redeem against any other address); `VITE_REOWN_PROJECT_ID` to enable WalletConnect. Because a player must be a verified human with a connected wallet before any game mode starts, WalletConnect is how people without a browser wallet (most phones outside a wallet app) get in: treat the Reown project id as required for a public launch.
+2. Environment variables from `.env.example`: `VITE_API_URL` = the Railway URL; `VITE_VAULT_ADDRESS` = the deployed `MoonshardVault` (the app then refuses to redeem from, or pay Moon Shop prices into, any other address: set it, since players pay into the address the API names); `VITE_REOWN_PROJECT_ID` to enable WalletConnect. Because a player must be a verified human with a connected wallet before any game mode starts, WalletConnect is how people without a browser wallet (most phones outside a wallet app) get in: treat the Reown project id as required for a public launch.
 3. The build produces two pages: the game (`/`) and the public stats page (`/stats.html`).
 
 ## 5. Post-deploy checks
 
 - Open the site in a browser with a Celo-compatible wallet and try to start a game mode: the verified-human gate should appear; connect, and confirm the panel shows your identity state and, for a verified account, offers PLAY.
-- As a verified account: claim the daily G$, play a Daily Shard Trial, and look at `/stats.html`.
+- As a verified account: claim the daily G$, buy the blade the gate asks for (20 G$, check it arrives in the vault on Celoscan), play a Daily Shard Trial, and look at `/stats.html` (G$ spent in the Moon Shop).
 - After the next UTC day plus 45 minutes, check that Spoils appear and can be redeemed.
 - Do not make the repository public before the release gate in `docs/ATTRIBUTIONS.md` is cleared.

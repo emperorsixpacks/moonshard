@@ -1,5 +1,5 @@
 // The public stats page tells the truth about what each number is:
-//   what the chain backs (UBI claims, boss bounties, Spoils paid, verified humans) is kept apart from what the game only
+//   what the chain backs (UBI claims, boss bounties, Spoils paid, G$ spent in the Moon Shop, verified humans) is kept apart from what the game only
 //   reports (runs, wallets, players who started a run: a free wallet counts there)
 //   "verified humans" says it counts everyone ever verified, and a verified person playing TODAY is its own tile
 //   a server that predates a counter shows a dash, not NaN
@@ -14,6 +14,7 @@ const day = (i) => `2026-10-0${i + 1}`;
 const STATS = {
   verifiedPlayers: 12, walletsConnected: 40, runsToday: 7, activeToday: 5, verifiedActiveToday: 3,
   ubiClaimsTotal: 9, ubiClaimsToday: 2, engagementClaims: 1, spoilsIssuedG: '1100', spoilsPaidG: '1000',
+  shopPurchases: 4, shopSpentG: '270',
   series: Array.from({ length: 7 }, (_, i) => ({ day: day(i), runs: i, active: i, ubiClaims: i % 3 })),
   updatedAt: '2026-10-07T12:00:00.000Z',
 };
@@ -38,13 +39,14 @@ try {
   check(chain.get('VERIFIED PLAYERS TODAY') === '3', 'a verified person playing today has its own tile');
   check(chain.get('VERIFIED HUMANS, EVER') === '12', 'verified humans says it counts everyone ever verified');
   check(![...chain.keys(), ...reported.keys()].includes('VERIFIED HUMANS'), 'nothing is called plain "verified humans"');
-  for (const label of ['G$ UBI CLAIMS VIA MOONSHARD', 'UBI CLAIMS TODAY', 'BOSS BOUNTIES CLAIMED', 'SPOILS PAID OUT (G$)']) {
+  for (const label of ['G$ UBI CLAIMS VIA MOONSHARD', 'UBI CLAIMS TODAY', 'BOSS BOUNTIES CLAIMED', 'SPOILS PAID OUT (G$)', 'G$ SPENT IN THE MOON SHOP']) {
     check(chain.has(label), `${label} is among the confirmed numbers`);
   }
   for (const label of ['RUNS TODAY', 'PLAYERS WHO STARTED A RUN TODAY', 'WALLETS CONNECTED', 'SPOILS ISSUED (G$)']) {
     check(reported.has(label) && !chain.has(label), `${label} is among the reported numbers, not the confirmed ones`);
   }
   check(reported.get('RUNS TODAY') === '7' && reported.get('WALLETS CONNECTED') === '40', 'the numbers are the server\'s');
+  check(chain.get('G$ SPENT IN THE MOON SHOP') === '270' && chain.get('MOON SHOP PURCHASES') === '4', 'what players spent in the Moon Shop is shown, from the chain');
   const legend = await g.page.evaluate(() => document.querySelector('.legend').textContent);
   check(/Runs \(any wallet\)/.test(legend) && /Players \(any wallet\)/.test(legend) && /UBI claims \(on-chain\)/.test(legend), 'the chart says which series are from any wallet');
 

@@ -1,8 +1,9 @@
 // The local test launcher (`npm run dev:local`) driven the way a person would use it, in a real browser:
-//   a first visitor is stopped by the gate; connecting uses the built-in test wallet even when a wallet extension owns
-//   window.ethereum (as MetaMask or Rabby do in a real browser) and must never be asked for anything; "Verify (face scan)" goes to the stand-in
-//   page, one click passes, and the game offers PLAY; the daily claim, the first-boss bounty and the Spoils each move real G$
-//   on the local fork and show up in the launcher's ledger; removing the verification brings the gate back; the launcher
+//   a first visitor sees the G$ guide, then is stopped by the gate; connecting uses the built-in test wallet even when a
+//   wallet extension owns window.ethereum (as MetaMask or Rabby do in a real browser) and must never be asked for anything;
+//   "Verify (face scan)" goes to the stand-in page, one click passes; with no G$ yet the gate offers today's claim, then the
+//   blade for 20 G$, then PLAY; the claim, the blade, the first-boss bounty and the Spoils each move real G$ on the local
+//   fork and show up in the launcher's ledger; removing the verification brings the gate back; the launcher
 //   refuses requests from pages that are not local, and stopping it leaves nothing running.
 //   node test/client/browser/local-dev.mjs        (run from the repository root; needs internet for the fork; takes ~5 minutes)
 import { request } from 'node:http';
@@ -87,6 +88,9 @@ try {
   check(await page.evaluate(() => window.__MS_LOCAL_DEV?.provider?.isMoonshardLocalDev === true), 'and the page still has the built-in test wallet');
   check((await page.locator('a', { hasText: 'LOCAL TEST' }).count()) === 1, 'a badge says this is a local test session');
   check(!(await getJson('/dev/state')).verified, 'the test player starts unverified');
+  await panelHas('WHAT G$ IS');
+  check(true, 'a first visit opens the G$ guide');
+  await closePanel();
   await clickMenuRow(page, 'ENDLESS MODE');
   await panelOpen();
   check(/VERIFIED HUMANS ONLY/.test(await page.innerText('#gd-panel')), 'tapping Endless opens the gate');
@@ -102,25 +106,31 @@ try {
   check(!(await getJson('/dev/state')).verified, 'which has not verified anyone yet');
   await Promise.all([page.waitForURL((u) => u.href.startsWith(ready.game), { timeout: 60_000 }), page.click('#pass')]);
   await gameReady();
-  await panelHas('PLAY ENDLESS MODE');
-  check(true, 'one click returns to the game, verified, with the mode they asked for offered as one tap');
+  await panelHas('3. Buy your blade with G$');
+  check(true, 'one click returns to the game, verified, at the next step of the mode they asked for: the blade');
   const afterScan = await getJson('/dev/state');
   check(afterScan.verified, 'the real Identity contract on the fork now lists the player as a verified human');
-  await page.click('[data-act="play"]');
-  await page.waitForFunction(() => window.game.scene.isActive('SurvivalScene'), null, { timeout: 30_000 });
-  check(true, 'PLAY starts endless mode');
 
-  // ---- 3. the daily claim ------------------------------------------------------------------------------------------
-  log('▶ the daily G$ claim');
-  await startScene('MenuScene');
-  await openWallet();
-  await panelHas('CLAIM DAILY G$');
+  // ---- 3. the daily claim, then the blade ---------------------------------------------------------------------------
+  log('▶ the daily G$ claim, then the blade');
+  await panelHas('You need 20 G$');
+  check(true, 'with no G$ yet, the gate offers today\'s free claim first');
   await page.click('[data-act="ubi"]');
-  await panelHas('BLESSING ACTIVE');
-  await closePanel();
+  await panelHas('BUY RUSTED SHORTSWORD — 20 G$');
   const afterClaim = await ledger();
   const claim = afterClaim.find((row) => row.label === 'Daily UBI claim');
   check(Boolean(claim) && claim.direction === 'in' && Number(claim.amountG.replace(/,/g, '')) > 0, `the real claim contract paid G$ to the player (${claim?.amountG} G$)`);
+  await page.click('[data-act="buy"]');
+  await panelHas('PLAY ENDLESS MODE');
+  const blade = (await ledger()).find((row) => row.label.startsWith('Moon Shop: Rusted Shortsword'));
+  check(blade?.direction === 'out' && blade.amountG === '20', `the blade cost 20 G$, paid into the prize vault (${blade?.label}, ${blade?.amountG})`);
+  await page.click('[data-act="play"]');
+  await page.waitForFunction(() => window.game.scene.isActive('SurvivalScene'), null, { timeout: 30_000 });
+  check(true, 'PLAY starts endless mode');
+  await startScene('MenuScene');
+  await openWallet();
+  await panelHas('BLESSING ACTIVE');
+  await closePanel();
 
   // ---- 4. the first-boss bounty ------------------------------------------------------------------------------------
   log('▶ the first-boss bounty');
@@ -174,6 +184,7 @@ try {
   const rows = await view.$$eval('#ledger tr', (trs) => trs.map((tr) => tr.innerText.replace(/\s+/g, ' ')));
   check(rows.some((r) => /Daily UBI claim/.test(r)) && rows.some((r) => /First-boss bounty/.test(r)) && rows.some((r) => /Spoils redeemed/.test(r)),
     `it lists the three kinds of G$ the player received (${rows.length} rows)`);
+  check(rows.some((r) => /Moon Shop: Rusted Shortsword/.test(r)), 'and the G$ they paid for the blade');
   check((await view.innerText('#verified')) === 'no', 'and shows the player as not verified now');
 
   // ---- 8. the launcher only serves local pages ---------------------------------------------------------------------

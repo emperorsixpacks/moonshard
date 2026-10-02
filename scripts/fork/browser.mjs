@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { bootFork, localWalletProvider } from './lib.mjs';
 import { freePort, waitForMoonshard } from './ports.mjs';
+import { erc20Abi as erc20 } from 'viem';
 import { settleDue } from '../../server/src/spoils.js';
 
 const SHOTS = new URL('../../docs/screenshots/', import.meta.url).pathname;
@@ -73,10 +74,29 @@ const startScene = async (key, data) => {
 };
 const gameReady = () => page.waitForFunction(() => window.game?.scene?.isActive('MenuScene'), null, { timeout: 60_000 });
 const panelHas = (text) => page.waitForFunction((t) => document.querySelector('#gd-panel')?.innerText.includes(t), text, { timeout: 60_000 });
+const forgeTexts = () => page.evaluate(() => window.game.scene.getScene('ForgeScene').contentContainer.list.filter((o) => o.type === 'Text').map((o) => o.text));
+/** A real click on the Forge button whose label starts with `label` (the first one, top to bottom). */
+async function clickForge(label) {
+  const at = await page.evaluate((text) => {
+    const scene = window.game.scene.getScene('ForgeScene');
+    const t = scene.contentContainer.list.find((o) => o.type === 'Text' && o.text.startsWith(text));
+    const b = scene.contentContainer.list.find((o) => o.type === 'Rectangle' && o.input && Math.abs(o.x - t.x) < 1 && Math.abs(o.y - t.y) < 1).getBounds();
+    const r = window.game.canvas.getBoundingClientRect();
+    const k = r.width / window.game.scale.width;
+    return { x: r.left + (b.x + b.width / 2) * k, y: r.top + (b.y + b.height / 2) * k };
+  }, label);
+  await page.mouse.click(at.x, at.y);
+}
 
 try {
   await page.goto(web);
   await gameReady();
+
+  console.log('▶ a first visit opens the G$ guide');
+  await panelHas('WHAT G$ IS');
+  await panelHas('Rusted Shortsword: 20 G$');
+  await shot('guide-first-visit');
+  await page.click('#gd-close');
   await page.waitForTimeout(800);
   await shot('menu-desktop');
 
@@ -85,32 +105,46 @@ try {
   await panelHas('NOT CONNECTED');
   await shot('panel-disconnected');
 
-  console.log('▶ the verified-human gate: asking to play opens it, connecting passes it, PLAY starts the mode');
+  console.log('▶ the way in: connect, prove you are human, buy your blade with G$, play');
   await page.click('#gd-close');
   await page.evaluate(() => window.game.scene.getScene('MenuScene').scene.start('SurvivalScene')); // what a menu row does
   await panelHas('VERIFIED HUMANS ONLY');
   assert.equal(await page.evaluate(() => window.game.scene.isActive('SurvivalScene')), false, 'play started without a verified human');
   await shot('gate-connect');
   await page.click('[data-act="connect"]');
-  await panelHas('PLAY ENDLESS MODE'); // this wallet is a whitelisted human on the fork
+  // this wallet is a whitelisted human on the fork, holding no G$ yet: the blade step offers today's free claim first
+  await panelHas('3. Buy your blade with G$');
+  await panelHas('You need 20 G$');
+  await shot('gate-blade-claim-first');
+  console.log('   claim daily G$ through the real ClaimSDK, from the gate');
+  await page.click('[data-act="ubi"]');
+  await panelHas('BUY RUSTED SHORTSWORD — 20 G$');
+  await shot('gate-blade-buy');
+  console.log('   buy the blade: a real G$ transfer into the prize vault');
+  const vaultBefore = await f.pub.readContract({ address: f.contracts.token, abi: erc20, functionName: 'balanceOf', args: [f.contracts.vault] });
+  await page.click('[data-act="buy"]');
+  await panelHas('PLAY ENDLESS MODE');
+  const vaultAfter = await f.pub.readContract({ address: f.contracts.token, abi: erc20, functionName: 'balanceOf', args: [f.contracts.vault] });
+  assert.equal(vaultAfter - vaultBefore, 20n * 10n ** 18n, 'the prize vault received the 20 G$');
   await shot('gate-ready');
   await page.click('[data-act="play"]');
+  const firstEndlessAt = Date.now();
   await page.waitForFunction(() => window.game.scene.isActive('SurvivalScene'), null, { timeout: 30_000 });
   await startScene('MenuScene');
 
-  console.log('▶ verified human, claim button present');
+  console.log('▶ verified human with a blade: the blessing from the claim, the balance on the G$ button');
   await openWallet();
   await panelHas('VERIFIED HUMAN');
-  await panelHas('CLAIM DAILY G$');
-  await shot('panel-verified');
-
-  console.log('▶ claim daily G$ through the real ClaimSDK');
-  await page.click('[data-act="ubi"]');
   await panelHas('BLESSING ACTIVE');
+  await page.waitForFunction(() => /^G\$ [0-9]/.test(document.querySelector('#wallet-btn-text-landscape')?.textContent ?? ''), null, { timeout: 30_000 });
   await shot('panel-claimed');
   await page.click('#gd-close');
 
   console.log('▶ Daily Shard Trial in the real game (ticketed run, 35 s)');
+  // The server paces Endless starts 10 s apart per player (GAME.START_GAP_MS), and PLAY in the gate started one moments ago.
+  // A start inside the pace is answered "slow down"; the game waits and starts its run late, which would leave this one under
+  // the 30 s a run needs to be ranked. A person takes longer than that between two games; the script waits it out.
+  await page.waitForTimeout(Math.max(0, firstEndlessAt + 10_500 - Date.now()));
   await startScene('SurvivalScene');
   // The server ranks a run, and so settles a prize for it, only from 30 s of play. An idle player is killed after about
   // 32 s, which would end the run on its own right at that line, so the player is made unhittable for the wait.
@@ -157,6 +191,27 @@ try {
   await shot('panel-bounty-claimed');
   await page.click('#gd-close');
 
+  console.log('▶ the Forge: a look bought with G$, and a blade forged from materials plus a G$ fee');
+  await startScene('ForgeScene');
+  await page.evaluate(() => window.game.scene.getScene('ForgeScene').tabSkins.emit('pointerdown'));
+  await page.waitForTimeout(500);
+  await shot('forge-skins-prices');
+  await clickForge('BUY');
+  await page.waitForFunction(() => window.game.scene.getScene('ForgeScene').contentContainer.list.some((o) => o.type === 'Text' && o.text === 'EQUIPPED'), null, { timeout: 120_000 });
+  await shot('forge-skin-bought');
+  await page.evaluate(() => window.game.scene.getScene('ForgeScene').tabFree.emit('pointerdown'));
+  await page.waitForTimeout(500);
+  await clickForge('FORGE + 30 G$');
+  await page.waitForFunction(() => {
+    const list = window.game.scene.getScene('ForgeScene').contentContainer.list;
+    const at = (name) => list.find((o) => o.type === 'Text' && o.text === name);
+    const equipped = list.find((o) => o.type === 'Text' && o.text === 'EQUIPPED');
+    return equipped && Math.abs(equipped.y - at('Iron Broadsword').y) < 30;
+  }, null, { timeout: 120_000 });
+  await shot('forge-broadsword');
+  assert.ok((await forgeTexts()).includes('FORGE + 60 G$\n15B/10A/8I'), 'the Glaive still needs its materials and fee');
+  await startScene('MenuScene');
+
   console.log('▶ Spoils: next UTC day settles the trial, the player redeems the voucher on-chain');
   api.advance(27 * 3600_000);
   await settleDue(api.ctx);
@@ -180,6 +235,8 @@ try {
   const stats = await context.newPage();
   await stats.goto(`${web}/stats.html`);
   await stats.waitForSelector('.tile b');
+  const shopTile = await stats.evaluate(() => [...document.querySelectorAll('#chain .tile')].find((t) => t.textContent.includes('MOON SHOP PURCHASES'))?.querySelector('b').textContent);
+  assert.equal(shopTile, '3', 'the stats page counts the blade, the skin and the forge fee');
   await stats.screenshot({ path: `${SHOTS}stats.png`, fullPage: true });
 
   assert.deepEqual(errors, [], `browser errors:\n${errors.join('\n')}`);

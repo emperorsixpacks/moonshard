@@ -2,6 +2,8 @@ import { createServer } from 'node:http';
 import { parseAbi, parseAbiItem, zeroAddress } from 'viem';
 import { ADDR, localWalletProvider } from '../fork/lib.mjs';
 import { formatG, ledgerRows } from './ledger.mjs';
+import { GAME } from '../../server/config.js';
+import { itemOf } from '../../server/src/shop.js';
 import { controlPage, facePage } from './pages.mjs';
 
 /**
@@ -48,6 +50,20 @@ export async function startHelper({ fork, settle, startBlock, getGameUrl }) {
   const player = accounts.player;
   const provider = localWalletProvider(fork.rpc, player, pub);
   const known = { ubi: ADDR.ubi, engagement: ADDR.engagement, vault: fork.contracts.vault };
+  // A payment into the vault is a Moon Shop purchase, and its transaction names the item: read once per purchase.
+  const itemNames = new Map(GAME.SHOP.map((item) => [item.id, item.name]));
+  const itemByTx = new Map();
+  async function nameItems(transfers) {
+    for (const t of transfers) {
+      if (t.args.to.toLowerCase() !== fork.contracts.vault.toLowerCase()) continue;
+      if (!itemByTx.has(t.transactionHash)) {
+        const tx = await pub.getTransaction({ hash: t.transactionHash });
+        itemByTx.set(t.transactionHash, itemNames.get(itemOf(tx.input)) ?? null);
+      }
+      t.item = itemByTx.get(t.transactionHash);
+    }
+    return transfers;
+  }
   let advancedMs = 0;
   let shortcutRunning = false;
 
@@ -73,7 +89,7 @@ export async function startHelper({ fork, settle, startBlock, getGameUrl }) {
       keep('g', () => balance(player.address), formatG),
       keep('vaultG', () => balance(fork.contracts.vault), formatG),
       keep('incoming', () => logs({ to: player.address })),
-      keep('outgoing', () => logs({ from: player.address })),
+      keep('outgoing', async () => nameItems(await logs({ from: player.address }))),
     ]);
     return {
       player: player.address,

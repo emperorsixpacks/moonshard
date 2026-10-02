@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { createWalletClient, custom, formatUnits, parseAbi } from 'viem';
+import { createWalletClient, custom, formatUnits, parseAbi, parseUnits, stringToHex } from 'viem';
 import { celo } from 'viem/chains';
 import { createRequire } from 'node:module';
 import { EngagementRewardsSDK } from '@goodsdks/engagement-sdk';
 import { settleDue } from '../../server/src/spoils.js';
 import { bootFork, localWalletProvider } from './lib.mjs';
+import { buyItem } from '../../src/gd/shop.js';
 
 // The citizen SDK's ESM build does a named import from CommonJS `lz-string`, which plain Node rejects
 // (Vite handles it fine in the browser). Its CJS build loads, so use that here.
@@ -42,6 +43,30 @@ try {
   const confirm = await api.call('POST', '/ubi/confirm', { txHash: receipt.transactionHash }, token);
   assert.equal(confirm.body.blessing, true, JSON.stringify(confirm.body));
   assert.equal((await api.call('GET', '/rewards/status', undefined, token)).body.blessing, true);
+
+  step('Moon Shop: no blade, no run; the blade is bought with a real G$ transfer into the vault that names it');
+  const refused = await api.call('POST', '/runs/start', { mode: 'TRIAL' }, token);
+  assert.equal(refused.body.error, 'blade_required', JSON.stringify(refused.body));
+  const shop = (await api.call('GET', '/shop')).body;
+  assert.equal(shop.vault.toLowerCase(), contracts.vault.toLowerCase());
+  const blade = shop.items.find((i) => i.kind === 'blade');
+  const playerG0 = await balance(player.address);
+  const vaultG0 = await balance(contracts.vault);
+  // the game's own purchase code (src/gd/shop.js), with the wallet a browser would give it
+  const clients = { clients: () => ({ walletClient: wallet, publicClient: pub }) };
+  const bought = await buyItem({ wallet: clients, vault: shop.vault, item: blade });
+  assert.equal(bought.unconfirmed, undefined);
+  const sent = await pub.getTransaction({ hash: bought.hash });
+  assert.equal(sent.to.toLowerCase(), contracts.token.toLowerCase(), 'paid on the G$ token');
+  assert.ok(sent.input.endsWith(stringToHex(`moonshard:${blade.id}`).slice(2)), 'the transaction itself names what it bought');
+  const price = parseUnits(blade.priceG, 18);
+  assert.equal(playerG0 - (await balance(player.address)), price, 'the player paid exactly the price');
+  assert.equal((await balance(contracts.vault)) - vaultG0, price, 'and the prize vault received all of it');
+  console.log(`   ${blade.name}: ${blade.priceG} G$ from the player into the prize vault`);
+  const bladeConfirm = await api.call('POST', '/shop/confirm', { txHash: bought.hash }, token);
+  assert.equal(bladeConfirm.status, 200, JSON.stringify(bladeConfirm.body));
+  assert.deepEqual(bladeConfirm.body.owned, [blade.id]);
+  assert.deepEqual((await api.call('GET', '/rewards/status', undefined, token)).body.owned, [blade.id]);
 
   step('Daily Shard Trial: honest ticketed run with shards is ranked');
   async function trial({ score, kills, shards, durationMs }) {
@@ -122,12 +147,29 @@ try {
   const again = (await api.call('GET', '/spoils', undefined, token)).body.spoils;
   assert.ok(again.every((s) => s.claimed === true && s.voucher === null));
 
+  step('Moon Shop: a look bought with G$ from the bounty; it adds no power');
+  const pet = (await api.call('GET', '/shop')).body.items.find((i) => i.id === 'satchel_pet');
+  const vaultG1 = await balance(contracts.vault);
+  const petBuy = await buyItem({ wallet: clients, vault: shop.vault, item: pet });
+  assert.equal((await balance(contracts.vault)) - vaultG1, parseUnits(pet.priceG, 18));
+  const petConfirm = await api.call('POST', '/shop/confirm', { txHash: petBuy.hash }, token);
+  assert.deepEqual(petConfirm.body.owned, [blade.id, pet.id]);
+  // a Celestial blade (the Glaive's power) cannot be had for G$ alone before the Glaive itself
+  const celestial = shop.items.find((i) => i.requires);
+  const early = await buyItem({ wallet: clients, vault: shop.vault, item: celestial });
+  const earlyConfirm = await api.call('POST', '/shop/confirm', { txHash: early.hash }, token);
+  assert.equal(earlyConfirm.body.recorded, true, 'the payment is kept');
+  assert.ok(!earlyConfirm.body.owned.includes(celestial.id), 'but the blade waits for the Glaive');
+
   step('public stats reflect the session');
   const stats = (await api.call('GET', '/stats')).body;
   assert.equal(stats.verifiedPlayers, 1);
   assert.equal(stats.ubiClaimsTotal, 1);
   assert.equal(stats.engagementClaims, 1);
   assert.ok(Number(stats.spoilsPaidG) > 0);
+  assert.equal(stats.shopPurchases, 3);
+  assert.equal(Number(stats.shopSpentG), Number(blade.priceG) + Number(pet.priceG) + Number(celestial.priceG));
+  console.log(`   G$ spent in the Moon Shop: ${stats.shopSpentG}`);
 
   console.log(`\n✅ fork e2e passed (${results.length} steps)`);
 } catch (err) {

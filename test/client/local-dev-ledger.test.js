@@ -36,7 +36,16 @@ test('a source the game does not know is shown by its address, not guessed at', 
   assert.equal(row.direction, 'in');
 });
 
-test('G$ leaving the player is listed as going out (the game has no way to spend it yet, so this stays empty in practice)', () => {
+test('G$ paid into the prize vault is a Moon Shop purchase, named by the item its transaction carries', () => {
+  const [named, unnamed] = rows([
+    { ...transfer(PLAYER, VAULT, G(80), 101n), item: null },
+    { ...transfer(PLAYER, VAULT, G(20), 102n), item: 'Rusted Shortsword' },
+  ]);
+  assert.deepEqual({ direction: named.direction, label: named.label, amountG: named.amountG }, { direction: 'out', label: 'Moon Shop: Rusted Shortsword (into the prize vault)', amountG: '20' });
+  assert.equal(unnamed.label, 'Paid into the prize vault (Moon Shop)');
+});
+
+test('G$ sent somewhere the game does not know is listed as going out, by address', () => {
   const [row] = rows([transfer(PLAYER, '0x3333333333333333333333333333333333333333', G(10))]);
   assert.deepEqual({ direction: row.direction, amountG: row.amountG }, { direction: 'out', amountG: '10' });
   assert.match(row.label, /^Sent to 0x3333…3333$/);
