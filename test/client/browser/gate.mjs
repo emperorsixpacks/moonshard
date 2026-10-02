@@ -55,6 +55,36 @@ const panelText = (page) => page.evaluate(() => document.querySelector('#gd-pane
   } finally { await g.close(); }
 }
 
+// ---- 3. the verification lapses in the middle of a session ------------------------------------------------------------
+{
+  const g = await bootGame({ api: true, init: sessionInit() });
+  try {
+    const api = await installApi(g.page, { verified: true });
+    log('▶ a verification that lapses mid-session stops the next "play again"');
+    await g.goto();
+    await g.page.waitForFunction(() => window.gdService.getStatus().verified === true, null, { timeout: 30_000 });
+    await g.startScene('SurvivalScene');
+    await g.page.evaluate(() => { window.__marker = window.game.scene.getScene('SurvivalScene').children.list[0]; });
+
+    api.verified = false; // the human check expired on the server
+    await g.page.evaluate(() => window.gdService.refreshAll());
+    await g.page.waitForFunction(() => window.gdService.getStatus().verified === false, null, { timeout: 15_000 });
+
+    await g.page.evaluate(() => window.game.scene.getScene('SurvivalScene').scene.restart()); // what "play again" does
+    await g.page.waitForFunction(() => document.querySelector('#gd-panel') && !document.querySelector('#gd-panel').classList.contains('hidden'), null, { timeout: 15_000 });
+    check(/ENDLESS MODE/.test(await panelText(g.page)), 'the gate opens and names the mode');
+    check(await g.page.evaluate(() => window.__marker.active), 'the run was not restarted behind it');
+
+    api.verified = true; // they verify again
+    await g.page.click('[data-act="recheck"]');
+    await g.page.waitForSelector('[data-act="play"]', { timeout: 15_000 });
+    await g.page.click('[data-act="play"]');
+    await g.page.waitForFunction(() => window.__marker.active === false, null, { timeout: 30_000 });
+    check(await active(g.page, 'SurvivalScene'), 'passing the gate carries the restart out');
+    check(g.errors.length === 0, `no browser errors ${g.errors.join(' | ')}`);
+  } finally { await g.close(); }
+}
+
 if (failures.length) {
   console.log(`\n❌ gate check failed (${failures.length})`);
   process.exit(1);

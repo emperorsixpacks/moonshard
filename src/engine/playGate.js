@@ -5,9 +5,10 @@ import { takeGate } from './gateMemory.js';
 
 /**
  * Wires the verified-human gate (playGateRules.js) into the game: every way of starting play goes through the scene
- * plugin's `start`, so one wrapper covers the menu, the chapter picker, the leaderboard's "play" button and the
- * story's own transitions. A blocked start opens the wallet panel in gate mode instead; once the player is a
- * verified human the panel offers "PLAY", which carries out the start that was asked for.
+ * plugin's `start` or `restart` ("play again", the next chapter, the pause menu's restart), so two wrappers cover the
+ * menu, the chapter picker, the leaderboard's "play" button and the story's own transitions. A blocked start opens the
+ * wallet panel in gate mode instead; once the player is a verified human the panel offers "PLAY", which carries out the
+ * start that was asked for.
  *
  * This is the experience of the rule, not its enforcement: the server only ranks and pays verified humans anyway.
  */
@@ -26,6 +27,18 @@ const goTo = (manager, key, data) => {
   manager.start(key, data);
 };
 
+/** Keep who-the-player-is fresh for the next gate decision: verification can lapse between runs. */
+const keepStatusFresh = (sceneKey) => {
+  if (GATED_SCENES.has(sceneKey)) gdService.refreshAll().catch(() => {});
+};
+
+/** The start was stopped: the screen may already have faded out on its way to the mode, so bring it back, the player stays here. */
+const stopAtGate = (plugin, sceneKey, data) => {
+  plugin.systems?.cameras?.main?.resetFX?.();
+  openGate({ key: sceneKey, data, label: gateLabel(sceneKey), launch: () => goTo(plugin.manager, sceneKey, data) });
+  return plugin;
+};
+
 export function installPlayGate() {
   const proto = Phaser.Scenes.ScenePlugin.prototype;
   if (proto.__playGate) return;
@@ -35,16 +48,24 @@ export function installPlayGate() {
     const target = key === undefined ? this.key : key;
     if (!startIsBlocked(target)) {
       const started = start.call(this, key, data);
-      // keep who-the-player-is fresh for the next gate decision (verification can lapse between runs)
-      if (GATED_SCENES.has(target)) gdService.refreshAll().catch(() => {});
+      keepStatusFresh(target);
       return started;
     }
     // a deep link (?scene=...) arrives from the boot screen: show the menu behind the gate rather than a blank screen
     if (this.key === 'BootScene') start.call(this, 'MenuScene');
-    // the screen may already have faded out on its way to the mode: bring it back, the player is staying here
-    this.systems?.cameras?.main?.resetFX?.();
-    openGate({ key: target, data, label: gateLabel(target), launch: () => goTo(this.manager, target, data) });
-    return this;
+    return stopAtGate(this, target, data);
+  };
+
+  // "Play again", the next chapter and the pause menu's restart start the same scene over without going through `start`;
+  // the player's verification may have lapsed since they first got in
+  const restart = proto.restart;
+  proto.restart = function gatedRestart(data) {
+    if (!startIsBlocked(this.key)) {
+      const restarted = restart.call(this, data);
+      keepStatusFresh(this.key);
+      return restarted;
+    }
+    return stopAtGate(this, this.key, data);
   };
 }
 
