@@ -29,6 +29,7 @@ const MESSAGES = {
   wallet_busy: 'Your wallet is still waiting for an answer. Approve or reject that request there first.',
   already_submitted: 'Your earlier request is still confirming on the network. Check back in a minute.',
   engagement_not_configured: 'Bounty claims are not enabled on this server yet.',
+  choose_wallet: 'Choose which wallet to connect.',
   not_enough_g: "Not enough G$ in your wallet for that yet. Claim today's free G$ first.",
   already_owned: 'You already own that.',
   requires_item: 'Get the item it builds on first.',

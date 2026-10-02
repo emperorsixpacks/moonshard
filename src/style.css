@@ -1130,6 +1130,9 @@ html, body {
 .gd-blessing { color: #98ff20; }
 .gd-btn { width: 100%; }
 .gd-btn[disabled] { opacity: .45; pointer-events: none; }
+.gd-wallets { display: flex; flex-direction: column; gap: 6px; }
+.gd-wallet { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.gd-wallet-icon { width: 18px; height: 18px; flex: none; }
 .gd-ghost { opacity: .75; }
 .gd-spoil { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .gd-spoil small { display: block; color: #8cb38c; font-size: 7px; }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWalletManager, normalizeError } from '../../src/gd/wallet.js';
+import { createWalletManager, discoverWallets, normalizeError } from '../../src/gd/wallet.js';
 
 const CELO = '0xa4ec'; // 42220
 const ADDR = '0xAbCdEf0123456789aBcDeF0123456789AbCdEf01';
@@ -139,4 +139,110 @@ test('signMessage uses personal_sign and maps rejection to Error(rejected)', asy
 test('normalizeError turns wallet rejections into a stable code', () => {
   assert.equal(normalizeError(Object.assign(new Error('x'), { code: 4001 })).message, 'rejected');
   assert.equal(normalizeError(new Error('boom')).message, 'boom');
+});
+
+/* ---- several wallet extensions at once (EIP-6963) ---- */
+
+/**
+ * A page where wallet extensions announce themselves (EIP-6963), as MetaMask and Rabby do: each answers a request for
+ * providers with its own. `ethereum` is window.ethereum, which two extensions fighting over it can leave broken.
+ */
+function pageWith(wallets, { ethereum } = {}) {
+  const target = new EventTarget();
+  target.addEventListener('eip6963:requestProvider', () => {
+    for (const w of wallets) target.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: Object.freeze({ info: w.info, provider: w.provider }) }));
+  });
+  return {
+    ethereum,
+    addEventListener: (...a) => target.addEventListener(...a),
+    removeEventListener: (...a) => target.removeEventListener(...a),
+    dispatchEvent: (e) => target.dispatchEvent(e),
+    announceLater: (w) => target.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: Object.freeze({ info: w.info, provider: w.provider }) })),
+  };
+}
+const memoryStorage = () => { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) }; };
+const broken = { request: async () => { throw new Error('two extensions fought over window.ethereum'); }, on() {} };
+const metamask = () => ({ info: { uuid: 'u-1', name: 'MetaMask', icon: 'data:image/svg+xml;base64,PHN2Zy8+', rdns: 'io.metamask' }, provider: stub() });
+const rabby = () => ({ info: { uuid: 'u-2', name: 'Rabby Wallet', icon: 'https://tracker.example/rabby.png', rdns: 'io.rabby' }, provider: stub() });
+
+test('every wallet that announces itself is found, with its name and a safe icon; malformed announcements are ignored', () => {
+  const m = metamask();
+  const r = rabby();
+  const page = pageWith([m, r, { info: { name: 'No id' }, provider: stub() }, { info: { rdns: 'x.no.provider', name: 'X' }, provider: {} }]);
+  const found = discoverWallets(page).list();
+  assert.deepEqual(found.map(({ id, name, icon }) => ({ id, name, icon })), [
+    { id: 'io.metamask', name: 'MetaMask', icon: 'data:image/svg+xml;base64,PHN2Zy8+' },
+    { id: 'io.rabby', name: 'Rabby Wallet', icon: null }, // only an image in the page itself is shown, never a remote one
+  ]);
+  assert.equal(found[0].provider, m.provider);
+  const late = discoverWallets(pageWith([]));
+  assert.equal(late.list().length, 0);
+});
+
+test('a wallet that announces itself after the page started is found too', () => {
+  const page = pageWith([]);
+  const seen = [];
+  const found = discoverWallets(page, () => seen.push('changed'));
+  page.announceLater(metamask());
+  assert.equal(found.list().length, 1);
+  assert.deepEqual(seen, ['changed']);
+});
+
+test('with two wallets installed, connecting asks which one, then talks to that one only: not to a broken window.ethereum', async () => {
+  const m = metamask();
+  const r = rabby();
+  const w = createWalletManager({ page: pageWith([m, r], { ethereum: broken }), getProvider: () => broken, storage: memoryStorage() });
+  assert.deepEqual(w.getState().wallets.map((x) => x.id), ['io.metamask', 'io.rabby']);
+  assert.deepEqual(await w.connect(), { ok: false, reason: 'choose_wallet' });
+  const done = await w.connect('io.rabby');
+  assert.equal(done.ok, true);
+  assert.ok(r.provider.calls.includes('eth_requestAccounts'));
+  assert.deepEqual(m.provider.calls, [], 'MetaMask was never asked');
+  assert.equal(w.getState().address, ADDR.toLowerCase());
+  assert.doesNotThrow(() => w.clients());
+});
+
+test('with one wallet installed, connecting uses it straight away', async () => {
+  const m = metamask();
+  const w = createWalletManager({ page: pageWith([m], { ethereum: broken }), storage: memoryStorage() });
+  assert.equal((await w.connect()).ok, true);
+  assert.ok(m.provider.calls.includes('eth_requestAccounts'));
+});
+
+test('a wallet that does not announce itself is still reached through window.ethereum, as before', async () => {
+  const legacy = stub();
+  // on a real page `page` is window and the injected wallet is window.ethereum: here both are handed in
+  const w = createWalletManager({ page: pageWith([], { ethereum: legacy }), getProvider: () => legacy, storage: memoryStorage() });
+  assert.deepEqual(w.getState().wallets, []);
+  assert.equal((await w.connect()).ok, true);
+  assert.ok(legacy.calls.includes('eth_requestAccounts'));
+});
+
+test('an unknown wallet id is refused, not guessed', async () => {
+  const w = createWalletManager({ page: pageWith([metamask(), rabby()]), storage: memoryStorage() });
+  assert.deepEqual(await w.connect('io.unknown'), { ok: false, reason: 'no_wallet' });
+});
+
+test('the wallet picked is remembered: after a reload the session is restored from that same wallet', async () => {
+  const storage = memoryStorage();
+  const first = createWalletManager({ page: pageWith([metamask(), rabby()], { ethereum: broken }), storage });
+  await first.connect('io.rabby');
+  const m = metamask();
+  const r = rabby();
+  const again = createWalletManager({ page: pageWith([m, r], { ethereum: broken }), storage });
+  assert.equal(await again.restore(ADDR), true);
+  assert.ok(r.provider.calls.includes('eth_accounts'));
+  assert.deepEqual(m.provider.calls, []);
+  const later = createWalletManager({ page: pageWith([metamask(), rabby()]), storage });
+  assert.equal((await later.connect()).ok, true, 'connecting again needs no choice: the remembered wallet is used');
+});
+
+test('a session that turns announced wallets off (the local test launcher) only ever uses its own wallet', async () => {
+  const m = metamask();
+  const own = stub();
+  const w = createWalletManager({ page: pageWith([m, rabby()]), getProvider: () => own, offerAnnounced: false, storage: memoryStorage() });
+  assert.deepEqual(w.getState().wallets, []);
+  assert.equal((await w.connect('io.metamask')).ok, true, 'even when a wallet is named');
+  assert.ok(own.calls.includes('eth_requestAccounts'));
+  assert.deepEqual(m.provider.calls, [], 'the real wallet extension was never asked');
 });

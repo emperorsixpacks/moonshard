@@ -7,7 +7,8 @@ import path from 'node:path';
  *      throwaway key (no browser extension needed, and no key in the page);
  *   2. hands the game that wallet directly. A wallet extension in the person's browser (MetaMask, Rabby, ...) owns
  *      window.ethereum and cannot be dislodged, and the game must not end up asking a real wallet to sign, so
- *      src/gd/wallet.js is rewritten, in this dev server only, to read the test wallet first;
+ *      src/gd/wallet.js is rewritten, in this dev server only, to read the test wallet first and not to offer the
+ *      wallets that announce themselves (EIP-6963);
  *   3. swaps src/gd/identity.js (the link to GoodDollar's hosted face scan) for identity-standin.js, a page on the
  *      launcher where a click passes;
  *   4. puts a small badge on the page so a screenshot of this session cannot be mistaken for the real thing.
@@ -15,6 +16,8 @@ import path from 'node:path';
 
 /** The one place the game reads the injected wallet. */
 const WALLET_READ = 'globalThis.window?.ethereum';
+/** The switch for wallets that announce themselves (EIP-6963): off here, so the real extensions are never offered. */
+const ANNOUNCED_ON = 'const OFFER_ANNOUNCED_WALLETS = true;';
 
 /**
  * src/gd/wallet.js with the test wallet read first. Throws unless the file reads the wallet in exactly the one expected
@@ -25,7 +28,13 @@ export function useTestWallet(code) {
   if (found !== 1) {
     throw new Error(`local test launcher: src/gd/wallet.js must read the injected wallet in exactly one place (${WALLET_READ}) but does so ${found} times. Update scripts/local-dev/plugin.mjs, otherwise the game could ask a real wallet to sign.`);
   }
-  return code.replace(WALLET_READ, `(globalThis.window?.__MS_LOCAL_DEV?.provider ?? ${WALLET_READ})`);
+  const switches = code.split(ANNOUNCED_ON).length - 1;
+  if (switches !== 1) {
+    throw new Error(`local test launcher: src/gd/wallet.js must switch announced wallets on in exactly one place (${ANNOUNCED_ON}) but does so ${switches} times. Update scripts/local-dev/plugin.mjs (OFFER_ANNOUNCED_WALLETS), otherwise the game could offer a real wallet.`);
+  }
+  return code
+    .replace(WALLET_READ, `(globalThis.window?.__MS_LOCAL_DEV?.provider ?? ${WALLET_READ})`)
+    .replace(ANNOUNCED_ON, 'const OFFER_ANNOUNCED_WALLETS = false;');
 }
 
 export function walletShim({ helper, address, sessionId }) {

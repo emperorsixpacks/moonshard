@@ -108,7 +108,15 @@ test('the real wallet module is rewritten to read the test wallet first', () => 
   const changed = useTestWallet(real);
   assert.match(changed, /getProvider: getInjected = \(\) => \(globalThis\.window\?\.__MS_LOCAL_DEV\?\.provider \?\? globalThis\.window\?\.ethereum\),/);
   assert.equal(changed.split('globalThis.window?.ethereum').length - 1, 1, 'the extension is only the fallback');
-  assert.equal(changed.length - real.length, '(globalThis.window?.__MS_LOCAL_DEV?.provider ?? globalThis.window?.ethereum)'.length - 'globalThis.window?.ethereum'.length, 'nothing else changed');
+  assert.match(changed, /const OFFER_ANNOUNCED_WALLETS = false;/, 'wallets that announce themselves (EIP-6963) are not offered');
+  assert.doesNotMatch(changed, /const OFFER_ANNOUNCED_WALLETS = true;/);
+  const grew = '(globalThis.window?.__MS_LOCAL_DEV?.provider ?? globalThis.window?.ethereum)'.length - 'globalThis.window?.ethereum'.length + 'false'.length - 'true'.length;
+  assert.equal(changed.length - real.length, grew, 'nothing else changed');
+});
+
+test('if the wallet module stops offering announced wallets the expected way, the launcher refuses to run', () => {
+  assert.throws(() => useTestWallet('getProvider = () => globalThis.window?.ethereum;'), /OFFER_ANNOUNCED_WALLETS/);
+  assert.throws(() => useTestWallet('const OFFER_ANNOUNCED_WALLETS = true; const OFFER_ANNOUNCED_WALLETS = true; x = globalThis.window?.ethereum;'), /OFFER_ANNOUNCED_WALLETS/);
 });
 
 test('if the wallet module stops reading the wallet the expected way, the launcher refuses to run rather than let a real wallet sign', () => {

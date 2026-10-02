@@ -93,7 +93,7 @@ export class GdPanel {
     // the face scan leaves the page: remember what the player asked to play so they can pick it up on return
     if (act === 'verify' && this.gate?.key) rememberGate(globalThis.sessionStorage, this.gate);
     const actions = {
-      connect: () => gdService.connect(),
+      connect: () => gdService.connect(el.dataset.id), // the wallet picked, when several are installed
       reconnect: () => gdService.connect(),
       disconnect: async () => { gdService.disconnect(); return { ok: true }; },
       switch: () => gdService.switchToCelo(),

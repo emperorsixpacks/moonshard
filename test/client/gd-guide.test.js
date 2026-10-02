@@ -126,3 +126,9 @@ test('with prizes off the guide promises none: claim, spend, the bounty, and whe
     assert.doesNotMatch(h, /pays the daily prizes/);
   }
 });
+
+test('the guide\'s connect step offers each wallet extension found', () => {
+  const h = guide({ ...visitor, wallets: [{ id: 'io.metamask', name: 'MetaMask', icon: null }, { id: 'io.rabby', name: 'Rabby Wallet', icon: null }] });
+  assert.match(h, /data-act="connect" data-id="io\.metamask"/);
+  assert.match(h, /data-act="connect" data-id="io\.rabby"/);
+});

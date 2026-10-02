@@ -27,6 +27,28 @@ const button = (act, label, { disabled = false, id = '', cls = '' } = {}) =>
 const NO_WALLET = 'No wallet detected. Open Moonshard inside GoodWallet (or any wallet app\'s browser), or install a browser wallet such as MetaMask and reload this page.';
 
 const section = (title, inner) => `<section class="gd-sec"><h4>${title}</h4>${inner}</section>`;
+
+/** A wallet's icon, only when it is an image inside the page itself (never one fetched from elsewhere). */
+const walletIcon = (w) => (typeof w.icon === 'string' && /^data:image\//i.test(w.icon)
+  ? `<img class="gd-wallet-icon" src="${esc(w.icon)}" alt="" width="18" height="18">`
+  : '');
+
+/**
+ * The connect step. Wallet extensions announce themselves (EIP-6963): with several installed there is one button for each
+ * (window.ethereum would reach only one of them, or a broken one when two fight over it); with one, its button names it;
+ * with none announced, the plain button reaches window.ethereum or WalletConnect.
+ */
+function connectHtml(s, busy) {
+  const wallets = Array.isArray(s.wallets) ? s.wallets : [];
+  if (wallets.length > 1) {
+    const buttons = wallets.map((w) => button('connect', `${walletIcon(w)}<span>${esc(w.name)}</span>`, { id: w.id, disabled: busy, cls: 'gd-wallet' }));
+    return `<p>Choose your wallet:</p><div class="gd-wallets">${buttons.join('')}</div>`;
+  }
+  if (wallets.length === 1) {
+    return button('connect', `${walletIcon(wallets[0])}<span>CONNECT ${esc(String(wallets[0].name).toUpperCase())}</span>`, { id: wallets[0].id, disabled: busy, cls: 'gd-wallet' });
+  }
+  return `${button('connect', 'CONNECT WALLET', { disabled: busy })}${s.hasWallet ? '' : warn(NO_WALLET)}`;
+}
 const note = (text) => `<p class="gd-muted">${text}</p>`;
 const warn = (text) => `<p class="gd-warn">${text}</p>`;
 
@@ -157,8 +179,7 @@ function gateHtml(s, gate, busy, txDisabled, now) {
   });
   let action = '';
   if (step === 'connect') {
-    action = button('connect', 'CONNECT WALLET', { disabled: busy });
-    if (!s.hasWallet) action += warn(NO_WALLET);
+    action = connectHtml(s, busy);
   } else if (step === 'checking') {
     action = note(s.verified ? 'Checking your blade…' : 'Checking your verification…');
   } else if (step === 'unreachable') {
@@ -198,8 +219,7 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null } = {}) {
   } else if (!s.connected) {
     if (s.sessionExpired) out.push(warn('Your session ended. Connect your wallet again to keep earning.'));
     out.push(note('Moonshard is for verified humans. Connect your Celo wallet and prove you are human (GoodDollar face scan) to play, claim your daily G$ and earn Spoils.'));
-    out.push(button('connect', 'CONNECT WALLET', { disabled: busy }));
-    if (!s.hasWallet) out.push(warn(NO_WALLET));
+    out.push(connectHtml(s, busy));
   } else {
     if (s.offline) {
       // the gate holds play while the verification cannot be checked: only promise play to a player who is through already
@@ -292,7 +312,7 @@ function earnHtml(s, config) {
 function nextStepHtml(s, blade, busy, txDisabled, now) {
   switch (gateStep(s)) {
     case 'connect':
-      return `<p>Connect your wallet to start.</p>${button('connect', 'CONNECT WALLET', { disabled: busy })}${s.hasWallet ? '' : warn(NO_WALLET)}`;
+      return `<p>Connect your wallet to start.</p>${connectHtml(s, busy)}`;
     case 'verify':
       return `<p>Prove you are human with GoodDollar's quick face scan: it is what lets you claim G$ and play. Moonshard never sees your face.</p>${button('verify', 'VERIFY (FACE SCAN)', { disabled: txDisabled })}`;
     case 'checking':

@@ -77,7 +77,16 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
       return route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(payload) });
     };
 
-    if (path === '/me' || path === '/me/refresh') return json(200, { address: ADDRESS, status: api.verified ? 'verified' : 'unverified', verified: api.verified });
+    // signing in: any signed login is accepted, for the address that signed it (the real checks are the server's own tests)
+    if (path === '/auth/nonce') return json(200, { nonce: 'ab'.repeat(32), issuedAt: new Date().toISOString() });
+    if (method === 'POST' && path === '/auth/verify') {
+      api.signedInAs = String(body?.address || '').toLowerCase();
+      return json(200, { token: 'test-token', address: api.signedInAs, verified: api.verified, status: api.verified ? 'verified' : 'unverified' });
+    }
+    if (path === '/me' || path === '/me/refresh') {
+      const address = api.signedInAs || ADDRESS;
+      return json(200, { address, status: api.verified ? 'verified' : 'unverified', verified: api.verified });
+    }
     if (path === '/rewards/status') {
       return json(200, {
         crystalStatus: { gdEarned: 0, dailyCapGd: 100, isCapped: false },

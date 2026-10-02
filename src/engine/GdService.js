@@ -165,7 +165,9 @@ class GdServiceManager {
       status: connected ? this.s.status : 'anonymous',
       verified: connected && this.s.verified,
       wrongChain: w.wrongChain,
-      hasWallet: (typeof window !== 'undefined' && Boolean(window.ethereum)) || Boolean(GD.reownProjectId),
+      // wallet extensions that announced themselves (EIP-6963): one connect button each
+      wallets: w.wallets ?? [],
+      hasWallet: (w.wallets?.length ?? 0) > 0 || (typeof window !== 'undefined' && Boolean(window.ethereum)) || Boolean(GD.reownProjectId),
       needsReconnect: connected && this.s.needsReconnect,
       offline: this.s.offline,
       sessionExpired: this.s.sessionExpired || lapsed,
@@ -463,9 +465,10 @@ class GdServiceManager {
     this.s.needsReconnect = false;
   }
 
-  connect() {
+  /** `walletId`: the wallet extension picked (status.wallets), when several are installed. */
+  connect(walletId) {
     return this.run('connect', async () => {
-      const c = await wallet.connect();
+      const c = await wallet.connect(walletId);
       if (!c.ok) throw new Error(c.reason);
       const res = await signIn({ wallet, host: this.host });
       this.resetData(); // a new sign-in never inherits another account's data

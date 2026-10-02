@@ -318,3 +318,35 @@ test('with prizes off the blade step says where the G$ goes without promising da
   assert.doesNotMatch(h, /daily prizes/i);
   assert.match(gated({ prizes: true, owned: [] }), /daily prizes/i, 'with prizes on, it says what the vault pays');
 });
+
+/* ---- several wallet extensions (EIP-6963): one button for each ---- */
+
+const WALLETS = [
+  { id: 'io.metamask', name: 'MetaMask', icon: 'data:image/svg+xml;base64,PHN2Zy8+' },
+  { id: 'io.rabby', name: 'Rabby <b>Wallet</b>', icon: null },
+];
+
+test('with several wallet extensions, connecting offers one button for each, named, with its own icon', () => {
+  for (const h of [gated({ ...anonymous, wallets: WALLETS }), html({ ...anonymous, wallets: WALLETS })]) {
+    assert.match(h, /Choose your wallet/);
+    assert.match(h, /data-act="connect" data-id="io\.metamask"/);
+    assert.match(h, /data-act="connect" data-id="io\.rabby"/);
+    assert.match(h, /<img class="gd-wallet-icon" src="data:image\/svg\+xml;base64,PHN2Zy8\+"/);
+    assert.match(h, /Rabby &lt;b&gt;Wallet&lt;\/b&gt;/, 'a name is text, never markup');
+    assert.doesNotMatch(h, />CONNECT WALLET</, 'no button that would not know which wallet to use');
+  }
+});
+
+test('with one wallet extension, the button names it; with none announced, the plain button stays', () => {
+  const one = gated({ ...anonymous, wallets: [WALLETS[0]] });
+  assert.match(one, /data-act="connect" data-id="io\.metamask"/);
+  assert.match(one, /CONNECT METAMASK/);
+  const none = gated({ ...anonymous, wallets: [] });
+  assert.match(none, /data-act="connect"/);
+  assert.match(none, /CONNECT WALLET/);
+});
+
+test('an icon that is not an image inside the page is not shown', () => {
+  const h = gated({ ...anonymous, wallets: [{ id: 'x', name: 'X', icon: 'https://tracker.example/x.png' }, WALLETS[1]] });
+  assert.doesNotMatch(h, /tracker\.example/);
+});
