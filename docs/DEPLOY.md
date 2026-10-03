@@ -91,7 +91,7 @@ GoodDollar must then approve the app (Discord `ubi.gd/GoodBuildersDiscord`, Tele
 
 ## 3. API (Railway)
 
-1. New project, deploy the `server/` directory (root directory `server`, start command `node index.js`, Node 22).
+1. New project, deploy the `server/` directory: in the service's Settings set the root directory to `/server` and the config file path to `/server/railway.json` (Railway does not look for the config file inside the root directory, so it needs the full path). `server/railway.json` sets the start command (`node index.js`), the health check (`GET /health`) and restart-on-failure; Node comes from `engines` in `server/package.json` (22 or later).
 2. Add a Postgres database and set `DATABASE_URL` to its connection string **with `?sslmode=require` appended**. The server then connects over TLS and always verifies the certificate and the host name; verification cannot be turned off (`sslmode=no-verify` makes the server refuse to start).
    - Host with a public CA (most managed Postgres): nothing more to set.
    - Host with a private CA: also set `DATABASE_CA` to the CA certificate as PEM text (`-----BEGIN CERTIFICATE-----` ... with real line breaks; the server checks it at start-up and refuses a value that lost them). It works together with `?sslmode=require`. `DATABASE_CA` on its own also turns TLS on.
