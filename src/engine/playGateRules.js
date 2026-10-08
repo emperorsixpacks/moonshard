@@ -5,13 +5,16 @@
  * browser.
  */
 
-/** Every scene that starts play. The menu, the forge, the leaderboard and the ending are not play. */
-export const GATED_SCENES = new Set(['StoryScene', 'StoryIntroScene', 'TutorialScene', 'SurvivalScene']);
+/**
+ * Every scene that starts play. The menu, the forge, the leaderboard and the ending are not play, and neither is the
+ * tutorial: it teaches the controls, earns and spends nothing, and asks for no wallet, so a new player can try the game
+ * first. The gate meets them when they leave the tutorial for the story.
+ */
+export const GATED_SCENES = new Set(['StoryScene', 'StoryIntroScene', 'SurvivalScene']);
 
 const LABELS = {
   StoryScene: 'STORY MODE',
   StoryIntroScene: 'STORY MODE',
-  TutorialScene: 'THE TUTORIAL',
   SurvivalScene: 'ENDLESS MODE',
 };
 
