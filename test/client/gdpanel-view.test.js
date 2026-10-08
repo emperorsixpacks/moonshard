@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderPanelHtml } from '../../src/ui/gdPanelView.js';
+import { gateTitle, modeName, panelTitle, renderPanelHtml } from '../../src/ui/gdPanelView.js';
 
-/* The wallet panel as a pure function of the service status: what the player sees in every state. */
+/* The wallet and the way in, as pure functions of the service status: what the player sees in every state. */
 
 const ADDR = '0xabcdef0123456789abcdef0123456789abcdef01';
 const spoil = (over = {}) => ({ id: '7', kind: 'TRIAL_PRIZE', day: '2026-10-05', rank: 1, amountG: '1000', claimed: false, voucher: { to: ADDR }, ...over });
@@ -26,11 +26,16 @@ const status = (over = {}) => ({
 
 const html = (over) => renderPanelHtml(status(over), 0);
 
+/** The steps of the way in as [name, state]: state is 'done', 'now' or ''. */
+const steps = (h) => [...h.matchAll(/<li class="(done|now|)" data-step="(\w+)"/g)].map((m) => [m[2], m[1]]);
+const now = (h) => steps(h).find(([, state]) => state === 'now')?.[0];
+const done = (h) => steps(h).filter(([, state]) => state === 'done').map(([name]) => name);
+
 test('a verified player sees the daily claim, the bounty and the Spoils', () => {
   const h = html();
-  assert.match(h, /VERIFIED HUMAN/);
-  assert.match(h, /CLAIM DAILY G\$/);
-  assert.match(h, /CLAIM 2,400 G\$ BOUNTY/);
+  assert.match(h, /Verified human/);
+  assert.match(h, /Claim today's G\$/);
+  assert.match(h, /Claim 2,400 G\$ bounty/);
   assert.match(h, /data-act="redeem" data-id="7"/);
 });
 
@@ -38,15 +43,15 @@ test('an ended session says so and offers to connect; it does not ask to verify'
   const h = html({ connected: false, status: 'anonymous', verified: false, sessionExpired: true, ubi: null, bounty: null, spoils: [] });
   assert.match(h, /session ended/i);
   assert.match(h, /data-act="connect"/);
-  assert.doesNotMatch(h, /PROVE YOU/);
+  assert.doesNotMatch(h, /data-act="verify"|Start face scan|Prove you/, 'it is about connecting, not about verifying');
 });
 
 test('a connected player whose server cannot be reached is not asked to verify', () => {
   const h = html({ status: 'unknown', verified: false, offline: true, ubi: null, bounty: null, spoils: [] });
-  assert.match(h, /SERVER OFFLINE/);
+  assert.match(h, /Server offline/);
   assert.match(h, /data-act="recheck"/);
-  assert.doesNotMatch(h, /VERIFY \(FACE SCAN\)/);
-  assert.doesNotMatch(h, /PROVE YOU/);
+  assert.doesNotMatch(h, /data-act="verify"/);
+  assert.doesNotMatch(h, /Start face scan|Prove you/);
 });
 
 test('...and is not told they can still play: the gate holds play until the verification can be checked', () => {
@@ -54,7 +59,7 @@ test('...and is not told they can still play: the gate holds play until the veri
   assert.doesNotMatch(h, /can still play/i);
   assert.match(h, /Server unreachable/);
   assert.match(h, /check your verification/i);
-  assert.equal((h.match(/class="gd-warn"/g) || []).length, 1, 'one notice, not the same bad news twice');
+  assert.equal((h.match(/gd-warn/g) || []).length, 1, 'one notice, not the same bad news twice');
 });
 
 test('a verified player who cannot claim the bounty is told so up front, and is not promised an amount for beating a boss', () => {
@@ -67,6 +72,12 @@ test('a verified player who cannot claim the bounty is told so up front, and is 
 test('...while one who can claim it is told what beating a boss unlocks', () => {
   const h = html({ bounty: { configured: true, canClaim: true, claimedHere: false, pendingRunId: null, rewardG: '2400' } });
   assert.match(h, /unlock a one-time bounty of 2,400 G\$/);
+});
+
+test('a bounty the server has not set up yet is not shown at all, not promised as "coming soon"', () => {
+  const h = html({ bounty: { configured: false } });
+  assert.doesNotMatch(h, /coming soon/i);
+  assert.doesNotMatch(h, /First-boss bounty/);
 });
 
 test('Spoils that could not be loaded say "unavailable", not "none yet"', () => {
@@ -138,38 +149,75 @@ test('a reconnect notice disables the on-chain buttons', () => {
 test('a daily claim that is done with no countdown known just says claimed', () => {
   const h = html({ ubi: { entitlementG: '0', canClaim: false, nextClaimAt: null } });
   assert.match(h, /Claimed today/);
-  assert.doesNotMatch(h, /in now/);
+  assert.doesNotMatch(h, /in now|Next claim/);
+});
+
+test('a daily claim that is done says when the next one comes, and shows how close it is', () => {
+  const h = html({ ubi: { entitlementG: '0', canClaim: false, nextClaimAt: 37 * 60_000 } });
+  assert.match(h, /Next claim in <b>37m<\/b>/);
+  const filled = Number(/class="meter"[^>]*><i style="width:(\d+)%/.exec(h)?.[1]);
+  assert.ok(filled >= 97 && filled <= 100, `a claim 37 minutes away is nearly there (${filled}%)`);
+});
+
+test("the Citizen's Blessing is shown while it is active", () => {
+  assert.match(html({ blessing: true, ubi: { entitlementG: '0', canClaim: false, nextClaimAt: null } }), /Citizen's Blessing[\s\S]*\+25% forge materials today/);
 });
 
 test('with the server unreachable but data known, the data stays and the notice is shown', () => {
   const h = html({ offline: true });
   assert.match(h, /Server unreachable/);
-  assert.match(h, /CLAIM DAILY G\$/);
+  assert.match(h, /Claim today's G\$/);
 });
+
+test('a verified player sees the G$ in their wallet in the panel', () => {
+  assert.match(html(), /class="bal-n">57\.5</);
+  assert.match(html({ balance: '19.999' }), /class="bal-n">19\.99</, 'rounded down, so a shown 20 can always pay 20');
+});
+
+test('the wallet ends with the public stats and a way to disconnect; the sheet is called Wallet', () => {
+  const h = html();
+  assert.match(h, /href="\/stats\.html"/);
+  assert.match(h, /data-act="disconnect"/);
+  assert.equal(panelTitle(status(), {}), 'Wallet');
+});
+
+test('without a gate the panel no longer says the game can be played without a wallet', () => {
+  const h = renderPanelHtml(status(anonymousStatus()), 0);
+  assert.doesNotMatch(h, /play everything without a wallet/i);
+  assert.match(h, /verified human/i);
+});
+
+function anonymousStatus() {
+  return { connected: false, status: 'anonymous', verified: false, ubi: null, bounty: null, spoils: [], blessing: false };
+}
 
 /* ---- the verified-human gate: shown when the player tries to start a game mode ---- */
 
 const gate = { label: 'ENDLESS MODE' };
 const gated = (over) => renderPanelHtml(status(over), 0, { gate });
-const anonymous = { connected: false, status: 'anonymous', verified: false, ubi: null, bounty: null, spoils: [], blessing: false };
+const anonymous = anonymousStatus();
 
 test('the gate explains the rule and starts at step one for a visitor', () => {
   const h = gated(anonymous);
-  assert.match(h, /VERIFIED HUMANS ONLY/);
   assert.match(h, /one human, one slot/i);
   assert.match(h, /data-act="connect"/);
   assert.doesNotMatch(h, /data-act="play"/);
-  assert.doesNotMatch(h, /DAILY G\$|FIRST-BOSS BOUNTY|SPOILS/);
-  assert.match(h, /gd-step-now[^<]*>[^<]*1\./);
+  assert.doesNotMatch(h, /Daily G\$|First-boss bounty|Spoils|How G\$ works/, 'the way in keeps the player on its one step');
+  assert.equal(now(h), 'connect');
+  assert.deepEqual(done(h), []);
+  assert.equal(gateTitle(status(anonymous)), 'Connect your wallet');
 });
 
 test('a connected player who is not verified is sent to the face scan', () => {
-  const h = gated({ status: 'unverified', verified: false, ubi: null, bounty: null, spoils: [] });
+  const s = { status: 'unverified', verified: false, ubi: null, bounty: null, spoils: [] };
+  const h = gated(s);
   assert.match(h, /data-act="verify"/);
   assert.match(h, /data-act="recheck"/);
   assert.doesNotMatch(h, /data-act="play"/);
-  assert.match(h, /gd-step-done[^<]*>[^<]*1\./);
-  assert.match(h, /gd-step-now[^<]*>[^<]*2\./);
+  assert.deepEqual(done(h), ['connect']);
+  assert.equal(now(h), 'verify');
+  assert.equal(gateTitle(status(s)), 'Prove you are human');
+  assert.equal(gateTitle(status({ ...s, status: 'expired' })), 'Verify again');
 });
 
 test('the gate says when it is still checking, and when it cannot reach the server', () => {
@@ -180,17 +228,19 @@ test('the gate says when it is still checking, and when it cannot reach the serv
   assert.doesNotMatch(off, /data-act="play"/);
 });
 
-test('a verified human gets a play button that names the mode', () => {
+test('a verified human gets a play button that names the mode, and every step is done', () => {
   const h = gated({});
-  assert.match(h, /data-act="play"/);
-  assert.match(h, /PLAY ENDLESS MODE/);
-  assert.match(h, /gd-step-done[^<]*>[^<]*2\./);
+  assert.match(h, /data-act="play"[^>]*>Play Endless mode</);
+  assert.deepEqual(done(h), ['connect', 'verify', 'blade']);
+  assert.equal(now(h), undefined);
+  assert.equal(gateTitle(status()), 'You are in');
 });
 
-test('without a gate the panel no longer says the game can be played without a wallet', () => {
-  const h = renderPanelHtml(status(anonymous), 0);
-  assert.doesNotMatch(h, /play everything without a wallet/i);
-  assert.match(h, /verified human/i);
+test('a mode is named in words, not in capitals', () => {
+  assert.equal(modeName('STORY MODE'), 'the story');
+  assert.equal(modeName('ENDLESS MODE'), 'Endless mode');
+  assert.equal(modeName('SOMETHING ELSE'), 'Something else');
+  assert.equal(modeName(undefined), 'the game', 'Play the game');
 });
 
 /* ---- the 24 h window to claim a boss bounty (finding L8) ---- */
@@ -223,16 +273,17 @@ test('a visitor with no wallet at all is told how to get in, not just that nothi
 
 /* ---- the blade, paid for in G$: the gate's third step when the server has a Moon Shop ---- */
 
-test('with a Moon Shop the way in has four steps; a verified human without a blade is at step three: buy it with G$', () => {
+test('with a Moon Shop the way in has three steps before play; a verified human without a blade is at the third: buy it with G$', () => {
   const h = gated({ owned: [] });
-  assert.match(h, /3\. Buy your blade with G\$/);
-  assert.match(h, /4\. Play ENDLESS MODE/);
-  assert.match(h, /gd-step-now[^<]*>[^<]*3\./);
-  assert.match(h, /data-act="buy" data-id="iron_starter"/);
-  assert.match(h, /BUY RUSTED SHORTSWORD — 20 G\$/);
-  assert.match(h, /Your G\$: <b>57\.5<\/b>/);
+  assert.deepEqual(steps(h).map(([name]) => name), ['connect', 'verify', 'blade']);
+  assert.equal(now(h), 'blade');
+  assert.deepEqual(done(h), ['connect', 'verify']);
+  assert.match(h, /data-act="buy" data-id="iron_starter"[^>]*>Buy for 20 G\$</);
+  assert.match(h, /Rusted Shortsword/);
+  assert.match(h, /class="have">57\.5</);
   assert.match(h, /prize vault/i, 'where the G$ goes');
   assert.doesNotMatch(h, /data-act="play"/);
+  assert.equal(gateTitle(status({ owned: [] })), 'Get your blade');
 });
 
 test('a player short of G$ is offered today\'s free claim first, not a purchase that would fail', () => {
@@ -251,7 +302,7 @@ test('...and once today\'s claim is made, is told when the next one comes', () =
 test('a balance that rounds up to the price is still short of it', () => {
   const h = gated({ owned: [], balance: '19.999', ubi: { entitlementG: '0', canClaim: false, nextClaimAt: null } });
   assert.doesNotMatch(h, /data-act="buy"/);
-  assert.match(h, /Your G\$: <b>19\.99<\/b>/);
+  assert.match(h, /class="have">19\.99</);
 });
 
 test('with the balance unknown the purchase is offered (the wallet checks it before anything is sent)', () => {
@@ -262,35 +313,32 @@ test('a blade payment on its way replaces the buy button', () => {
   const h = gated({ owned: [], awaiting: { ubi: null, bounty: null, spoils: {}, shop: { iron_starter: H } } });
   assert.doesNotMatch(h, /data-act="buy"/);
   assert.match(h, /waiting for the network/i);
-  assert.match(h, /VIEW TRANSACTION/);
+  assert.match(h, /View transaction/);
 });
 
-test('a verified human with a blade gets PLAY at step four', () => {
+test('a verified human with a blade gets Play at the end', () => {
   const h = gated({});
-  assert.match(h, /gd-step-done[^<]*>[^<]*3\. Buy your blade/);
-  assert.match(h, /gd-step-now[^<]*>[^<]*4\. Play ENDLESS MODE/);
+  assert.deepEqual(done(h), ['connect', 'verify', 'blade']);
   assert.match(h, /data-act="play"/);
 });
 
-test('a server with no Moon Shop keeps the three-step way in: the first blade is free', () => {
+test('a server with no Moon Shop keeps the short way in: the first blade is free', () => {
   const h = gated({ shop: { enabled: false, token: SHOP.token, vault: null, items: [] }, owned: [] });
-  assert.doesNotMatch(h, /Buy your blade/);
-  assert.match(h, /3\. Play ENDLESS MODE/);
+  assert.deepEqual(steps(h).map(([name]) => name), ['connect', 'verify']);
+  assert.doesNotMatch(h, /Buy for|Blade/);
   assert.match(h, /data-act="play"/);
 });
 
 test('while a verified player\'s blade is being looked up, the gate says so', () => {
-  assert.match(gated({ owned: null }), /Checking your blade/);
-  assert.match(gated({ owned: null }), /gd-step-now[^<]*>[^<]*3\./);
+  const h = gated({ owned: null });
+  assert.match(h, /Checking your blade/);
+  assert.equal(now(h), 'blade');
+  assert.equal(gateTitle(status({ owned: null })), 'Checking your blade');
 });
 
 test('the item name and price from the server are escaped', () => {
   const h = gated({ owned: [], shop: { ...SHOP, items: [{ ...BLADE, name: '<img src=x>', priceG: '20<b>' }] } });
   assert.doesNotMatch(h, /<img src=x>|20<b>/);
-});
-
-test('a verified player sees the G$ in their wallet in the panel', () => {
-  assert.match(html(), /Your G\$: <b>57\.5<\/b>/);
 });
 
 /* ---- prizes switched off on the server (PRIZES_ENABLED): nothing promises them ---- */
@@ -299,16 +347,16 @@ test('with prizes off the panel shows no Shard harvest and no Spoils section', (
   for (const prizes of [false, null]) {
     const h = html({ prizes, spoils: [] });
     assert.doesNotMatch(h, /Shards today/, String(prizes));
-    assert.doesNotMatch(h, /<h4>SPOILS<\/h4>/, String(prizes));
+    assert.doesNotMatch(h, />Spoils</, String(prizes));
     assert.doesNotMatch(h, /top 3/i, String(prizes));
-    assert.match(h, /CLAIM DAILY G\$/, 'the daily claim is GoodDollar\'s, not a prize: it stays');
-    assert.match(h, /FIRST-BOSS BOUNTY/, 'so does the bounty');
+    assert.match(h, /Claim today's G\$/, 'the daily claim is GoodDollar\'s, not a prize: it stays');
+    assert.match(h, /First-boss bounty/, 'so does the bounty');
   }
 });
 
 test('...but Spoils a player already won stay listed, and redeemable', () => {
   const h = html({ prizes: false });
-  assert.match(h, /<h4>SPOILS<\/h4>/);
+  assert.match(h, />Spoils</);
   assert.match(h, /data-act="redeem" data-id="7"/);
 });
 
@@ -333,17 +381,17 @@ test('with several wallet extensions, connecting offers one button for each, nam
     assert.match(h, /data-act="connect" data-id="io\.rabby"/);
     assert.match(h, /<img class="gd-wallet-icon" src="data:image\/svg\+xml;base64,PHN2Zy8\+"/);
     assert.match(h, /Rabby &lt;b&gt;Wallet&lt;\/b&gt;/, 'a name is text, never markup');
-    assert.doesNotMatch(h, />CONNECT WALLET</, 'no button that would not know which wallet to use');
+    assert.doesNotMatch(h, />Connect wallet</, 'no button that would not know which wallet to use');
   }
 });
 
 test('with one wallet extension, the button names it; with none announced, the plain button stays', () => {
   const one = gated({ ...anonymous, wallets: [WALLETS[0]] });
   assert.match(one, /data-act="connect" data-id="io\.metamask"/);
-  assert.match(one, /CONNECT METAMASK/);
+  assert.match(one, /Connect MetaMask/);
   const none = gated({ ...anonymous, wallets: [] });
   assert.match(none, /data-act="connect"/);
-  assert.match(none, /CONNECT WALLET/);
+  assert.match(none, />Connect wallet</);
 });
 
 test('an icon that is not an image inside the page is not shown', () => {

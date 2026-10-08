@@ -62,11 +62,11 @@ try {
   await page.keyboard.press('p');
   await page.waitForTimeout(300);
   await page.click('#btn-pause-retry');
-  await page.waitForFunction(() => !document.querySelector('#gd-panel').classList.contains('hidden'), null, { timeout: 15_000 });
+  await page.waitForFunction(() => Boolean(document.querySelector('#ms-sheets .sheet:not(.out)')), null, { timeout: 15_000 });
   await setVerified(true); // they verify again
-  await page.click('[data-act="recheck"]').catch(() => {}); // (the panel updates itself when the status changes; this is a nudge)
-  await page.waitForSelector('[data-act="play"]', { timeout: 15_000 });
-  await page.click('[data-act="play"]');
+  await page.click('#ms-sheets [data-act="recheck"]').catch(() => {}); // (the sheet updates itself when the status changes; this is a nudge)
+  await page.waitForSelector('#ms-sheets [data-act="play"]', { timeout: 15_000 });
+  await page.click('#ms-sheets [data-act="play"]');
   await page.waitForFunction(() => window.game.scene.getScene('SurvivalScene').player !== window.__before, null, { timeout: 30_000 });
   const after = await page.evaluate(() => ({
     paused: window.pauseService.isPaused,

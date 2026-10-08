@@ -15,14 +15,14 @@ const g = await bootGame({ api: true, init: sessionInit() });
 const { page } = g;
 const api = await installApi(page, { verified: true });
 
-const gateOpen = () => page.evaluate(() => Boolean(document.querySelector('#gd-panel') && !document.querySelector('#gd-panel').classList.contains('hidden')));
-const waitGate = (open) => page.waitForFunction((want) => (Boolean(document.querySelector('#gd-panel') && !document.querySelector('#gd-panel').classList.contains('hidden')) === want), open, { timeout: 15_000 });
+const gateOpen = () => page.evaluate(() => Boolean(document.querySelector('#ms-sheets .sheet:not(.out)')));
+const waitGate = (open) => page.waitForFunction((want) => Boolean(document.querySelector('#ms-sheets .sheet:not(.out)')) === want, open, { timeout: 15_000 });
 const closeGate = async () => {
-  await page.click('#gd-close');
+  await page.click('#ms-sheets [data-sheet="close"]');
   await waitGate(false);
-  // the panel swallows key presses meant for itself, so the keyboard must be back on the game the moment it closes
-  const focusBack = await page.evaluate(() => document.activeElement === document.body || !document.querySelector('#gd-panel').contains(document.activeElement));
-  check(focusBack, 'closing the panel gives the keyboard back to the game at once');
+  // the sheet swallows key presses meant for itself, so the keyboard must be back on the game the moment it closes
+  const focusBack = await page.evaluate(() => document.activeElement === document.body || !document.querySelector('#ms-sheets').contains(document.activeElement));
+  check(focusBack, 'closing the sheet gives the keyboard back to the game at once');
 };
 const active = (key) => page.evaluate((k) => window.game.scene.isActive(k), key);
 const verifiedNow = (want) => page.waitForFunction((w) => window.gdService.getStatus().verified === w, want, { timeout: 15_000 });
@@ -104,7 +104,9 @@ try {
   await setVerified(true);
 
   // ---- 4. the story intro prompt ---------------------------------------------------------------------------------------
-  log('▶ the story intro prompt: the gate refuses both choices');
+  log('▶ the story intro prompt: the gate refuses the story, and lets the tutorial through');
+  // the prompt is for someone who has not done the tutorial (it comes first now): put this player back at the start
+  await page.evaluate(async () => { const { storage } = await import('/src/engine/Storage.js'); storage.data.tutorialDone = false; storage.data.storyProgress = {}; });
   await g.startScene('StoryIntroScene');
   await page.waitForTimeout(1_000);
   await page.evaluate(() => window.game.scene.getScene('StoryIntroScene').promptTutorialChoice());
@@ -116,13 +118,21 @@ try {
   check(dim === 0, 'the screen is not left faded out behind the gate');
   await closeGate();
   await page.evaluate(() => window.game.scene.getScene('StoryIntroScene').onChoosePlayTutorial());
-  await waitGate(true);
-  check(true, 'and the other choice still works afterwards');
-  await closeGate();
+  await page.waitForFunction(() => window.game.scene.isActive('TutorialScene'), null, { timeout: 15_000 });
+  check(!(await gateOpen()), 'and the other choice, the tutorial, needs no gate at all: it starts even with the verification lapsed');
   await setVerified(true);
 
+  log('▶ the story intro prompt is skipped for someone who has done the tutorial');
+  await page.evaluate(async () => { const { storage } = await import('/src/engine/Storage.js'); storage.setTutorialDone(); });
+  await g.startScene('StoryIntroScene');
+  await page.waitForTimeout(1_000);
+  await page.evaluate(() => window.game.scene.getScene('StoryIntroScene').promptTutorialChoice());
+  await page.waitForFunction(() => window.game.scene.isActive('StoryScene'), null, { timeout: 15_000 });
+  check(true, 'no question: straight on to Chapter 1');
+  await page.evaluate(async () => { const { storage } = await import('/src/engine/Storage.js'); storage.data.tutorialDone = false; storage.data.storyProgress = {}; });
+
   // ---- 5. the pause menu's RETRY --------------------------------------------------------------------------------------
-  log('▶ the pause menu: the gate refuses RETRY BATTLE');
+  log('▶ the pause menu: the gate refuses Restart');
   await g.startScene('SurvivalScene');
   await page.waitForTimeout(2_000);
   await setVerified(false);
@@ -150,7 +160,7 @@ try {
   log(`\n${err.stack || err}`);
   log('page state:', await page.evaluate(() => ({
     scenes: window.game?.scene.getScenes(true).map((s) => s.scene.key),
-    gate: !document.querySelector('#gd-panel')?.classList.contains('hidden'),
+    gate: Boolean(document.querySelector('#ms-sheets .sheet:not(.out)')),
     verified: window.gdService?.getStatus().verified,
     survivalResultsUp: Boolean(window.game?.scene.getScene('SurvivalScene')?.modalButtons),
     activeElement: document.activeElement?.tagName + '#' + document.activeElement?.id,

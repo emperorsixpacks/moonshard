@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
+import { storage } from '../engine/Storage.js';
 import Player from '../entities/Player.js';
 import Crate from '../entities/Crate.js';
 import Snail from '../entities/Snail.js';
@@ -914,6 +915,7 @@ export default class TutorialScene extends Phaser.Scene {
       this.hudContainer.setVisible(false);
     }
     this.isVictory = true;
+    storage.setTutorialDone(); // the story's way-in no longer offers the tutorial again
 
     if (typeof window !== 'undefined' && window.touchController) {
       window.touchController.clearTutorialHighlights();

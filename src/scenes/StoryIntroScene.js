@@ -759,6 +759,17 @@ export default class StoryIntroScene extends Phaser.Scene {
 
   promptTutorialChoice() {
     if (this.isTransitioning || this.tutorialPromptOpen) return;
+    storage.setPrologueSeen();
+    // Someone who has done the tutorial already (it comes first now) is not asked again: on to the first chapter.
+    if (storage.isTutorialDone()) {
+      if (startIsBlocked('StoryScene')) { this.scene.start('StoryScene', { chapter: 1 }); return; }
+      this.tutorialPromptOpen = true;
+      this.isTransitioning = true;
+      sound.playCoin();
+      this.cameras.main.fade(400, 0, 0, 0);
+      this.time.delayedCall(400, () => this.scene.start('StoryScene', { chapter: 1 }));
+      return;
+    }
     this.tutorialPromptOpen = true;
     sound.playVictory();
 

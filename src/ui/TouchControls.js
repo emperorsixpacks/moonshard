@@ -109,7 +109,8 @@ export class TouchController {
     document.addEventListener(
       'touchmove',
       (e) => {
-        if (e.target.closest('#gd-panel') || e.target.closest('.modal-body')) {
+        // a sheet's body scrolls with the thumb; everything else holds still
+        if (e.target.closest('#ms-ui .sheet-b')) {
           return;
         }
         e.preventDefault();

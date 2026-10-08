@@ -1,0 +1,339 @@
+/*
+  Layout: one phone-shaped stage. The pixel-art world sits behind; every control sits in the thumb zone on the "ground".
+  Three surface levels: ground (ink), raised (slate, lit from above), recessed (ink with an inner shadow). Gold is the
+  one action and G$; green only for the forest art and the verified tick.
+*/
+:root{
+  --ink:#0E1424; --ink-deep:#080C18; --slate:#1A2540; --slate-hi:#23325C; --slate-2:#2B3D6E;
+  --bone:#EEE8D5; --mist:#8EA2C8; --mist-dim:#5B6E95;
+  --gold:#F4B63F; --gold-hi:#FFD97A; --gold-lo:#B8761A; --gold-ink:#2B1A03; --gold-edge:#2A1A04;
+  --mint:#62D6A4; --edge:#41568A;
+  --font-logo:'Press Start 2P',ui-monospace,monospace;
+  --font-ui:'Jersey 15',ui-sans-serif,system-ui,sans-serif;
+  /* a stepped (notched-corner) double edge: light line, then a dark line outside it */
+  --bx:0 -2px 0 0 var(--edge),0 2px 0 0 var(--edge),-2px 0 0 0 var(--edge),2px 0 0 0 var(--edge),
+       0 -3px 0 0 var(--ink-deep),0 3px 0 0 var(--ink-deep),-3px 0 0 0 var(--ink-deep),3px 0 0 0 var(--ink-deep);
+  --bx-gold:0 -2px 0 0 #8A5A16,0 2px 0 0 #8A5A16,-2px 0 0 0 #8A5A16,2px 0 0 0 #8A5A16,
+            0 -3px 0 0 var(--ink-deep),0 3px 0 0 var(--ink-deep),-3px 0 0 0 var(--ink-deep),3px 0 0 0 var(--ink-deep);
+  --gold-bx:0 -2px 0 0 var(--gold-edge),0 2px 0 0 var(--gold-edge),-2px 0 0 0 var(--gold-edge),2px 0 0 0 var(--gold-edge),
+            0 -3px 0 0 var(--ink-deep),0 3px 0 0 var(--ink-deep),-3px 0 0 0 var(--ink-deep),3px 0 0 0 var(--ink-deep);
+  --raise:inset 0 2px 0 rgba(255,255,255,.11),inset 0 -3px 0 rgba(0,0,0,.28);
+  --sunk:inset 0 3px 0 rgba(0,0,0,.42);
+  --dither:repeating-conic-gradient(rgba(255,255,255,.035) 0% 25%,transparent 0% 50%) 0 0/4px 4px;
+  --panel:linear-gradient(#24335F,#1A2540);
+  --ember:#E8636F;
+  --bx-ember:0 -2px 0 0 #A23F49,0 2px 0 0 #A23F49,-2px 0 0 0 #A23F49,2px 0 0 0 #A23F49,0 -3px 0 0 var(--ink-deep),0 3px 0 0 var(--ink-deep),-3px 0 0 0 var(--ink-deep),3px 0 0 0 var(--ink-deep);
+  color-scheme:dark;
+}
+/* The interface root: everything below lives under #ms-ui, so none of it can touch the rest of the page. */
+#ms-ui{position:fixed;inset:0;z-index:150;pointer-events:none;container:ms/size;font:400 19px/1.35 var(--font-ui);color:var(--bone);-webkit-user-select:none;user-select:none}
+#ms-ui *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;font-variant-ligatures:none!important;font-synthesis:none!important;font-feature-settings:'liga' 0,'clig' 0!important}
+#ms-ui button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:inherit;pointer-events:auto}
+#ms-ui button:focus-visible,#ms-ui summary:focus-visible{outline:2px solid var(--gold-hi);outline-offset:3px}
+#ms-ui img{max-width:none}
+#ms-ui svg{display:block}
+#ms-ui [hidden]{display:none!important}
+
+
+/* ---- world ---- */
+#ms-ui .world{position:absolute;inset:0;overflow:hidden;--gy:66%}
+#ms-ui .sky{position:absolute;inset:0}
+#ms-ui .sky.night{background:linear-gradient(#090E1E 0%,#141F47 48%,#2B3B78 100%)}
+#ms-ui .star{position:absolute;width:2px;height:2px;background:var(--bone);opacity:.7}
+#ms-ui .star.b{width:3px;height:3px;opacity:.95;animation:ms-twinkle 4s steps(2) infinite}
+#ms-ui .star.b:nth-child(3n){animation-delay:-1.3s}
+#ms-ui .star.b:nth-child(3n+1){animation-delay:-2.6s}
+@keyframes ms-twinkle{50%{opacity:.35}}
+#ms-ui .back{position:absolute;left:0;right:0;top:0;height:var(--gy);overflow:hidden}
+#ms-ui .layer{position:absolute;left:0;bottom:0;background-repeat:repeat-x;background-position:0 100%;image-rendering:pixelated;will-change:transform}
+#ms-ui .l-mtn{width:calc(100% + 480px*var(--k));height:calc(270px*var(--k));background-size:calc(480px*var(--k)) calc(270px*var(--k));animation:ms-drift-m 180s linear infinite}
+#ms-ui .l-p0{width:calc(100% + 224px*var(--k));height:calc(256px*var(--k));background-size:calc(224px*var(--k)) calc(256px*var(--k));animation:ms-drift-p 120s linear infinite}
+#ms-ui .l-p1{width:calc(100% + 224px*var(--k));height:calc(256px*var(--k));background-size:calc(224px*var(--k)) calc(256px*var(--k));animation:ms-drift-p 80s linear infinite}
+#ms-ui .night-w .l-mtn{background-image:url(/assets/env/n_mountains.png)}
+#ms-ui .night-w .l-p0{background-image:url(/assets/env/n_p0.png)}
+#ms-ui .night-w .l-p1{background-image:url(/assets/env/n_p1.png)}
+#ms-ui .night-w .l-p0.off{left:calc(-112px*var(--k));animation-duration:95s}
+@keyframes ms-drift-m{to{transform:translate3d(calc(-480px*var(--k)),0,0)}}
+@keyframes ms-drift-p{to{transform:translate3d(calc(-224px*var(--k)),0,0)}}
+#ms-ui .night-w .back::before{content:"";position:absolute;inset:0;background:linear-gradient(to top,#0f1738 0%,#17224b 50%,rgba(23,34,75,0) 92%)}
+#ms-ui .haze{position:absolute;left:0;right:0;bottom:0;height:48%;background:linear-gradient(to top,rgba(70,92,170,.38),transparent)}
+#ms-ui .pine{position:absolute;bottom:0;height:calc(300px*var(--k)*.85);width:auto;image-rendering:pixelated}
+/* moonlight: two soft shafts and a low band of mist, then a vignette that pulls the eye to the middle */
+#ms-ui .shaft{position:absolute;top:0;height:100%;width:20%;background:linear-gradient(to bottom,rgba(238,232,213,.17),rgba(238,232,213,0) 78%);
+  -webkit-mask-image:linear-gradient(to right,transparent,#000 40%,#000 60%,transparent);mask-image:linear-gradient(to right,transparent,#000 40%,#000 60%,transparent);
+  transform:skewX(-13deg);transform-origin:top;animation:ms-sway 14s ease-in-out infinite alternate}
+#ms-ui .shaft.s2{width:13%;opacity:.7;animation-duration:19s;animation-delay:-6s}
+@keyframes ms-sway{from{translate:-10px 0;opacity:.8}to{translate:12px 0;opacity:1}}
+#ms-ui .fog{position:absolute;left:0;right:0;bottom:0;height:16%;background:linear-gradient(transparent,rgba(122,142,214,.22));pointer-events:none}
+#ms-ui .vig{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 36%,transparent 42%,rgba(8,12,24,.6) 100%);pointer-events:none}
+#ms-ui .fly{position:absolute;width:3px;height:3px;background:var(--gold-hi);box-shadow:0 0 7px 2px rgba(255,217,122,.45);animation:ms-wander var(--t) ease-in-out infinite alternate,ms-glow var(--b) steps(2) infinite}
+@keyframes ms-wander{to{translate:var(--x) var(--y)}}
+@keyframes ms-glow{50%{opacity:.25}}
+#ms-ui .ground{position:absolute;left:0;right:0;top:var(--gy);bottom:0;background-size:calc(16px*var(--k)) calc(16px*var(--k));image-rendering:pixelated}
+#ms-ui .night-w .ground{background-image:url(/assets/env/n_tile_body.png)}
+#ms-ui .ground::before{content:"";position:absolute;left:0;right:0;top:0;height:calc(16px*var(--k));background-size:calc(16px*var(--k)) calc(16px*var(--k));background-repeat:repeat-x;image-rendering:pixelated}
+#ms-ui .night-w .ground::before{background-image:url(/assets/env/n_tile_top.png)}
+#ms-ui .ground::after{content:"";position:absolute;inset:0;background:linear-gradient(rgba(14,20,36,0),rgba(14,20,36,.82) 70%)}
+#ms-ui .actors{position:absolute;left:0;right:0;top:0;height:var(--gy);pointer-events:none}
+#ms-ui .actor{position:absolute;bottom:calc(var(--k)*-3px);image-rendering:pixelated}
+#ms-ui .hero{--hx:18;left:calc(var(--hx)*1%);width:calc(96px*var(--k));height:calc(80px*var(--k));margin-left:calc(-48px*var(--k));background:url(/assets/character/idle.png) 0 0/calc(384px*var(--k)) calc(80px*var(--k));animation:ms-idle .9s steps(4) infinite}
+#ms-ui .hero.face-l{transform:scaleX(-1)}
+@keyframes ms-idle{to{background-position-x:calc(-384px*var(--k))}}
+#ms-ui .fairy{left:calc(var(--hx)*1% - 44px*var(--k));bottom:calc(var(--k)*46px);width:calc(36px*var(--k));height:calc(38px*var(--k));background:url(/assets/companion/fairy_fly.png) 0 0/calc(216px*var(--k)) calc(38px*var(--k));animation:ms-fly .7s steps(6) infinite;transition:left .5s ease-out}
+@keyframes ms-fly{to{background-position-x:calc(-216px*var(--k))}}
+#ms-ui .boar{right:6%;width:calc(48px*var(--k));height:calc(32px*var(--k));background:url(/assets/mobs/boar/idle.png) 0 0/calc(192px*var(--k)) calc(32px*var(--k));transform:scaleX(-1);animation:ms-boar 1s steps(4) infinite}
+@keyframes ms-boar{to{background-position-x:calc(-192px*var(--k))}}
+@container ms (orientation:landscape){ #ms-ui .boar{display:none} #ms-ui .night-w .hero,#ms-ui .night-w .fairy{--hx:45!important} #ms-ui .night-w .fairy{bottom:calc(var(--k)*34px)} }
+
+/* ---- shared components ---- */
+#ms-ui .ico{flex:none}
+#ms-ui .ui{position:absolute;inset:0;pointer-events:none}
+#ms-ui .ui button,#ms-ui .ui a,#ms-ui .ui .pill{pointer-events:auto}
+#ms-ui .icon-btn{width:48px;height:48px;display:grid;place-items:center;background:var(--panel);box-shadow:var(--bx),var(--raise),0 6px 0 0 rgba(0,0,0,.28);color:var(--bone)}
+#ms-ui .icon-btn.sm{width:44px;height:44px;background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .icon-btn:active,#ms-ui .tile:active,#ms-ui .btn-2:active,#ms-ui .chip:active{transform:translateY(2px)}
+#ms-ui .gold{position:relative;overflow:hidden;background:linear-gradient(#FFC650,#F4B63F 52%,#EBA52C);color:var(--gold-ink);
+  box-shadow:inset 0 3px 0 var(--gold-hi),inset 0 -5px 0 var(--gold-lo),var(--gold-bx),0 8px 0 0 rgba(0,0,0,.34)}
+#ms-ui .gold::before{content:"";position:absolute;left:8px;top:7px;width:10px;height:3px;background:rgba(255,255,255,.55);box-shadow:0 3px 0 -1px rgba(255,255,255,.3)}
+#ms-ui .gold::after{content:"";position:absolute;top:0;bottom:0;left:-40%;width:28%;background:rgba(255,255,255,.4);transform:skewX(-20deg);opacity:0}
+#ms-ui .gold:active{transform:translateY(3px);box-shadow:inset 0 3px 0 var(--gold-hi),inset 0 -2px 0 var(--gold-lo),var(--gold-bx),0 4px 0 0 rgba(0,0,0,.34)}
+#ms-ui .btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:60px;padding:0 20px;font:400 24px/1 var(--font-ui);margin-bottom:8px;letter-spacing:.3px}
+#ms-ui .btn .ico{filter:drop-shadow(0 2px 0 rgba(0,0,0,.25))}
+#ms-ui .btn-2{display:flex;align-items:center;justify-content:center;width:100%;min-height:56px;padding:0 18px;font:400 22px/1 var(--font-ui);background:var(--panel);box-shadow:var(--bx),var(--raise),0 6px 0 0 rgba(0,0,0,.25);color:var(--bone)}
+#ms-ui .btn-ghost{display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;font:400 20px var(--font-ui);color:var(--mist);text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--mist-dim)}
+
+/* ---- menu ---- */
+#ms-ui .topbar{position:absolute;top:14px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;z-index:3}
+#ms-ui .chip{position:relative;height:48px;padding:0 14px 0 10px;display:flex;align-items:center;gap:9px;background:var(--panel);box-shadow:var(--bx),var(--raise),0 6px 0 0 rgba(0,0,0,.28);font:400 22px/1 var(--font-ui);color:var(--bone);font-variant-numeric:tabular-nums}
+#ms-ui .chip.dim{color:var(--mist)}
+#ms-ui .chip.dim .coin{filter:grayscale(.9) brightness(.8)}
+#ms-ui .chip .tick{display:grid;place-items:center}
+#ms-ui .ping{position:absolute;top:-7px;right:-7px;width:12px;height:12px;background:var(--gold-hi);box-shadow:0 0 0 2px var(--ink);animation:ms-ping 1.2s steps(2) infinite}
+@keyframes ms-ping{50%{transform:scale(.55)}}
+#ms-ui .brand{position:absolute;left:0;right:0;top:11%;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+#ms-ui .moonwrap{position:relative;width:112px;height:112px}
+#ms-ui .moonwrap::before{content:"";position:absolute;inset:-46px;background:radial-gradient(circle,rgba(238,232,213,.28),rgba(238,232,213,0) 62%);animation:ms-halo 7s ease-in-out infinite}
+@keyframes ms-halo{50%{opacity:.55;transform:scale(1.08)}}
+#ms-ui .moonwrap>svg.moon{position:relative;width:112px;height:112px}
+#ms-ui .shard{position:absolute;animation:ms-float 5s ease-in-out infinite}
+#ms-ui .shard.s1{left:-28px;top:70px}
+#ms-ui .shard.s2{right:-32px;top:30px;animation-delay:-1.8s}
+#ms-ui .shard.s3{right:-8px;top:106px;animation-delay:-3.2s}
+@keyframes ms-float{50%{translate:0 -6px}}
+#ms-ui .logo{margin:0;font:400 28px/1 var(--font-logo);color:var(--gold);letter-spacing:1px;text-shadow:2px 0 0 #1a1002,-2px 0 0 #1a1002,0 -2px 0 #1a1002,0 2px 0 #1a1002,0 6px 0 #6b4208,0 9px 0 rgba(0,0,0,.35)}
+#ms-ui .tag{margin:0;font:400 25px/1 var(--font-ui);color:var(--mist);letter-spacing:.6px;text-shadow:0 2px 0 rgba(0,0,0,.5)}
+#ms-ui .dock{position:absolute;left:0;right:0;bottom:0;padding:16px 20px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px;z-index:2}
+#ms-ui .btn-main{display:flex;align-items:center;gap:16px;width:100%;min-height:80px;padding:0 22px;margin-bottom:8px;text-align:left}
+#ms-ui .btn-main .ico{filter:drop-shadow(0 2px 0 rgba(255,255,255,.25))}
+#ms-ui .bm-txt b{display:block;font:400 34px/1 var(--font-ui);letter-spacing:.4px}
+#ms-ui .bm-txt small{display:block;margin-top:4px;font:400 20px/1.1 var(--font-ui);color:rgba(43,26,3,.82)}
+#ms-ui .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+#ms-ui .tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:88px;background:var(--dither),var(--panel);box-shadow:var(--bx),var(--raise),0 6px 0 0 rgba(0,0,0,.28);font:400 22px/1 var(--font-ui);color:var(--bone)}
+#ms-ui .tile .ti{height:36px;display:grid;place-items:center;color:var(--mist)}
+#ms-ui .tile .ti .ico{filter:drop-shadow(0 3px 0 rgba(0,0,0,.4))}
+/* one entrance, played when the menu opens: moon, title, then the dock */
+#ms-ui .enter .moonwrap{animation:ms-moon-in .9s ease-out backwards}
+#ms-ui .enter .logo{animation:ms-logo-in .55s steps(6,end) .3s backwards}
+#ms-ui .enter .tag{animation:ms-fade-up .5s ease-out .6s backwards}
+#ms-ui .enter .btn-main{animation:ms-dock-in .45s cubic-bezier(.2,.8,.2,1) .55s backwards}
+#ms-ui .enter .btn-main::after{animation:ms-glint .8s ease-out 1.15s 1 backwards}
+#ms-ui .enter .tile{animation:ms-dock-in .45s cubic-bezier(.2,.8,.2,1) backwards}
+#ms-ui .enter .tile:nth-child(1){animation-delay:.68s}
+#ms-ui .enter .tile:nth-child(2){animation-delay:.76s}
+#ms-ui .enter .tile:nth-child(3){animation-delay:.84s}
+#ms-ui .enter .topbar{animation:ms-fade-up .5s ease-out .9s backwards}
+@keyframes ms-moon-in{from{opacity:0;transform:scale(.8)}}
+@keyframes ms-logo-in{from{opacity:0;transform:translateY(-16px)}}
+@keyframes ms-fade-up{from{opacity:0;translate:0 8px}}
+@keyframes ms-dock-in{from{opacity:0;translate:0 24px}}
+@keyframes ms-glint{0%{left:-40%;opacity:1}100%{left:120%;opacity:1}}
+@container ms (orientation:landscape){
+  #ms-ui .menu::before{content:"";position:absolute;inset:0 0 0 40%;background:linear-gradient(to left,rgba(14,20,36,.9),rgba(14,20,36,0));pointer-events:none}
+  #ms-ui .brand{right:50%;top:36%;translate:0 -54%}
+  #ms-ui .moonwrap,#ms-ui .moonwrap>svg.moon{width:84px;height:84px}
+  #ms-ui .moonwrap::before{inset:-36px}
+  #ms-ui .shard.s1{top:52px}
+#ms-ui .shard.s3{top:80px}
+  #ms-ui .logo{font-size:23px}
+  #ms-ui .dock{left:50%;top:0;justify-content:center;padding:56px 22px 22px 8px;gap:12px}
+  #ms-ui .btn-main{min-height:72px}
+#ms-ui .tile{min-height:74px;gap:6px}
+}
+
+/* ---- sheets ---- */
+#ms-ui .scrim{position:absolute;inset:0;z-index:30;background:rgba(8,12,24,.74);animation:ms-fade-in .18s ease-out}
+#ms-ui .scrim.out{animation:ms-fade-out .17s ease-in forwards}
+#ms-ui .sheet{position:absolute;left:0;right:0;bottom:0;z-index:31;max-height:90%;display:flex;flex-direction:column;background:var(--dither),var(--panel);
+  box-shadow:0 -2px 0 0 var(--edge),-2px 0 0 0 var(--edge),2px 0 0 0 var(--edge),0 -3px 0 0 var(--ink-deep),-3px 0 0 0 var(--ink-deep),3px 0 0 0 var(--ink-deep),inset 0 2px 0 rgba(255,255,255,.1);animation:ms-rise .24s cubic-bezier(.2,.8,.2,1)}
+#ms-ui .sheet.out{animation:ms-sheet-out .17s ease-in forwards}
+@keyframes ms-rise{from{translate:0 36px;opacity:0}}
+@keyframes ms-sheet-out{to{translate:0 36px;opacity:0}}
+@keyframes ms-fade-in{from{opacity:0}}
+@keyframes ms-fade-out{to{opacity:0}}
+#ms-ui .sheet-h{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 14px 4px 20px;min-height:64px}
+#ms-ui .sheet-h h2{margin:0;font:400 32px/1.05 var(--font-ui);letter-spacing:.3px}
+#ms-ui .sheet-b{overflow:auto;padding:8px 20px calc(22px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px;-webkit-overflow-scrolling:touch}
+#ms-ui .sheet-b p{margin:0}
+#ms-ui .lead{font:400 23px/1.3 var(--font-ui);color:var(--bone);max-width:34ch}
+#ms-ui .note{font:400 21px/1.3 var(--font-ui);color:var(--mist)}
+#ms-ui .note b{font-weight:400;color:var(--bone)}
+@container ms (orientation:landscape){
+  #ms-ui .sheet{inset:0;margin:auto;width:min(450px,92%);height:fit-content;max-height:94%;box-shadow:var(--bx),inset 0 2px 0 rgba(255,255,255,.1)}
+  #ms-ui .sheet-b{padding-bottom:18px;gap:11px}
+  #ms-ui .sheet-h{min-height:54px;padding-top:10px}
+  #ms-ui .s-wallet{width:min(740px,94%)}
+  #ms-ui .s-wallet .sheet-b{display:grid;grid-template-columns:1fr 1fr;align-items:start;column-gap:18px;row-gap:11px}
+  #ms-ui .s-wallet .col{display:flex;flex-direction:column;gap:11px}
+  #ms-ui .s-wallet .how,#ms-ui .s-wallet .foot,#ms-ui .s-wallet .busy{grid-column:1/-1}
+  #ms-ui .s-wallet .lead{max-width:none}
+  #ms-ui .s-pause .duo{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  #ms-ui .s-pause .sheet-b{gap:11px}
+  #ms-ui .row{min-height:54px}
+#ms-ui .mini{min-height:62px}
+  #ms-ui .btn{min-height:54px}
+#ms-ui .btn-2{min-height:52px}
+}
+#ms-ui .idrow{display:flex;align-items:center;gap:14px;padding:10px 14px 10px 10px;background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .avatar{width:46px;height:46px;display:grid;place-items:center;background:var(--slate);box-shadow:0 0 0 2px var(--edge)}
+#ms-ui .idt{flex:1;min-width:0}
+#ms-ui .idt b{display:block;font:400 25px/1.1 var(--font-ui)}
+#ms-ui .idt small{display:block;margin-top:2px;font:400 20px/1.1 var(--font-ui);color:var(--mist);overflow:hidden;text-overflow:ellipsis}
+#ms-ui .purse{display:flex;align-items:center;gap:14px;padding:14px 16px;background:radial-gradient(130% 160% at 0% 0%,rgba(244,182,63,.2),transparent 56%),var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .purse .ico{filter:drop-shadow(0 3px 0 rgba(0,0,0,.5))}
+#ms-ui .bal{display:flex;align-items:baseline;gap:10px}
+#ms-ui .bal-n{font:400 28px/1 var(--font-logo);color:var(--gold);font-variant-numeric:tabular-nums;text-shadow:0 3px 0 #6b4208}
+#ms-ui .bal-u{font:400 26px var(--font-ui);color:var(--mist)}
+#ms-ui .claimed{display:flex;flex-direction:column;gap:10px}
+#ms-ui .cl-h{display:flex;align-items:center;gap:9px;font:400 23px/1.1 var(--font-ui)}
+#ms-ui .cl-h .nx{margin-left:auto;color:var(--mist)}
+#ms-ui .cl-h .nx b{font-weight:400;color:var(--bone)}
+#ms-ui .meter{height:20px;padding:4px;background:var(--ink-deep);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .meter i{display:block;height:100%;background:repeating-linear-gradient(90deg,var(--gold) 0 6px,transparent 6px 8px)}
+#ms-ui .claimcard{display:flex;flex-direction:column;gap:2px}
+#ms-ui .claimcard small{font:400 20px var(--font-ui);color:var(--mist);margin:-2px 0 4px}
+#ms-ui .perk{display:flex;align-items:center;gap:10px;padding:9px 12px;background:rgba(244,182,63,.09);box-shadow:var(--bx-gold)}
+#ms-ui .perk b{display:block;font:400 22px/1.1 var(--font-ui);color:var(--gold-hi)}
+#ms-ui .perk small{display:block;font:400 19px/1.1 var(--font-ui);color:var(--mist)}
+#ms-ui .how{background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .how summary{list-style:none;display:flex;align-items:center;justify-content:space-between;min-height:54px;padding:0 14px;font:400 23px var(--font-ui);cursor:pointer}
+#ms-ui .how summary::-webkit-details-marker{display:none}
+#ms-ui .how summary .ico{color:var(--mist);transition:rotate .15s}
+#ms-ui .how[open] summary .ico{rotate:180deg}
+#ms-ui .how ul{margin:0;padding:2px 14px 14px;list-style:none;display:flex;flex-direction:column;gap:12px;color:var(--mist);font:400 21px/1.25 var(--font-ui)}
+#ms-ui .how li{display:flex;gap:12px;align-items:flex-start}
+#ms-ui .how li .ico{margin-top:1px}
+#ms-ui .foot{display:flex;justify-content:space-between;align-items:center}
+#ms-ui .lnk{min-height:44px;padding:0 4px;font:400 20px var(--font-ui);color:var(--mist);text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--mist-dim)}
+#ms-ui .stepper{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr)}
+#ms-ui .stepper li{position:relative;display:flex;flex-direction:column;align-items:center;gap:7px;font:400 20px/1 var(--font-ui);color:var(--mist-dim)}
+#ms-ui .stepper li+li::before{content:"";position:absolute;top:10px;right:calc(50% + 18px);width:calc(100% - 36px);height:3px;background:var(--edge)}
+#ms-ui .stepper li.done+li::before,#ms-ui .stepper li.now::before{background:var(--gold-lo)}
+#ms-ui .stepper li.now{color:var(--bone)}
+#ms-ui .stepper li.done{color:var(--mist)}
+#ms-ui .stepper li.pop .ico{animation:pop .45s steps(4) 1}
+#ms-ui .item{display:flex;gap:14px;padding:12px;background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .pedestal{position:relative;flex:none;width:88px;height:88px;display:grid;place-items:center;background:radial-gradient(circle at 50% 62%,rgba(244,182,63,.34),rgba(244,182,63,0) 66%),var(--slate);box-shadow:var(--bx)}
+#ms-ui .pedestal .ico{animation:ms-bob 3.2s ease-in-out infinite;filter:drop-shadow(0 4px 0 rgba(0,0,0,.45))}
+#ms-ui .pedestal.flash{animation:ms-flash2 .6s ease-out 1}
+@keyframes ms-bob{50%{translate:0 -4px}}
+@keyframes ms-flash2{30%{filter:brightness(1.8)}}
+#ms-ui .item-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;justify-content:center}
+#ms-ui .kind{align-self:flex-start;padding:3px 9px 2px;background:var(--slate-2);font:400 18px/1 var(--font-ui);color:var(--mist);box-shadow:var(--raise)}
+#ms-ui .item-t b{font:400 27px/1 var(--font-ui)}
+#ms-ui .item-t small{font:400 20px/1.1 var(--font-ui);color:var(--mist)}
+#ms-ui .pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+#ms-ui .pair>div{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .pair small{font:400 19px/1 var(--font-ui);color:var(--mist)}
+#ms-ui .pair b{display:flex;align-items:center;gap:8px;font:400 27px/1 var(--font-ui);font-variant-numeric:tabular-nums}
+#ms-ui .pair .low b{color:var(--mist)}
+#ms-ui .busy{display:flex;align-items:center;gap:12px;min-height:60px;font:400 23px var(--font-ui);color:var(--mist)}
+#ms-ui .spin{display:flex;gap:4px}
+#ms-ui .spin i{width:8px;height:8px;background:var(--gold);animation:ms-blink 1s steps(2) infinite}
+#ms-ui .spin i:nth-child(2){animation-delay:.2s}
+#ms-ui .spin i:nth-child(3){animation-delay:.4s}
+@keyframes ms-blink{50%{opacity:.25}}
+#ms-ui .row{display:flex;align-items:center;gap:14px;width:100%;min-height:64px;padding:0 14px;background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .row .r-ico{width:28px;display:grid;place-items:center;color:var(--bone)}
+#ms-ui .row .r-ico.off{color:var(--mist-dim)}
+#ms-ui .row b{flex:1;font:400 24px var(--font-ui)}
+#ms-ui button.row:active{transform:translateY(2px)}
+#ms-ui .rows{display:flex;flex-direction:column;gap:12px}
+#ms-ui .col,#ms-ui .duo{display:contents}
+#ms-ui .rot{rotate:-90deg}
+#ms-ui .sw{position:relative;flex:none;width:68px;height:38px;background:var(--ink-deep);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .sw i{position:absolute;top:5px;left:5px;width:28px;height:28px;background:var(--mist-dim);box-shadow:var(--raise);transition:transform .14s steps(3)}
+#ms-ui .sw[aria-checked="true"] i{transform:translateX(30px);background:var(--gold)}
+#ms-ui .audio{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+#ms-ui .mini{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:78px;background:var(--ink);box-shadow:var(--bx),var(--sunk);font:400 21px/1 var(--font-ui);color:var(--bone)}
+#ms-ui .mini.off{color:var(--mist-dim)}
+#ms-ui .done-face{width:76px;height:76px;background:var(--ink) url(/assets/companion/fairy_portrait.png) center/contain no-repeat;image-rendering:pixelated;box-shadow:var(--bx),var(--sunk);margin-bottom:4px}
+#ms-ui .toast{position:absolute;left:50%;bottom:calc(124px + env(safe-area-inset-bottom,0px));translate:-50% 0;z-index:60;max-width:calc(100% - 40px);display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--panel);box-shadow:var(--bx),var(--raise),0 6px 0 0 rgba(0,0,0,.3);font:400 21px/1.2 var(--font-ui);animation:ms-rise .22s ease-out}
+@container ms (orientation:landscape){ #ms-ui .toast{bottom:20px} }
+#ms-ui #fx{position:absolute;inset:0;z-index:70;pointer-events:none;overflow:hidden}
+#ms-ui .spark{position:absolute;width:7px;height:7px;margin:-3px 0 0 -3px;animation:ms-spark .75s cubic-bezier(.15,.7,.3,1) forwards}
+@keyframes ms-spark{from{opacity:1;transform:translate(0,0)}to{opacity:0;transform:translate(var(--dx),var(--dy)) scale(.3)}}
+#ms-ui #fade{position:absolute;inset:0;z-index:50;background:var(--ink);opacity:0;pointer-events:none;transition:opacity .16s linear}
+#ms-ui #fade.on{opacity:1;pointer-events:auto}
+
+
+
+/* ---- the stage and the pieces the menu adds ---- */
+#ms-ui .ms-stage{position:absolute;inset:0;--k:1.8}
+@container ms (orientation:landscape){#ms-ui .ms-stage{--k:1.4}}
+#ms-ui .scrim,#ms-ui .sheet{pointer-events:auto}
+#ms-ui .menu .topbar{top:calc(14px + var(--ms-inset-top,0px))}
+#ms-ui .dock{padding-bottom:calc(20px + max(env(safe-area-inset-bottom,0px),var(--ms-inset-bottom,0px)))}
+#ms-ui .chapters{align-self:center;margin:-8px 0 -4px}
+#ms-ui a.row{text-decoration:none;color:inherit;pointer-events:auto}
+#ms-ui .row .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding:8px 0}
+#ms-ui .row .t b{flex:none;font:400 24px/1.1 var(--font-ui)}
+#ms-ui .row .t small{font:400 20px/1.15 var(--font-ui);color:var(--mist)}
+#ms-ui .row.locked{opacity:.55}
+#ms-ui .row.locked .ico{color:var(--mist)}
+@media (prefers-reduced-motion:reduce){#ms-ui *,#ms-ui *::before,#ms-ui *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+/* ---- the wallet and the way in ---- */
+#ms-ui .sec-h{margin:0;font:400 23px/1.1 var(--font-ui);color:var(--mist)}
+#ms-ui .gd-sec{display:flex;flex-direction:column;gap:10px;padding:12px 14px;background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .gd-warn{color:#F2B25C}
+#ms-ui .gd-claimed{color:var(--gold-hi);font:400 22px/1.2 var(--font-ui)}
+#ms-ui .gd-spoil{display:flex;align-items:center;justify-content:space-between;gap:12px;font:400 22px/1.15 var(--font-ui)}
+#ms-ui .gd-spoil small{display:block;margin-top:2px;color:var(--mist);font-size:19px}
+#ms-ui .gd-wallets{display:flex;flex-direction:column;gap:12px}
+#ms-ui .gd-wallet{gap:10px}
+#ms-ui .gd-wallet-icon{width:22px;height:22px;flex:none;image-rendering:auto}
+#ms-ui .btn-2.gd-small{width:auto;min-height:44px;padding:0 16px;font-size:20px}
+#ms-ui button:disabled{opacity:.45;pointer-events:none}
+#ms-ui a.lnk{display:inline-flex;align-items:center}
+#ms-ui .how li .lnk{display:inline;min-height:0;padding:0}
+#ms-ui .foot .btn-ghost{width:auto;min-height:44px;padding:0 4px;font-size:20px}
+#ms-ui .sheet-b b{font-weight:400}
+
+/* ---- the loading screen: the moon forms out of pixels as the game loads ---- */
+#ms-ui .ms-loader{position:absolute;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:radial-gradient(ellipse at 50% 38%,#1c2a55 0,var(--ink) 64%);pointer-events:auto;transition:opacity .4s ease-out}
+#ms-ui .ms-loader.out{opacity:0;pointer-events:none}
+#ms-ui .ld-stage{position:relative;width:260px;height:150px;display:grid;place-items:center}
+#ms-ui .ld-moon svg{width:112px;height:112px;filter:drop-shadow(0 0 18px rgba(238,232,213,.25))}
+#ms-ui .ld-moon.done svg{animation:ms-flash .5s ease-out 1}
+@keyframes ms-flash{30%{filter:drop-shadow(0 0 34px rgba(255,217,122,.95)) brightness(1.25)}}
+#ms-ui .ld-moon rect{opacity:0}
+#ms-ui .ld-shard{position:absolute;left:50%;top:50%;margin:-9px 0 0 -9px}
+#ms-ui .ld-logo{font:400 18px/1 var(--font-logo);color:var(--gold);letter-spacing:1px;text-shadow:2px 0 0 #1a1002,-2px 0 0 #1a1002,0 -2px 0 #1a1002,0 2px 0 #1a1002,0 5px 0 #6b4208}
+#ms-ui .ld-bar{width:min(240px,64%);height:22px;padding:4px;background:var(--ink-deep);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .ld-bar i{display:block;height:100%;width:0;background:repeating-linear-gradient(90deg,var(--gold) 0 8px,transparent 8px 10px)}
+#ms-ui .ld-cap{display:flex;gap:12px;font:400 20px var(--font-ui);color:var(--mist)}
+#ms-ui .ld-cap b{font-weight:400;color:var(--bone);font-variant-numeric:tabular-nums;min-width:3ch}
+
+/* ---- the pause menu: a sheet over the running game ---- */
+/* below the sheets (z-index 30 and up): when the way in refuses a restart it opens over the pause menu */
+#ms-ui .ms-pause{position:absolute;inset:0;z-index:25}
+#ms-ui .ms-pause.hidden{display:none}
+#ms-ui .ms-pause .note{margin:0}
+
+/* ---- toasts: short messages over everything ---- */
+#ms-ui .ms-toast-container{position:absolute;left:50%;bottom:calc(124px + max(env(safe-area-inset-bottom,0px),var(--ms-inset-bottom,0px)));translate:-50% 0;z-index:80;display:flex;flex-direction:column;align-items:center;gap:10px;max-width:calc(100% - 40px);pointer-events:none}
+#ms-ui .ms-toast{pointer-events:auto;padding:12px 16px;background:var(--panel);box-shadow:var(--bx),var(--raise),0 6px 0 0 rgba(0,0,0,.3);font:400 21px/1.2 var(--font-ui);text-align:center;opacity:0;translate:0 12px;transition:opacity .2s ease-out,translate .2s ease-out}
+#ms-ui .ms-toast.show{opacity:1;translate:0 0}
+#ms-ui .ms-toast-error{box-shadow:var(--bx-ember),var(--raise),0 6px 0 0 rgba(0,0,0,.3);color:#FFC9CE}
+#ms-ui .ms-toast-warn{box-shadow:var(--bx-gold),var(--raise),0 6px 0 0 rgba(0,0,0,.3);color:var(--gold-hi)}
+@container ms (orientation:landscape){#ms-ui .ms-toast-container{bottom:20px}}

@@ -12,6 +12,8 @@ const DEFAULT_STATE = {
   equippedWeapon: 'iron_starter',
   unlockedWeapons: ['iron_starter'],
   satchelUnlocked: false,
+  tutorialDone: false,
+  prologueSeen: false,
   companionEquipped: false,
   activePerk: 'magnet',
   storyProgress: {
@@ -168,6 +170,35 @@ class StorageManager {
 
   getActivePerk() {
     return this.data.activePerk;
+  }
+
+  /** Whether the player has been through (or skipped) the combat tutorial. Anyone who has already cleared a chapter has. */
+  isTutorialDone() {
+    if (this.data.tutorialDone) return true;
+    return Object.values(this.data.storyProgress || {}).some((c) => c?.completed);
+  }
+
+  setTutorialDone() {
+    this.data.tutorialDone = true;
+    this.save();
+  }
+
+  /** Whether the player has seen the Prologue (the story's opening cards). Anyone who has cleared a chapter has. */
+  hasSeenPrologue() {
+    if (this.data.prologueSeen) return true;
+    return Object.values(this.data.storyProgress || {}).some((c) => c?.completed);
+  }
+
+  setPrologueSeen() {
+    this.data.prologueSeen = true;
+    this.save();
+  }
+
+  /** The chapter "Continue" goes to: the furthest one the player has unlocked (1 to 5). */
+  furthestChapter() {
+    let n = 1;
+    while (n < 5 && this.isChapterUnlocked(n + 1)) n += 1;
+    return n;
   }
 
   markChapterComplete(chapterNum, kills = 0) {

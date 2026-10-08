@@ -3,14 +3,13 @@
 //   what a player asked to play before the face scan is offered again, as one tap, when they come back verified
 //   a verified player is never stopped
 //   node test/client/browser/gate.mjs        (run from the repository root)
-import { bootGame } from './lib.mjs';
+import { bootGame, sheetName, sheetText, waitSheet } from './lib.mjs';
 import { installApi, sessionInit } from './api-stub.mjs';
 
 const log = (...a) => console.log(...a);
 const failures = [];
 const check = (ok, message) => { if (!ok) { failures.push(message); log(`   ✗ ${message}`); } else log(`   ✓ ${message}`); };
 const active = (page, key) => page.evaluate((k) => window.game.scene.isActive(k), key);
-const panelText = (page) => page.evaluate(() => document.querySelector('#gd-panel')?.innerText ?? '');
 
 // ---- 1. a visitor follows a deep link ------------------------------------------------------------------------------
 {
@@ -19,11 +18,10 @@ const panelText = (page) => page.evaluate(() => document.querySelector('#gd-pane
     log('▶ a deep link from a visitor');
     await g.page.goto(`${g.web}/?scene=survival`);
     await g.page.waitForFunction(() => window.game?.scene?.isActive('MenuScene'), null, { timeout: 60_000 });
-    await g.page.waitForFunction(() => !document.querySelector('#gd-panel')?.classList.contains('hidden'), null, { timeout: 15_000 });
+    check(await waitSheet(g.page, /Connect your wallet/, 15_000), 'the gate opens, at its first step');
     check(!(await active(g.page, 'SurvivalScene')), 'the mode did not start');
     check(await active(g.page, 'MenuScene'), 'the menu is behind the gate, not a blank screen');
-    const text = await panelText(g.page);
-    check(/VERIFIED HUMANS ONLY/.test(text) && /ENDLESS MODE/.test(text), 'the gate names the mode that was asked for');
+    check((await sheetName(g.page)) === 'gate' && /one human, one slot/i.test(await sheetText(g.page)), 'it says why: one human, one slot');
     check(g.errors.length === 0, `no browser errors ${g.errors.join(' | ')}`);
   } finally { await g.close(); }
 }
@@ -36,13 +34,11 @@ const panelText = (page) => page.evaluate(() => document.querySelector('#gd-pane
     await installApi(g.page, { verified: true });
     log('▶ back from the face scan with a remembered request');
     await g.goto();
-    await g.page.waitForFunction(() => document.querySelector('#gd-panel') && !document.querySelector('#gd-panel').classList.contains('hidden'), null, { timeout: 30_000 });
-    const text = await panelText(g.page);
-    check(/PLAY ENDLESS MODE/.test(text), 'the mode they asked for is offered as one tap');
+    check(await waitSheet(g.page, /Play Endless mode/, 30_000), 'the mode they asked for is offered as one tap');
     check(!(await active(g.page, 'SurvivalScene')), 'it does not start by itself');
-    await g.page.click('[data-act="play"]');
+    await g.page.click('#ms-sheets [data-act="play"]');
     await g.page.waitForFunction(() => window.game.scene.isActive('SurvivalScene'), null, { timeout: 30_000 });
-    check(true, 'PLAY starts it');
+    check(true, 'Play starts it');
     check(await g.page.evaluate(() => sessionStorage.getItem('moonshard.gate.v1') === null), 'the memory was used up');
 
     log('▶ a verified player is never stopped');
@@ -50,7 +46,7 @@ const panelText = (page) => page.evaluate(() => document.querySelector('#gd-pane
     await g.page.waitForFunction(() => window.game.scene.isActive('MenuScene'), null, { timeout: 15_000 });
     await g.page.evaluate(() => window.game.scene.getScene('MenuScene').scene.start('TutorialScene'));
     await g.page.waitForFunction(() => window.game.scene.isActive('TutorialScene'), null, { timeout: 15_000 });
-    check(true, 'the tutorial starts at once');
+    check(true, 'the tutorial starts at once (it needs no wallet at all)');
     check(g.errors.length === 0, `no browser errors ${g.errors.join(' | ')}`);
   } finally { await g.close(); }
 }
@@ -71,14 +67,13 @@ const panelText = (page) => page.evaluate(() => document.querySelector('#gd-pane
     await g.page.waitForFunction(() => window.gdService.getStatus().verified === false, null, { timeout: 15_000 });
 
     await g.page.evaluate(() => window.game.scene.getScene('SurvivalScene').scene.restart()); // what "play again" does
-    await g.page.waitForFunction(() => document.querySelector('#gd-panel') && !document.querySelector('#gd-panel').classList.contains('hidden'), null, { timeout: 15_000 });
-    check(/ENDLESS MODE/.test(await panelText(g.page)), 'the gate opens and names the mode');
+    check(await waitSheet(g.page, /Verify again|Prove you are human/, 15_000), 'the gate opens, at the step the lapse put them on');
     check(await g.page.evaluate(() => window.__marker.active), 'the run was not restarted behind it');
 
     api.verified = true; // they verify again
-    await g.page.click('[data-act="recheck"]');
-    await g.page.waitForSelector('[data-act="play"]', { timeout: 15_000 });
-    await g.page.click('[data-act="play"]');
+    await g.page.click('#ms-sheets [data-act="recheck"]');
+    check(await waitSheet(g.page, /Play Endless mode/, 15_000), 'verified again, it names the mode they asked for');
+    await g.page.click('#ms-sheets [data-act="play"]');
     await g.page.waitForFunction(() => window.__marker.active === false, null, { timeout: 30_000 });
     check(await active(g.page, 'SurvivalScene'), 'passing the gate carries the restart out');
     check(g.errors.length === 0, `no browser errors ${g.errors.join(' | ')}`);

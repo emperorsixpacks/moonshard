@@ -6,7 +6,7 @@ function ensureContainer() {
     container = document.createElement('div');
     container.id = 'ms-toast-container';
     container.className = 'ms-toast-container';
-    document.body.appendChild(container);
+    (document.getElementById('ms-fx') || document.body).appendChild(container);
   }
   return container;
 }
