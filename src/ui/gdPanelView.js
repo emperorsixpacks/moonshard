@@ -37,6 +37,10 @@ const note = (text) => `<p class="note">${text}</p>`;
 const warn = (text) => `<p class="note gd-warn">${text}</p>`;
 const lead = (text) => `<p class="lead">${text}</p>`;
 const secH = (text) => `<h4 class="sec-h">${text}</h4>`;
+/** A note that runs the full width of a wide sheet (on a phone every block does). */
+const wide = (text) => `<p class="note wide">${text}</p>`;
+/** One column of a wide sheet's two-column layout: the sheet lays these side by side, and a phone stacks their contents. */
+const col = (html) => `<div class="col">${html}</div>`;
 
 /** A wallet's icon, only when it is an image inside the page itself (never one fetched from elsewhere). */
 const walletIcon = (w) => (typeof w.icon === 'string' && /^data:image\//i.test(w.icon)
@@ -266,7 +270,7 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null, config = nul
   const label = { status, text: status === 'unknown' && s.offline ? 'Server offline' : LABELS[status] };
   const out = [];
 
-  if (busy) out.push(note('Working… confirm in your wallet if asked.'));
+  if (busy) out.push(wide('Working… confirm in your wallet if asked.'));
 
   if (gate) {
     if (!s.connected && s.sessionExpired) out.push(warn('Your session ended. Connect your wallet again to keep playing.'));
@@ -274,44 +278,50 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null, config = nul
     out.push(gateHtml(s, gate, busy, txDisabled, now));
     if (s.connected) out.push(button('disconnect', 'Disconnect', { disabled: busy, kind: 'ghost' }));
   } else if (!s.connected) {
-    if (s.sessionExpired) out.push(warn('Your session ended. Connect your wallet again to keep earning.'));
-    out.push(lead('Moonshard is for verified humans. Connect your Celo wallet and prove you are human (GoodDollar face scan) to claim your daily G$ and play.'));
-    out.push(connectHtml(s, busy));
+    // why on the left, which wallet on the right
+    const why = `${s.sessionExpired ? warn('Your session ended. Connect your wallet again to keep earning.') : ''}${lead('Moonshard is for verified humans. Connect your Celo wallet and prove you are human (GoodDollar face scan) to claim your daily G$ and play.')}`;
+    out.push(col(why), col(connectHtml(s, busy)));
   } else {
-    out.push(identityHtml(s, label));
+    // the top row of a wide sheet: who the player is (and what is wrong with the connection) beside the next thing to do
+    const who = [identityHtml(s, label)];
     if (s.offline) {
       // the gate holds play while the verification cannot be checked: only promise play to a player who is through already
-      out.push(warn(canPlay(s)
+      who.push(warn(canPlay(s)
         ? 'Server unreachable. You can still play; rewards resume when it is back.'
         : "Server unreachable, so we can't check your verification yet. Play opens as soon as it is back."));
     }
     if (s.needsReconnect) {
-      out.push(warn('Reconnect your wallet to claim rewards.'));
-      out.push(button('reconnect', 'Reconnect wallet', { disabled: busy }));
+      who.push(warn('Reconnect your wallet to claim rewards.'));
+      who.push(button('reconnect', 'Reconnect wallet', { disabled: busy }));
     }
     if (s.wrongChain) {
-      out.push(warn('Your wallet is not on the Celo network.'));
-      out.push(button('switch', 'Switch to Celo', { disabled: busy }));
+      who.push(warn('Your wallet is not on the Celo network.'));
+      who.push(button('switch', 'Switch to Celo', { disabled: busy }));
     }
 
+    let next = '';
     if (status === 'unknown') {
-      if (!s.offline) out.push(warn("Can't check your verification right now."));
-      out.push(button('recheck', 'Try again', { disabled: busy }));
+      next = `${s.offline ? '' : warn("Can't check your verification right now.")}${button('recheck', 'Try again', { disabled: busy })}`;
     } else if (status !== 'verified') {
       const copy = status === 'expired'
         ? 'Your GoodDollar verification has expired. Verify again to keep earning.'
         : "Moonshard is played by verified humans: one human, one slot. GoodDollar's quick face scan proves you are a real person. Moonshard never sees your face.";
-      out.push(`${lead(copy)}${button('verify', 'Start face scan', { disabled: txDisabled })}${button('recheck', "I'm done, check again", { disabled: busy, kind: 'ghost' })}`);
+      next = `${lead(copy)}${button('verify', 'Start face scan', { disabled: txDisabled })}${button('recheck', "I'm done, check again", { disabled: busy, kind: 'ghost' })}`;
     } else {
-      out.push(purseHtml(s));
-      out.push(claimHtml(s, txDisabled, now));
-      out.push(bountyHtml(s, txDisabled, now));
+      next = purseHtml(s);
+    }
+    out.push(col(who.join('')), col(next));
+
+    if (status === 'verified') {
+      // the day's claim on the left, what is still to win on the right
+      let more = bountyHtml(s, txDisabled, now);
       // Prizes are paid only while the server pays them (PRIZES_ENABLED); Spoils already won stay redeemable either way
-      if (s.prizes === true || s.spoils.length > 0) out.push(`<section class="gd-sec">${secH('Spoils')}${spoilsHtml(s, txDisabled)}</section>`);
+      if (s.prizes === true || s.spoils.length > 0) more += `<section class="gd-sec">${secH('Spoils')}${spoilsHtml(s, txDisabled)}</section>`;
+      out.push(col(claimHtml(s, txDisabled, now)), col(more));
     }
 
     if (s.pendingCount > 0) {
-      out.push(note(`${s.pendingCount} payment${s.pendingCount === 1 ? '' : 's'} waiting to be recorded. Retrying automatically.`));
+      out.push(wide(`${s.pendingCount} payment${s.pendingCount === 1 ? '' : 's'} waiting to be recorded. Retrying automatically.`));
     }
   }
 

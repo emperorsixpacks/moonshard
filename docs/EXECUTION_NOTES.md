@@ -102,9 +102,17 @@ The owner's brief: onboarding had too many sections, the interface was too green
 - **Less.** The seven-row menu is one button (Play, or Continue at the furthest unlocked chapter) and three tiles (Endless, Forge, Ranks), with the wallet chip and a settings gear. The G$ guide no longer opens by itself or has a row: its content (still entirely server-driven, never invented) is the closed "How G$ works" card at the bottom of the wallet. A bounty the server has not set up is not shown, instead of "coming soon".
 - **Mobile.** Sheets scroll with a thumb (the touch controls used to block every touch move outside the old panel); the loading screen stops taking taps the moment the game is ready; the pause menu sits below the sheets so a refused restart opens the gate over it.
 
-Verified: 504 client unit tests (the wallet, gate, guide and menu tests were ported, not dropped), the real-browser checks in `test/client/browser` (rewritten for the new menu and sheets: `menu`, `gate`, `gate-restart`, `shop`, `prizes`, `wallets`, `scene-teardown`), and `npm run test:smoke`. Not run here: `local-dev` and `npm run test:browser` (they need internet and Foundry); their selectors were translated and are untested.
+Verified: 516 client unit tests (the wallet, gate, guide and menu tests were ported, not dropped), the real-browser checks in `test/client/browser` (rewritten for the new menu and sheets: `menu`, `gate`, `gate-restart`, `shop`, `prizes`, `wallets`, `scene-teardown`), and `npm run test:smoke`. Not run here: `local-dev` and `npm run test:browser` (they need internet and Foundry); their selectors were translated and are untested.
 
-Still on the old look (next passes): the in-run screens (the tutorial's lesson panel, the page header with its G$ pill, dialogue boxes, touch-control styling, result screens), the Forge and the Leaderboard.
+### In the run (second pass)
+
+- **Controls.** Keyboard: move with A/D or the arrows, jump with Space, W or Up, attack with **E** (J and Enter still work; Z no longer does), strike upward by holding W/Up with E, or with K. E already turns the pages of a story dialogue; pressing it to close one does not also swing the sword (`test/client/browser/tutorial.mjs` checks it).
+- **Keyboard or fingers.** `src/engine/inputMode.js` follows how the player is playing: a phone starts as touch and a computer as keys, and the first real touch or game key switches it. The on-screen pad is drawn only for touch (it used to cover the screen of every computer), and the tutorial names keys or buttons to match (the old lesson text only ever said "tap the D-Pad").
+- **The lesson card.** The tutorial's card is now a page element (`src/ui/coachView.js`, copy in `src/ui/tutorialLessons.js`): Sylva, six steps, the instruction, and a checklist whose boxes tick as the moves are made. A "Skip" link counts the tutorial as done and returns to the menu. All six lessons are kept (the four-lesson cut is still undecided). "Training complete" is a sheet like the rest of the front door.
+- **The chrome.** The pad is squares with the stepped edge, Jump big and gold under the right thumb with Slash beside it and Up above it, sizes following the screen width; the page header, pause button and G$ pill dropped the green; the G$ pill hides while a run is on (the wallet is one tap away from the menu).
+- **Feel.** Dust at the feet when running, jumping and landing (more for a harder fall), and a gold burst when a lesson is done. The swing's white crescent was already in the attack animation, so no extra arc was added.
+
+Still on the old look (next passes): the story's HUD bar, dialogue boxes and chapter card, the story and Endless result screens, the Forge and the Leaderboard.
 
 ## What was verified, and how
 

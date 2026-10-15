@@ -10,6 +10,9 @@ import Bee from '../entities/Bee.js';
 import EnemyHealthBar from '../ui/EnemyHealthBar.js';
 import { pauseService } from '../engine/PauseService.js';
 import confetti from 'canvas-confetti';
+import { createCoach, doneHtml } from '../ui/coachView.js';
+import { openSheet } from '../ui/sheet.js';
+import { LESSONS } from '../ui/tutorialLessons.js';
 
 /*
  * Sizes for the two canvases (480x270 landscape, 480x440 tall), in game units.
@@ -21,50 +24,10 @@ import confetti from 'canvas-confetti';
  * 2.1 CSS px per unit, where the sizes below are already large enough.
  */
 
-/** The lesson card at the top. Positions are measured from the middle of the card. */
-const HUD = {
-  land: {
-    card: { w: 340, h: 58, x: 175, y: 35 },
-    avatar: { x: -146, y: 0, size: 24, scale: 0.5 },
-    pill: { x: -88, y: -19, w: 74, h: 12, size: '5px' },
-    title: { x: 32, y: -19, originX: 0.5, size: '6px' },
-    dialogue: { x: -126, y: 1, wrap: 286, size: '4.5px', spacing: 2 },
-    progress: { x: 14, y: 21, originX: 0.5, size: '4.5px' },
-  },
-  tall: {
-    card: { w: 450, h: 112, x: 240, y: 62 },
-    avatar: { x: -196, y: -34, size: 36, scale: 0.72 },
-    pill: { x: -124, y: -42, w: 88, h: 18, size: '6.3px' },
-    title: { x: -168, y: -20, originX: 0, size: '13.5px' },
-    dialogue: { x: -215, y: 12, wrap: 430, size: '6.8px', spacing: 4 },
-    progress: { x: -215, y: 43, originX: 0, size: '6.8px' },
-  },
-};
-
 /** Labels floating over the playfield. */
 const WORLD = {
   land: { banner: '7px', indicator: '5px', tag: '5.5px', counter: '6.5px', stomp: '6px', graze: '5px' },
   tall: { banner: '12px', indicator: '6.3px', tag: '6.3px', counter: '6.8px', stomp: '6.5px', graze: '6.3px' },
-};
-
-/** The "training complete" card. Positions are measured from the middle of the card. */
-const VICTORY = {
-  land: {
-    card: { w: 360, h: 170 },
-    title: { y: -68, size: '11px' },
-    desc: { y: -26, size: '5.5px', spacing: 4 },
-    start: { y: 24, w: 280, h: 24 },
-    row: { y: 56, w: 134, h: 24, dx: 74 },
-    btn: '6px',
-  },
-  tall: {
-    card: { w: 440, h: 248 },
-    title: { y: -100, size: '14px' },
-    desc: { y: -42, size: '6.8px', spacing: 6 },
-    start: { y: 28, w: 380, h: 40 },
-    row: { y: 80, w: 186, h: 40, dx: 96 },
-    btn: '6.9px',
-  },
 };
 
 export default class TutorialScene extends Phaser.Scene {
@@ -159,7 +122,7 @@ export default class TutorialScene extends Phaser.Scene {
 
     // Fallback cursors for desktop development
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.cursors.keys = this.input.keyboard.addKeys('W,A,S,D,J,K,Z,X,E,R,ENTER,ESC');
+    this.cursors.keys = this.input.keyboard.addKeys('W,A,S,D,J,K,X,E,R,ENTER,ESC');
 
     // Animated Sylva the Moon Sprite trainer hovering beside player
     this.sylva = this.add.sprite(200, groundY - 60, 'fairy_fly').setScale(0.95).setDepth(30);
@@ -173,8 +136,8 @@ export default class TutorialScene extends Phaser.Scene {
       ease: 'Sine.easeInOut'
     });
 
-    // Tutorial HUD & Guidance Card (top center)
-    this.createTutorialHUD(w, h);
+    // Sylva's lesson card (an HTML layer over the game: src/ui/coachView.js)
+    this.createTutorialHUD();
 
     // Groups for interactive targets
     this.crates = this.physics.add.group();
@@ -187,7 +150,7 @@ export default class TutorialScene extends Phaser.Scene {
     this.physics.add.overlap(this.player.attackHitbox, this.crates, (hitbox, crate) => {
       if (this.currentLesson === 3 && !this.lessonCompleted && crate.active) {
         crate.breakCrate(this.player);
-        this.txtProgress.setText('[ SHATTER THE CRATE: 1 / 1 ✔ ]');
+        this.coach.done('crate');
         this.completeCurrentLesson();
       }
     });
@@ -212,6 +175,9 @@ export default class TutorialScene extends Phaser.Scene {
 
     // Ensure cleanup on shutdown
     this.events.once('shutdown', () => {
+      this.coach?.destroy();
+      this.coach = null;
+      this.closeVictory();
       pauseService.detachScene();
       if (typeof window !== 'undefined' && window.touchController) {
         window.touchController.clearTutorialHighlights();
@@ -238,19 +204,6 @@ export default class TutorialScene extends Phaser.Scene {
     }
     if (this.cameras && this.cameras.main) {
       this.cameras.main.setSize(w, h);
-    }
-    if (this.hudContainer) {
-      const curStep = this.txtStep?.text || 'LESSON 1 / 6';
-      const curTitle = this.txtTitle?.text || '1. RUNNING & TRAVERSAL';
-      const curDiag = this.txtDialogue?.text || '';
-      const curProg = this.txtProgress?.text || '';
-      this.hudContainer.destroy();
-      this.createTutorialHUD(w, h);
-      this.txtStep.setText(curStep);
-      this.txtTitle.setText(curTitle);
-      this.txtDialogue.setText(curDiag);
-      this.txtProgress.setText(curProg);
-      if (this.isVictory) this.hudContainer.setVisible(false);
     }
   }
 
@@ -302,77 +255,23 @@ export default class TutorialScene extends Phaser.Scene {
     }
   }
 
-  createTutorialHUD(w, h) {
-    const isTall = (h || this.cameras?.main?.height || 270) > 300;
-    const H = isTall ? HUD.tall : HUD.land;
+  createTutorialHUD() {
+    this.coach?.destroy();
+    this.coach = createCoach(document.getElementById('ms-hud'), { onSkip: () => this.skipTutorial() });
+  }
 
-    this.hudContainer = this.add.container(H.card.x, H.card.y).setDepth(400);
-
-    // Card background
-    this.hudBg = this.add.rectangle(0, 0, H.card.w, H.card.h, 0x06140b, 0.94);
-    this.hudBg.setStrokeStyle(1.5, 0x2e6e3e);
-    this.hudContainer.add(this.hudBg);
-
-    // Inner framing
-    const inner = this.add.rectangle(0, 0, H.card.w - 6, H.card.h - 6, 0x000000, 0);
-    inner.setStrokeStyle(1, 0x183b22, 0.6);
-    this.hudContainer.add(inner);
-
-    // Sylva Avatar Frame with fairy_portrait (left side)
-    this.avatarBg = this.add.rectangle(H.avatar.x, H.avatar.y, H.avatar.size, H.avatar.size, 0x102818, 0.95);
-    this.avatarBg.setStrokeStyle(1.5, 0x4ade80);
-    this.hudContainer.add(this.avatarBg);
-
-    this.avatarSylva = this.add.image(H.avatar.x, H.avatar.y, 'fairy_portrait').setScale(H.avatar.scale);
-    this.hudContainer.add(this.avatarSylva);
-
-    // Step tag pill (top row)
-    this.stepPill = this.add.rectangle(H.pill.x, H.pill.y, H.pill.w, H.pill.h, 0x16381e, 0.95);
-    this.stepPill.setStrokeStyle(1, 0x4ade80);
-    this.hudContainer.add(this.stepPill);
-
-    this.txtStep = this.add.text(H.pill.x, H.pill.y, 'LESSON 1 / 6', {
-      fontFamily: 'Press Start 2P',
-      fontSize: H.pill.size,
-      color: '#4ade80'
-    }).setOrigin(0.5);
-    this.hudContainer.add(this.txtStep);
-
-    // Title / Action instruction (top row)
-    this.txtTitle = this.add.text(H.title.x, H.title.y, '1. RUNNING & TRAVERSAL', {
-      fontFamily: 'Press Start 2P',
-      fontSize: H.title.size,
-      color: '#ffd166',
-      stroke: '#000000',
-      strokeThickness: 2
-    }).setOrigin(H.title.originX, 0.5);
-    this.hudContainer.add(this.txtTitle);
-
-    // Sylva dialogue quote (middle rows: one or two lines, centred between the title and the checklist)
-    this.txtDialogue = this.add.text(H.dialogue.x, H.dialogue.y, 'Sylva: "Tap the ◀ and ▶ buttons on the left D-Pad to run."', {
-      fontFamily: 'Press Start 2P',
-      fontSize: H.dialogue.size,
-      color: '#e4faec',
-      wordWrap: { width: H.dialogue.wrap },
-      lineSpacing: H.dialogue.spacing,
-      align: 'left'
-    }).setOrigin(0, 0.5);
-    this.hudContainer.add(this.txtDialogue);
-
-    // Task checklist badge (bottom row)
-    this.txtProgress = this.add.text(H.progress.x, H.progress.y, '[ ◀ RUN LEFT: ⭕ ]   [ ▶ RUN RIGHT: ⭕ ]', {
-      fontFamily: 'Press Start 2P',
-      fontSize: H.progress.size,
-      color: '#98ff20',
-      stroke: '#000000',
-      strokeThickness: 1.5
-    }).setOrigin(H.progress.originX, 0.5);
-    this.hudContainer.add(this.txtProgress);
+  /** "Skip": the player knows how to play. Count the tutorial as done and go back to the menu, whose big button now leads on. */
+  skipTutorial() {
+    if (this.isVictory || this.skipped) return;
+    this.skipped = true;
+    storage.setTutorialDone();
+    sound.playCoin();
+    this.scene.start('MenuScene');
   }
 
   onCrateBroken(crate) {
     if (this.currentLesson === 3 && !this.lessonCompleted) {
-      this.txtProgress.setText('[ SHATTER THE CRATE: 1 / 1 ✔ ]');
+      this.coach.done('crate');
       this.completeCurrentLesson();
     }
   }
@@ -411,79 +310,43 @@ export default class TutorialScene extends Phaser.Scene {
       window.touchController.clearTutorialHighlights();
     }
 
+    const lesson = LESSONS[lessonNum - 1];
+    if (lesson) {
+      this.coach.lesson(lessonNum - 1);
+      if (window.touchController) {
+        if (lesson.buttons.length) window.touchController.setTutorialHighlight(lesson.buttons);
+        else window.touchController.clearTutorialHighlights();
+      }
+    }
+
     switch (lessonNum) {
       case 1:
-        // LESSON 1: MOVEMENT
-        this.txtStep.setText('LESSON 1 / 6');
-        this.txtTitle.setText('1. RUNNING & TRAVERSAL');
-        this.txtDialogue.setText('Sylva: "Welcome, Moonwarden! Tap ◀ and ▶ on the left D-Pad to run."');
-        this.txtProgress.setText('[ ◀ RUN LEFT: ⭕ ]   [ ▶ RUN RIGHT: ⭕ ]');
-        if (window.touchController) {
-          window.touchController.setTutorialHighlight(['touch-left', 'touch-right']);
-        }
         this.lessonState = { movedLeft: false, movedRight: false };
         break;
 
       case 2:
-        // LESSON 2: JUMP & DOUBLE JUMP
-        this.txtStep.setText('LESSON 2 / 6');
-        this.txtTitle.setText('2. JUMP & DOUBLE JUMP');
-        this.txtDialogue.setText('Sylva: "Tap JUMP on the right to leap. Tap again in mid-air for a Double Jump!"');
-        this.txtProgress.setText('[ JUMP: ⭕ ]   [ MID-AIR DOUBLE JUMP: ⭕ ]');
-        if (window.touchController) {
-          window.touchController.setTutorialHighlight(['touch-jump']);
-        }
         this.lessonState = { jumped: false, doubleJumped: false };
         break;
 
       case 3:
-        // LESSON 3: GROUND SLASH
-        this.txtStep.setText('LESSON 3 / 6');
-        this.txtTitle.setText('3. GROUND SWORD SLASH');
-        this.txtDialogue.setText('Sylva: "Draw the Moonshard! Tap SLASH to strike and shatter the practice crate."');
-        this.txtProgress.setText('[ SHATTER THE CRATE: 0 / 1 ]');
-        if (window.touchController) {
-          window.touchController.setTutorialHighlight(['touch-attack']);
-        }
         this.spawnTrainingCrate(260, (this.groundY || 210) - 20);
         this.lessonState = { crateShattered: false };
         break;
 
       case 4:
-        // LESSON 4: UPWARD AIR ATTACK (Harmless Diving Bee)
-        this.txtStep.setText('LESSON 4 / 6');
-        this.txtTitle.setText('4. UPWARD AERIAL ATTACK');
-        this.txtDialogue.setText('Sylva: "A corrupted bee swoops from above! Tap UP ATTK to strike it out of the air!"');
-        this.txtProgress.setText('[ SLICE SWOOPING BEE: 0 / 1 ]');
-        if (window.touchController) {
-          window.touchController.setTutorialHighlight(['touch-upslash']);
-        }
+        // upward air attack at a harmless diving bee
         this.spawnTutorialBee(310, (this.groundY || 210) - 115);
         this.lessonState = { beeSliced: false };
         break;
 
       case 5:
-        // LESSON 5: AERIAL STOMP BOUNCE (Open airspace, clear of platform)
-        this.txtStep.setText('LESSON 5 / 6');
-        this.txtTitle.setText('5. AERIAL STOMP BOUNCE');
-        this.txtDialogue.setText('Sylva: "Jump high above armored foes and fall onto them to Stomp Bounce safely!"');
-        this.txtProgress.setText('[ STOMP BOUNCE ON SHELL: 0 / 1 ]');
-        if (window.touchController) {
-          window.touchController.setTutorialHighlight(['touch-jump']);
-        }
+        // aerial stomp bounce, in open airspace clear of the platform
         this.spawnTrainingShell(360, (this.groundY || 210) - 20);
         this.lessonState = { stomped: false };
         break;
 
       case 6:
-        // LESSON 6: LIVE COMBAT SPARRING (Defeat training dummy)
-        this.txtStep.setText('LESSON 6 / 6');
-        this.txtTitle.setText('6. LIVE COMBAT SPARRING');
-        this.txtDialogue.setText('Sylva: "Splendid! Combine all attacks to defeat this training dummy!"');
-        this.txtProgress.setText('[ DEFEAT SPARRING DUMMY: 0 / 1 ]');
-        if (window.touchController) {
-          window.touchController.clearTutorialHighlights();
-        }
+        // live sparring: defeat the training dummy
         this.spawnSparringDummy(350, (this.groundY || 210) - 35);
         this.lessonState = { dummyDefeated: false };
         break;
@@ -492,30 +355,39 @@ export default class TutorialScene extends Phaser.Scene {
         this.showTutorialVictory();
         break;
     }
-
-    // Pop animation on HUD card
-    this.tweens.add({
-      targets: this.hudContainer,
-      scale: { from: 0.95, to: 1.0 },
-      duration: 300,
-      ease: 'Back.easeOut'
-    });
   }
 
   completeCurrentLesson() {
     if (this.lessonCompleted) return;
     this.lessonCompleted = true;
+    this.coach.complete();
 
     try {
       sound.playCoin();
       if (typeof sound.playSparkle === 'function') sound.playSparkle();
     } catch {}
 
+    // a burst of gold from the hero
+    for (let i = 0; i < 14; i++) {
+      const spark = this.add.circle(this.player.x, this.player.y - 14, Phaser.Math.Between(1, 3), i % 3 === 0 ? 0xffffff : 0xf4b63f, 1).setDepth(500);
+      const angle = (i / 14) * Math.PI * 2;
+      const dist = Phaser.Math.Between(22, 46);
+      this.tweens.add({
+        targets: spark,
+        x: spark.x + Math.cos(angle) * dist,
+        y: spark.y + Math.sin(angle) * dist - 8,
+        alpha: 0,
+        duration: Phaser.Math.Between(420, 650),
+        ease: 'Quad.easeOut',
+        onComplete: () => spark.destroy()
+      });
+    }
+
     // Floating checkmark banner
     const checkText = this.add.text(this.player.x, this.player.y - 42, '✔ LESSON COMPLETE!', {
       fontFamily: 'Press Start 2P',
       fontSize: this.worldSizes().banner,
-      color: '#4ade80',
+      color: '#FFD97A',
       stroke: '#000000',
       strokeThickness: 3
     }).setOrigin(0.5).setDepth(500);
@@ -555,7 +427,7 @@ export default class TutorialScene extends Phaser.Scene {
       bee.healthBar.update(bee.hp, bee.maxHp);
     }
 
-    const indicator = this.add.text(x, y - 26, '⚔️ SLICE WITH UP ATTK', {
+    const indicator = this.add.text(x, y - 26, '⚔️ STRIKE UP', {
       fontFamily: 'Press Start 2P',
       fontSize: this.worldSizes().indicator,
       color: '#ffd166',
@@ -690,7 +562,7 @@ export default class TutorialScene extends Phaser.Scene {
 
       enemy.die();
       this.tutorialBee = null;
-      this.txtProgress.setText('[ SLICE SWOOPING BEE: 1 / 1 ✔ ]');
+      this.coach.done('bee');
       this.completeCurrentLesson();
       return;
     }
@@ -706,7 +578,7 @@ export default class TutorialScene extends Phaser.Scene {
           enemy.dummyLabel.destroy();
           enemy.dummyLabel = null;
         }
-        this.txtProgress.setText('[ DEFEAT SPARRING DUMMY: 1 / 1 ✔ ]');
+        this.coach.done('dummy');
         this.completeCurrentLesson();
       }
     }
@@ -719,14 +591,14 @@ export default class TutorialScene extends Phaser.Scene {
     // 1. Hit training crate in Lesson 3
     if (this.currentLesson === 3 && this.trainingCrate && !this.lessonCompleted) {
       if (!this.trainingCrate.active || this.trainingCrate.isBroken) {
-        this.txtProgress.setText('[ SHATTER THE CRATE: 1 / 1 ✔ ]');
+        this.coach.done('crate');
         this.completeCurrentLesson();
         return;
       }
       const cb = this.trainingCrate.getBounds();
       if (Phaser.Geom.Intersects.RectangleToRectangle(bounds, cb)) {
         this.trainingCrate.breakCrate(this.player);
-        this.txtProgress.setText('[ SHATTER THE CRATE: 1 / 1 ✔ ]');
+        this.coach.done('crate');
         this.completeCurrentLesson();
         return;
       }
@@ -816,7 +688,7 @@ export default class TutorialScene extends Phaser.Scene {
           enemy.stompTag.destroy();
           enemy.stompTag = null;
         }
-        this.txtProgress.setText('[ STOMP BOUNCE ON SHELL: 1 / 1 ✔ ]');
+        this.coach.done('stomp');
         this.completeCurrentLesson();
       } else if (this.currentLesson === 6 && this.sparringDummy && this.sparringDummy.active && !this.lessonCompleted) {
         this.sparringDummy.takeDamage(25, this.player.x, false);
@@ -825,7 +697,7 @@ export default class TutorialScene extends Phaser.Scene {
             this.sparringDummy.dummyLabel.destroy();
             this.sparringDummy.dummyLabel = null;
           }
-          this.txtProgress.setText('[ DEFEAT SPARRING DUMMY: 1 / 1 ✔ ]');
+          this.coach.done('dummy');
           this.completeCurrentLesson();
         }
       }
@@ -874,9 +746,8 @@ export default class TutorialScene extends Phaser.Scene {
         if (this.player.body.velocity.x < -20) this.lessonState.movedLeft = true;
         if (this.player.body.velocity.x > 20) this.lessonState.movedRight = true;
 
-        const leftIcon = this.lessonState.movedLeft ? '✔' : '⭕';
-        const rightIcon = this.lessonState.movedRight ? '✔' : '⭕';
-        this.txtProgress.setText(`[ ◀ RUN LEFT: ${leftIcon} ]   [ ▶ RUN RIGHT: ${rightIcon} ]`);
+        if (this.lessonState.movedLeft) this.coach.done('left');
+        if (this.lessonState.movedRight) this.coach.done('right');
 
         if (this.lessonState.movedLeft && this.lessonState.movedRight) {
           this.completeCurrentLesson();
@@ -890,16 +761,15 @@ export default class TutorialScene extends Phaser.Scene {
           }
         }
 
-        const jumpIcon = this.lessonState.jumped ? '✔' : '⭕';
-        const djumpIcon = this.lessonState.doubleJumped ? '✔' : '⭕';
-        this.txtProgress.setText(`[ JUMP: ${jumpIcon} ]   [ MID-AIR DOUBLE JUMP: ${djumpIcon} ]`);
+        if (this.lessonState.jumped) this.coach.done('jump');
+        if (this.lessonState.doubleJumped) this.coach.done('double');
 
         if (this.lessonState.jumped && this.lessonState.doubleJumped) {
           this.completeCurrentLesson();
         }
       } else if (this.currentLesson === 3) {
         if ((!this.trainingCrate || !this.trainingCrate.active || this.trainingCrate.isBroken) && !this.lessonCompleted) {
-          this.txtProgress.setText('[ SHATTER THE CRATE: 1 / 1 ✔ ]');
+          this.coach.done('crate');
           this.completeCurrentLesson();
         }
       }
@@ -911,9 +781,7 @@ export default class TutorialScene extends Phaser.Scene {
     sound.playBGM('victory');
     pauseService.hideButtons();
 
-    if (this.hudContainer) {
-      this.hudContainer.setVisible(false);
-    }
+    this.coach?.hide();
     this.isVictory = true;
     storage.setTutorialDone(); // the story's way-in no longer offers the tutorial again
 
@@ -930,97 +798,40 @@ export default class TutorialScene extends Phaser.Scene {
       });
     } catch {}
 
-    const w = this.cameras.main.width || GAME_CONFIG.WIDTH;
-    const h = this.cameras.main.height || GAME_CONFIG.HEIGHT;
-
-    this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.75).setDepth(600).setInteractive();
-
-    const card = this.add.container(w / 2, h / 2).setDepth(601);
-    const V = h > 300 ? VICTORY.tall : VICTORY.land;
-
-    const cardBg = this.add.rectangle(0, 0, V.card.w, V.card.h, 0x061a10, 0.96);
-    cardBg.setStrokeStyle(2, 0x4ade80);
-    card.add(cardBg);
-
-    const title = this.add.text(0, V.title.y, '🏆 TRAINING COMPLETE!', {
-      fontFamily: 'Press Start 2P',
-      fontSize: V.title.size,
-      color: '#ffd166',
-      stroke: '#000000',
-      strokeThickness: 3
-    }).setOrigin(0.5);
-    card.add(title);
-
-    const desc = this.add.text(0, V.desc.y, [
-      'You have mastered the Moonshard!',
-      '• Movement & Mid-Air Double Jumps',
-      '• Ground Cleaves & Upward Air Slashes',
-      '• Stomp Bounces & Shell Tactics'
-    ].join('\n'), {
-      fontFamily: 'Press Start 2P',
-      fontSize: V.desc.size,
-      color: '#c8eed4',
-      lineSpacing: V.desc.spacing,
-      align: 'center'
-    }).setOrigin(0.5);
-    card.add(desc);
-
-    const createBtn = (bx, by, bw, bh, bgCol, borderCol, textCol, label, action) => {
-      const rect = this.add.rectangle(bx, by, bw, bh, bgCol)
-        .setStrokeStyle(1.5, borderCol)
-        .setInteractive({ useHandCursor: true });
-      const txt = this.add.text(bx, by, label, {
-        fontFamily: 'Press Start 2P',
-        fontSize: V.btn,
-        color: textCol
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-      const setHover = (hover) => {
-        const s = hover ? 1.04 : 1.0;
-        rect.setScale(s);
-        txt.setScale(s);
-      };
-
-      rect.on('pointerover', () => setHover(true));
-      txt.on('pointerover', () => setHover(true));
-      rect.on('pointerout', () => setHover(false));
-      txt.on('pointerout', () => setHover(false));
-      rect.on('pointerdown', action);
-      txt.on('pointerdown', action);
-
-      card.add([rect, txt]);
-    };
-
-    const storyBtnLabel = this.fromPrologue ? '⚔️ BEGIN CHAPTER 1 ➔' : '⚔️ START STORY MODE';
     const proceedToStory = () => {
       sound.playVictory();
+      this.closeVictory();
       if (this.fromPrologue) {
         this.scene.start('StoryScene', { chapter: 1 });
       } else {
         this.scene.start('StoryIntroScene');
       }
     };
+    const leaveTo = (key) => {
+      sound.playCoin();
+      this.closeVictory();
+      this.scene.start(key);
+    };
 
-    createBtn(0, V.start.y, V.start.w, V.start.h, 0x164e22, 0x4ade80, '#ffffff', storyBtnLabel, proceedToStory);
-
+    this.victorySheet = openSheet(document.getElementById('ms-sheets'), {
+      title: 'Training complete',
+      name: 'result',
+      dismissable: false,
+      body: doneHtml({ fromPrologue: this.fromPrologue }),
+      onAction: (act) => {
+        if (act === 'story') proceedToStory();
+        else if (act === 'trial') leaveTo('SurvivalScene');
+        else if (act === 'menu') leaveTo('MenuScene');
+      },
+    });
     this.input.keyboard.once('keydown-SPACE', proceedToStory);
     this.input.keyboard.once('keydown-ENTER', proceedToStory);
+  }
 
-    createBtn(-V.row.dx, V.row.y, V.row.w, V.row.h, 0x1a3848, 0x38bdf8, '#38bdf8', '🏆 DAILY TRIAL', () => {
-      sound.playCoin();
-      this.scene.start('SurvivalScene');
-    });
-
-    createBtn(V.row.dx, V.row.y, V.row.w, V.row.h, 0x382414, 0xf59e0b, '#f59e0b', '◄ MAIN MENU', () => {
-      sound.playCoin();
-      this.scene.start('MenuScene');
-    });
-
-    this.tweens.add({
-      targets: card,
-      scale: { from: 0.85, to: 1.0 },
-      duration: 350,
-      ease: 'Back.easeOut'
-    });
+  closeVictory() {
+    if (!this.victorySheet) return;
+    const host = document.getElementById('ms-sheets');
+    if (host) host.innerHTML = '';
+    this.victorySheet = null;
   }
 }

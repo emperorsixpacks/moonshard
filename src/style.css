@@ -277,9 +277,6 @@ html, body {
   .touch-controls {
     display: flex !important;
   }
-  .touch-controls.hidden {
-    display: flex !important;
-  }
 }
 
 .touch-btn {
@@ -746,4 +743,72 @@ html, body {
   }
 }
 
+/* ===== The run's chrome in the moonlit indigo + gold look (tokens are in src/ui/theme.css) ===== */
+#arcade-header { background: linear-gradient(var(--slate), var(--ink)); border-bottom: 3px solid var(--edge); box-shadow: 0 3px 0 var(--ink-deep); }
+.tree-icon { display: none; }
+.game-title { font-size: 12px; color: var(--gold-hi); text-shadow: 2px 2px 0 var(--gold-edge); }
+.pixel-wallet-btn, .pause-header-btn, .header-timer-badge, .landscape-timer-badge {
+  background: var(--ink); border: 0; border-radius: 0; color: var(--gold-hi); height: 34px;
+  box-shadow: var(--bx), var(--sunk); backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.pause-header-btn { color: var(--bone); }
+.header-timer-badge, .landscape-timer-badge { color: var(--bone); }
+.pixel-wallet-btn:hover, .pause-header-btn:hover { background: var(--slate); box-shadow: var(--bx), var(--raise); }
+.wallet-bolt { color: var(--gold); }
+.wallet-dot { border-radius: 0; }
+.wallet-dot.online { background: var(--mint); box-shadow: none; }
+.wallet-dot.offline { background: var(--mist-dim); }
+@media (orientation: landscape) {
+  .landscape-wallet-btn, .landscape-pause-btn {
+    background: var(--ink); border: 0; border-radius: 0; color: var(--gold-hi);
+    box-shadow: var(--bx), var(--sunk); backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .landscape-wallet-btn { padding: 6px 12px; font-size: 9px; }
+  .landscape-pause-btn { width: 32px; height: 32px; color: var(--bone); }
+  .landscape-wallet-btn:active, .landscape-pause-btn:active { background: var(--slate); transform: none; border-color: transparent; }
+  .landscape-timer-badge { height: auto; padding: 7px 10px; }
+  /* while a run is on, the pause button is the only thing up here */
+  .landscape-pause-group:not(.hidden) ~ .landscape-wallet-btn { display: none !important; }
+}
 
+/* ===== The on-screen pad: squares with a stepped edge; Jump is the big gold one in the corner under the right thumb ===== */
+#touch-controls { --pad: clamp(60px, 18.5vw, 88px); }
+@media (orientation: landscape) { #touch-controls { --pad: clamp(52px, 15vh, 74px); } }
+@media (orientation: portrait) {
+  /* the pad sits at the bottom under the thumbs, 30px clear of the iPhone's home bar */
+  #touch-controls {
+    background: var(--dither), var(--ink); border-top: 3px solid var(--edge); box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.4);
+    align-items: flex-end; padding-bottom: max(34px, calc(var(--ms-inset-bottom, 0px) + 30px));
+  }
+}
+#touch-controls .touch-btn {
+  border: 0; border-radius: 0; background: var(--panel); color: var(--bone);
+  font: 400 calc(var(--pad) * 0.3)/1 var(--font-ui); letter-spacing: 0.4px; transition: none;
+  box-shadow: var(--bx), var(--raise), 0 6px 0 0 rgba(0, 0, 0, 0.3);
+}
+#touch-controls .touch-btn:active, #touch-controls .touch-btn.pressed {
+  background: var(--slate-hi); transform: translateY(4px); filter: none; box-shadow: var(--bx), var(--sunk);
+}
+#touch-controls .touch-dpad { gap: calc(var(--pad) * 0.2); }
+#touch-controls .dpad-btn { width: var(--pad); height: calc(var(--pad) * 0.92); font-size: calc(var(--pad) * 0.34); }
+#touch-controls .touch-actions {
+  grid-template-columns: auto auto;
+  grid-template-areas: ". upslash" "attack jump";
+  gap: calc(var(--pad) * 0.16);
+  align-items: end; justify-items: end;
+}
+#touch-controls .action-btn { width: calc(var(--pad) * 0.92); height: calc(var(--pad) * 0.92); font-size: calc(var(--pad) * 0.28); }
+#touch-controls .action-btn.jump {
+  width: calc(var(--pad) * 1.2); height: calc(var(--pad) * 1.2); font-size: calc(var(--pad) * 0.3);
+  background: linear-gradient(var(--gold-hi), var(--gold)); color: var(--gold-ink);
+  box-shadow: var(--gold-bx), var(--raise), 0 6px 0 0 rgba(0, 0, 0, 0.3);
+}
+#touch-controls .action-btn.jump:active, #touch-controls .action-btn.jump.pressed {
+  background: var(--gold); box-shadow: var(--gold-bx), var(--sunk);
+}
+#touch-controls .touch-btn.tutorial-highlight {
+  animation: ms-pad-hint 0.75s ease-in-out infinite alternate !important;
+  box-shadow: 0 0 0 3px var(--gold-hi), 0 0 18px rgba(255, 217, 122, 0.7), var(--raise) !important;
+}
+#touch-controls .action-btn.jump.tutorial-highlight { color: var(--gold-ink) !important; }
+@keyframes ms-pad-hint { from { filter: none; } to { filter: brightness(1.2); } }

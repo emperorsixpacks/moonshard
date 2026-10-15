@@ -184,7 +184,7 @@
   #ms-ui .s-wallet{width:min(740px,94%)}
   #ms-ui .s-wallet .sheet-b{display:grid;grid-template-columns:1fr 1fr;align-items:start;column-gap:18px;row-gap:11px}
   #ms-ui .s-wallet .col{display:flex;flex-direction:column;gap:11px}
-  #ms-ui .s-wallet .how,#ms-ui .s-wallet .foot,#ms-ui .s-wallet .busy{grid-column:1/-1}
+  #ms-ui .s-wallet .how,#ms-ui .s-wallet .foot,#ms-ui .s-wallet .busy,#ms-ui .s-wallet .wide{grid-column:1/-1}
   #ms-ui .s-wallet .lead{max-width:none}
   #ms-ui .s-pause .duo{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   #ms-ui .s-pause .sheet-b{gap:11px}
@@ -337,3 +337,64 @@
 #ms-ui .ms-toast-error{box-shadow:var(--bx-ember),var(--raise),0 6px 0 0 rgba(0,0,0,.3);color:#FFC9CE}
 #ms-ui .ms-toast-warn{box-shadow:var(--bx-gold),var(--raise),0 6px 0 0 rgba(0,0,0,.3);color:var(--gold-hi)}
 @container ms (orientation:landscape){#ms-ui .ms-toast-container{bottom:20px}}
+
+/* ---- in-run layer: the tutorial's lesson card ---- */
+#ms-ui #ms-hud{position:absolute;inset:0;z-index:12;pointer-events:none}
+#ms-ui .coach{position:absolute;left:50%;top:calc(10px + env(safe-area-inset-top,0px));translate:-50% 0;width:min(640px,calc(100% - 24px));display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;
+  padding:10px 12px 12px 10px;background:var(--dither),linear-gradient(rgba(30,43,76,.97),rgba(14,20,36,.97));box-shadow:var(--bx),inset 0 2px 0 rgba(255,255,255,.08)}
+#ms-ui .coach[hidden]{display:none}
+#ms-ui .coach.enter{animation:ms-coach-in .28s cubic-bezier(.2,.8,.2,1)}
+@keyframes ms-coach-in{from{opacity:0;margin-top:-14px}}
+#ms-ui .co-portrait{width:60px;height:60px;display:grid;place-items:center;background:var(--ink);box-shadow:0 0 0 2px var(--edge),var(--sunk)}
+#ms-ui .co-portrait img{width:48px;height:48px;image-rendering:pixelated}
+#ms-ui .co-body{min-width:0}
+#ms-ui .co-top{display:flex;align-items:center;gap:12px;min-height:26px}
+#ms-ui .co-steps{display:flex;gap:5px;margin:0;padding:0;list-style:none}
+#ms-ui .co-steps li{width:12px;height:12px;background:var(--ink);box-shadow:0 0 0 2px var(--edge)}
+#ms-ui .co-steps li.done{background:var(--gold-lo);box-shadow:0 0 0 2px #8A5A16}
+#ms-ui .co-steps li.now{background:var(--gold-hi);box-shadow:0 0 0 2px var(--gold);animation:ms-pip 1.3s steps(2) infinite}
+@keyframes ms-pip{50%{background:var(--gold)}}
+#ms-ui .coach.cleared .co-steps li.now{animation:none;background:var(--gold-hi)}
+#ms-ui .co-title{font:400 26px/1 var(--font-ui);color:var(--gold-hi);letter-spacing:.3px}
+#ms-ui .co-say{margin:5px 0 9px;font:400 22px/1.28 var(--font-ui);color:var(--bone)}
+#ms-ui .co-who{color:var(--mist)}
+#ms-ui .co-who::after{content:":"}
+#ms-ui kbd{display:inline-block;min-width:1.5em;padding:0 .36em;margin:0 .06em;text-align:center;font:400 .86em/1.3 var(--font-ui);color:var(--gold-hi);background:var(--ink);box-shadow:0 0 0 2px #8A5A16,0 3px 0 2px #5A3A0A;vertical-align:.06em}
+#ms-ui .co-tasks{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
+#ms-ui .co-tasks li{display:flex;align-items:center;gap:6px;padding:1px 12px 1px 6px;font:400 20px/1.3 var(--font-ui);color:var(--mist);background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .co-tasks li i{width:18px;height:18px;display:grid;place-items:center;background:var(--slate);box-shadow:0 0 0 2px var(--edge);color:transparent}
+#ms-ui .co-tasks li.done{color:var(--bone)}
+#ms-ui .co-tasks li.done i{background:var(--gold);color:var(--gold-ink);box-shadow:0 0 0 2px #8A5A16;animation:ms-tick-pop .32s cubic-bezier(.2,.9,.3,1.5)}
+@keyframes ms-tick-pop{from{scale:.4}}
+#ms-ui .co-skip{align-self:start;padding:2px 4px;font:400 20px/1.2 var(--font-ui);color:var(--mist);text-decoration:underline;text-underline-offset:3px}
+#ms-ui .co-skip:active{color:var(--bone)}
+#ms-ui .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@container ms (orientation:landscape){
+  #ms-ui .coach{left:14px;translate:0 0;width:min(600px,calc(100% - 200px));padding:8px 12px 10px 8px;gap:10px}
+  #ms-ui .co-portrait{width:52px;height:52px}
+  #ms-ui .co-portrait img{width:40px;height:40px}
+  #ms-ui .co-say{margin:3px 0 7px;font-size:21px}
+}
+
+/* ---- the "training complete" sheet ---- */
+#ms-ui .s-result .learned{list-style:none;margin:0;padding:12px 14px;display:flex;flex-direction:column;gap:6px;background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .s-result .learned li{display:flex;align-items:center;gap:10px;font:400 22px/1.2 var(--font-ui);color:var(--bone)}
+#ms-ui .s-result .learned li .ico{color:var(--gold)}
+#ms-ui .s-result .duo{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+/* held upright, the page keeps its own 48px header on top: the card sits under it, and a bit tighter */
+@container ms (orientation:portrait){
+  #ms-ui .coach{top:calc(56px + var(--ms-inset-top,0px));gap:9px;padding:8px 10px 10px 8px}
+  #ms-ui .co-portrait{width:46px;height:46px}
+  #ms-ui .co-portrait img{width:36px;height:36px}
+  #ms-ui .co-say{font-size:20px;margin:3px 0 7px}
+  #ms-ui .co-title{font-size:24px}
+  #ms-ui .co-tasks li{font-size:19px}
+}
+/* a phone on its side is short: the card keeps to the words and the checklist */
+@container ms (orientation:landscape) and (max-height:430px){
+  #ms-ui .coach{grid-template-columns:1fr auto;width:min(560px,calc(100% - 190px))}
+  #ms-ui .co-portrait{display:none}
+  #ms-ui .co-say{font-size:19px;margin:2px 0 6px}
+  #ms-ui .co-title{font-size:23px}
+  #ms-ui .co-tasks li{font-size:18px}
+}

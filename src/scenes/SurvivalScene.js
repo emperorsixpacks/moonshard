@@ -190,7 +190,7 @@ export default class SurvivalScene extends Phaser.Scene {
 
     // Controls
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.cursors.keys = this.input.keyboard.addKeys('W,A,S,D,J,K,Z,X,ENTER,ESC');
+    this.cursors.keys = this.input.keyboard.addKeys('W,A,S,D,J,K,X,E,ENTER,ESC');
 
     // HUD
     this.createSurvivalHUD();

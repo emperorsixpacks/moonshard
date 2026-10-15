@@ -11,6 +11,7 @@ import TutorialScene from './scenes/TutorialScene.js';
 import ForgeScene from './scenes/ForgeScene.js';
 import LeaderboardScene from './scenes/LeaderboardScene.js';
 import { TouchController } from './ui/TouchControls.js';
+import { watchInput } from './engine/inputMode.js';
 import { gdService } from './engine/GdService.js';
 import { pauseService } from './engine/PauseService.js';
 import { sound } from './engine/Audio.js';
@@ -73,6 +74,7 @@ function startGame() {
   installHudAnchor(game);
 
   // Initialize Virtual Touch Controls & Header Actions
+  watchInput();
   window.touchController = new TouchController(game);
   window.gdService = gdService;
   window.pauseService = pauseService;
