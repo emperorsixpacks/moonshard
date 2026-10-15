@@ -126,7 +126,52 @@ test("TLS: the no-TLS warning is for remote hosts only, says how to fix it, and 
   assert.match(warnings[0], /db\.example\.com/);
   assert.ok(!warnings[0].includes(PASSWORD), "the password stays out of the log");
   // a private-network Postgres also gets the warning: it is the operator's call to accept it
-  assert.equal(build("postgres://u:p@postgres.railway.internal:5432/railway").warnings.length, 1);
+  const railwayPlain = build("postgres://u:p@postgres.railway.internal:5432/railway");
+  assert.equal(railwayPlain.warnings.length, 1);
+  assert.match(railwayPlain.warnings[0], /DATABASE_CA/);
+});
+
+const RAILWAY_INTERNAL = `postgres://app:${PASSWORD}@postgres.railway.internal:5432/railway`;
+const RAILWAY_PROXY = `postgres://app:${PASSWORD}@roundhouse.proxy.rlwy.net:12345/railway`;
+
+test("TLS: Railway hosts with verified TLS require DATABASE_CA", () => {
+  for (const url of [`${RAILWAY_INTERNAL}?sslmode=require`, `${RAILWAY_PROXY}?sslmode=require`]) {
+    try {
+      pgPoolConfig(url, { env: {}, warn() {} });
+      assert.fail(`expected ${url} to be refused without DATABASE_CA`);
+    } catch (err) {
+      assert.match(err.message, /DATABASE_CA/);
+      assert.ok(!err.message.includes(PASSWORD), "the password stays out of the error");
+    }
+  }
+  assert.match(
+    (() => {
+      try {
+        pgPoolConfig(`${RAILWAY_PROXY}?sslmode=require`, { env: {}, warn() {} });
+      } catch (err) {
+        return err.message;
+      }
+      return "";
+    })(),
+    /railway\.internal/i,
+  );
+  assert.deepEqual(build(`${RAILWAY_INTERNAL}?sslmode=require`, { DATABASE_CA: CA }).params.ssl, {
+    ca: CA,
+    rejectUnauthorized: true,
+  });
+  assert.throws(
+    () => pgPoolConfig(RAILWAY_INTERNAL, { env: { PGSSLMODE: "require" }, warn() {} }),
+    /DATABASE_CA/,
+  );
+});
+
+test("TLS: Railway host suffix is not matched on unrelated hostnames", () => {
+  assert.deepEqual(build("postgres://u:p@notrailway.internal:5432/d?sslmode=require").params.ssl, {
+    rejectUnauthorized: true,
+  });
+  assert.deepEqual(build("postgres://u:p@railway.internal.evil.example:5432/d?sslmode=require").params.ssl, {
+    rejectUnauthorized: true,
+  });
 });
 
 test("TLS: the rest of the connection string reaches pg untouched", () => {

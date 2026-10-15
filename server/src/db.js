@@ -79,6 +79,23 @@ function isLocalHost(host) {
   return h === "" || h === "localhost" || h.endsWith(".localhost") || h === "::1" || /^127\.\d+\.\d+\.\d+$/.test(h) || h.startsWith("/");
 }
 
+/** Railway Postgres private and TCP-proxy hostnames (suffix match only; notrailway.internal must not match). */
+function isRailwayHost(host) {
+  const h = String(host).toLowerCase();
+  return h.endsWith(".railway.internal") || h.endsWith(".rlwy.net");
+}
+
+function railwayTlsWithoutCaMessage(host) {
+  const h = String(host).toLowerCase();
+  const base =
+    "DATABASE_CA must be set to Railway Postgres's CA certificate (PEM text with real line breaks). " +
+    "Export it with: railway ssh --service <Postgres service name> -- export-ssl-ca. See docs/DEPLOY.md section 3.";
+  if (h.endsWith(".rlwy.net")) {
+    return `${base} Prefer the private DATABASE_URL reference (*.railway.internal), not the public TCP proxy.`;
+  }
+  return base;
+}
+
 /**
  * The pg.Pool config for `databaseUrl`: `{ connectionString, ssl }` with every TLS decision taken here.
  * `env` is where DATABASE_CA and PGSSLMODE are read from; `warn` receives the no-TLS warning.
@@ -129,11 +146,18 @@ export function pgPoolConfig(databaseUrl, { env = process.env, warn = (m) => con
     throw new Error("DATABASE_CA is set but TLS is switched off in DATABASE_URL (sslmode=disable / ssl=0). Remove one of them.");
   }
 
+  if (wantTls && !ca && isRailwayHost(host)) {
+    throw new Error(railwayTlsWithoutCaMessage(host));
+  }
+
   const ssl = wantTls ? { ...(ca ? { ca } : {}), rejectUnauthorized: true } : false;
   if (!ssl && !isLocalHost(host)) {
+    const fix =
+      isRailwayHost(host)
+        ? "Append ?sslmode=require to DATABASE_URL and set DATABASE_CA (Railway uses a private CA; sslmode=require without DATABASE_CA is refused). See docs/DEPLOY.md section 3."
+        : "Append ?sslmode=require to DATABASE_URL (and set DATABASE_CA to the CA certificate PEM if the host uses a private CA).";
     warn(
-      `[moonshard] WARNING: the database connection to ${host} is NOT encrypted: the password and all data cross the network in clear text. ` +
-        "Append ?sslmode=require to DATABASE_URL (and set DATABASE_CA to the CA certificate PEM if the host uses a private CA).",
+      `[moonshard] WARNING: the database connection to ${host} is NOT encrypted: the password and all data cross the network in clear text. ${fix}`,
     );
   }
   return { connectionString, ssl };

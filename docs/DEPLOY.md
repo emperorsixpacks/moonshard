@@ -29,15 +29,15 @@ forge script script/Deploy.s.sol --rpc-url https://forno.celo.org --broadcast --
 
 What is in `contracts/.env`:
 
-| Setting | What it is |
-|---|---|
-| `DEPLOYER_PRIVATE_KEY` | the deploying wallet's private key, with or without `0x`: **the one thing you fill in**. It pays the gas and owns the vault |
-| `VOUCHER_SIGNER`, `APP_SIGNER` | the server's two signers' **addresses**, filled in by `npm run setup:deploy` (their keys are in `server/.env.production`) |
-| `ETHERSCAN_API_KEY` | optional: publishes the vault's code on Celoscan (`--verify`) |
-| `MAX_PER_VOUCHER_G`, `DAILY_CAP_G` | the vault's limits in whole G$ (see "Sizing the caps"; 1000 and 5000 by default) |
-| `FUND_G` | G$ moved from the deploying wallet into the vault right after it is deployed (the prize pool); 0 to fund it later by sending G$ to the vault's address. While prizes are off (the default) the vault pays nothing out, so it needs no G$ |
-| `APP_URL`, `APP_EMAIL` | for step 2; both are stored publicly on-chain |
-| `VAULT_OWNER` | optional: another owner, such as a Safe multisig. Empty: the deploying wallet owns the vault |
+| Setting                            | What it is                                                                                                                                                                                                                               |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEPLOYER_PRIVATE_KEY`             | the deploying wallet's private key, with or without `0x`: **the one thing you fill in**. It pays the gas and owns the vault                                                                                                              |
+| `VOUCHER_SIGNER`, `APP_SIGNER`     | the server's two signers' **addresses**, filled in by `npm run setup:deploy` (their keys are in `server/.env.production`)                                                                                                                |
+| `ETHERSCAN_API_KEY`                | optional: publishes the vault's code on Celoscan (`--verify`)                                                                                                                                                                            |
+| `MAX_PER_VOUCHER_G`, `DAILY_CAP_G` | the vault's limits in whole G$ (see "Sizing the caps"; 1000 and 5000 by default)                                                                                                                                                         |
+| `FUND_G`                           | G$ moved from the deploying wallet into the vault right after it is deployed (the prize pool); 0 to fund it later by sending G$ to the vault's address. While prizes are off (the default) the vault pays nothing out, so it needs no G$ |
+| `APP_URL`, `APP_EMAIL`             | for step 2; both are stored publicly on-chain                                                                                                                                                                                            |
+| `VAULT_OWNER`                      | optional: another owner, such as a Safe multisig. Empty: the deploying wallet owns the vault                                                                                                                                             |
 
 The script prints the vault's address and where it goes: `VAULT_ADDRESS` on the server, `VITE_VAULT_ADDRESS` on the website. Its record is in `contracts/broadcast/` (git ignores it). Check the vault:
 
@@ -46,7 +46,7 @@ for f in 'owner()(address)' 'signer()(address)' 'token()(address)' 'maxPerVouche
   cast call <VAULT_ADDRESS> "$f" --rpc-url https://forno.celo.org; done
 ```
 
-*Rather not keep the key in a file?* Leave `DEPLOYER_PRIVATE_KEY` empty, import the key into Foundry's encrypted keystore once (`cast wallet import moonshard-deployer --interactive`), and add `--account moonshard-deployer --sender <its address>` to each `forge script` command.
+_Rather not keep the key in a file?_ Leave `DEPLOYER_PRIVATE_KEY` empty, import the key into Foundry's encrypted keystore once (`cast wallet import moonshard-deployer --interactive`), and add `--account moonshard-deployer --sender <its address>` to each `forge script` command.
 
 Put real values only in `contracts/.env`, never in `contracts/.env.example`: the example is the template, and it is pushed to GitHub with the code.
 
@@ -91,7 +91,7 @@ GoodDollar must then approve the app (Discord `ubi.gd/GoodBuildersDiscord`, Tele
 
 ## 3. API (Railway)
 
-1. New project, deploy the `server/` directory (root directory `server`, start command `node index.js`, Node 22).
+1. New project, deploy the `server/` directory: in the service's Settings set the root directory to `/server` and the config file path to `/server/railway.json` (Railway does not look for the config file inside the root directory, so it needs the full path). `server/railway.json` sets the start command (`node index.js`), the health check (`GET /health`) and restart-on-failure; Node comes from `engines` in `server/package.json` (22 or later).
 2. Add a Postgres database and set `DATABASE_URL` to its connection string **with `?sslmode=require` appended**. The server then connects over TLS and always verifies the certificate and the host name; verification cannot be turned off (`sslmode=no-verify` makes the server refuse to start).
    - Host with a public CA (most managed Postgres): nothing more to set.
    - Host with a private CA: also set `DATABASE_CA` to the CA certificate as PEM text (`-----BEGIN CERTIFICATE-----` ... with real line breaks; the server checks it at start-up and refuses a value that lost them). It works together with `?sslmode=require`. `DATABASE_CA` on its own also turns TLS on.

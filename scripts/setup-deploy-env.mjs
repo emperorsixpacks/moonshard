@@ -24,8 +24,9 @@ NODE_ENV=production
 JWT_SECRET=
 VOUCHER_SIGNER_KEY=
 APP_SIGNER_KEY=
-# Filled in while deploying (docs/DEPLOY.md): VAULT_ADDRESS is printed by the vault's deploy, DATABASE_URL comes from
-# the host's Postgres (with ?sslmode=require), CORS_ORIGINS is the website's address once it is live (https://...).
+# Filled in while deploying (docs/DEPLOY.md): VAULT_ADDRESS is printed by the vault's deploy; replace DATABASE_URL=
+# with the Railway private reference plus sslmode=require; set DATABASE_CA from export-ssl-ca on the Postgres service;
+# CORS_ORIGINS is the website's address once it is live (https://...).
 VAULT_ADDRESS=
 DATABASE_URL=
 CORS_ORIGINS=
