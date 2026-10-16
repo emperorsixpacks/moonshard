@@ -812,3 +812,21 @@ html, body {
 }
 #touch-controls .action-btn.jump.tutorial-highlight { color: var(--gold-ink) !important; }
 @keyframes ms-pad-hint { from { filter: none; } to { filter: brightness(1.2); } }
+
+/* ===== A run held upright: the picture fills the screen under the header and the pad floats on top of it =====
+   (ViewportManager.enterPlay sets data-stage="play"; the picture's size follows the screen, see engine/playStage.js.) */
+@media (orientation: portrait) {
+  #game-wrapper[data-stage="play"] #game-container {
+    position: absolute; inset: 0; width: 100%; height: 100%; max-height: none; aspect-ratio: auto;
+    border-bottom: 0; box-shadow: none; background: var(--ink-deep, #000);
+  }
+  #game-wrapper[data-stage="play"] #game-container canvas { box-shadow: none; }
+  #game-wrapper[data-stage="play"] #touch-controls {
+    position: absolute; left: 0; right: 0; bottom: 0; top: auto; flex: none; width: 100%; height: auto; min-height: 0;
+    background: none; border: 0; box-shadow: none; padding-top: 0; pointer-events: none;
+  }
+  /* the buttons stay solid enough to find with a thumb, and let the picture show through a little */
+  #game-wrapper[data-stage="play"] #touch-controls .touch-btn { pointer-events: auto; opacity: 0.9; }
+  #game-wrapper[data-stage="play"] #touch-controls .touch-btn:active,
+  #game-wrapper[data-stage="play"] #touch-controls .touch-btn.pressed { opacity: 1; }
+}

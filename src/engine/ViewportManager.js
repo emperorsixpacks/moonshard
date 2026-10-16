@@ -1,4 +1,5 @@
 import { GAME_CONFIG } from '../config.js';
+import { playStageSize, groundLift } from './playStage.js';
 
 /**
  * Reliable portrait mode detector across standard desktop browsers,
@@ -50,13 +51,19 @@ export function isPortraitMode() {
  * 
  * - Landscape: 480 x 270 (16:9 widescreen arcade)
  * - Portrait:  480 x 440 (expanded vertical viewport, +64% more viewable area)
+ * - Portrait, a run in progress (a scene called enterPlay): the picture takes the whole screen under the page header,
+ *   narrower and as tall as the screen is (engine/playStage.js), with the pad floating on top.
  */
 export class ViewportManager {
   constructor(game) {
     this.game = game;
     this.isPortrait = this.detectPortrait();
-    this.currentWidth = GAME_CONFIG.WIDTH;
-    this.currentHeight = this.isPortrait ? (GAME_CONFIG.PORTRAIT_HEIGHT || 440) : GAME_CONFIG.HEIGHT;
+    this.playOwner = null; // the scene whose run is on, if any (see enterPlay)
+    this.playSize = null;
+    this.playLift = 0; // units the ground is raised so the hero stands above the pad (engine/playStage.js groundLift)
+    const first = this.stageSize(this.isPortrait);
+    this.currentWidth = first.width;
+    this.currentHeight = first.height;
     this.boundOnResize = this.onResize.bind(this);
 
     if (typeof window !== 'undefined') {
@@ -92,7 +99,7 @@ export class ViewportManager {
     const portrait = this.detectPortrait();
 
     if (gc) {
-      if (portrait) {
+      if (portrait && !this.playOwner) {
         gc.style.aspectRatio = `${w} / ${h}`;
         gc.setAttribute('data-orientation', 'portrait');
       } else {
@@ -103,7 +110,57 @@ export class ViewportManager {
 
     if (gw) {
       gw.setAttribute('data-orientation', portrait ? 'portrait' : 'landscape');
+      gw.setAttribute('data-stage', this.playOwner ? 'play' : 'screen');
     }
+  }
+
+  /**
+   * The picture's size in game units for the orientation. During a run held upright it is the shape of the screen under
+   * the header, measured once when the run starts (and again after a rotation), so the picture does not change size
+   * under the player when a browser bar slides away.
+   */
+  stageSize(portrait) {
+    if (!portrait) { this.playLift = 0; return { width: GAME_CONFIG.WIDTH, height: GAME_CONFIG.HEIGHT }; }
+    if (!this.playOwner) return { width: GAME_CONFIG.WIDTH, height: GAME_CONFIG.PORTRAIT_HEIGHT || 440 };
+    if (!this.playSize) {
+      const area = typeof document !== 'undefined' ? document.getElementById('game-wrapper')?.getBoundingClientRect() : null;
+      this.playSize = playStageSize({ width: area?.width, height: area?.height });
+      this.playLift = this.measureLift(area, this.playSize);
+    }
+    return this.playSize;
+  }
+
+  /** How far the pad reaches up over the picture, as a lift for the ground (0 when the pad is not shown). */
+  measureLift(area, size) {
+    if (typeof document === 'undefined' || !(area?.width > 0)) return 0;
+    const cluster = document.querySelector('#touch-controls .touch-actions');
+    const padRect = cluster && cluster.offsetParent !== null ? cluster.getBoundingClientRect() : null;
+    if (!padRect || !(padRect.height > 0)) return 0;
+    // the picture is fitted into the area and centred: its top and its size on screen
+    const unit = Math.min(area.width / size.width, area.height / size.height);
+    const top = area.top + (area.height - size.height * unit) / 2;
+    return groundLift((padRect.top - top) / unit);
+  }
+
+  /**
+   * A run starts: the picture takes the whole screen (held upright) and the scene lays itself out for the size it finds
+   * in create(). Call it from the scene's init(); `leavePlay` undoes it when the scene shuts down.
+   */
+  enterPlay(owner) {
+    this.playOwner = owner;
+    this.playSize = null;
+    this.onResize();
+    this.game?.scale?.refresh?.(); // the picture's parent changed size even if the game's own size did not
+  }
+
+  /** The run is over. Only the scene that entered can leave, so a new run's stage is not undone by the old one's shutdown. */
+  leavePlay(owner) {
+    if (this.playOwner !== owner) return;
+    this.playOwner = null;
+    this.playSize = null;
+    this.playLift = 0;
+    this.onResize();
+    this.game?.scale?.refresh?.();
   }
 
   syncGameScale(targetW, targetH) {
@@ -118,10 +175,10 @@ export class ViewportManager {
 
   onResize() {
     const newPortrait = this.detectPortrait();
-    const targetW = GAME_CONFIG.WIDTH;
-    const targetH = newPortrait ? (GAME_CONFIG.PORTRAIT_HEIGHT || 440) : GAME_CONFIG.HEIGHT;
-
+    if (newPortrait !== this.isPortrait) this.playSize = null; // a rotation: measure the area again
     this.isPortrait = newPortrait;
+    this.applyContainerStyles(this.currentWidth, this.currentHeight); // the page's orientation and stage first: the area is measured under them
+    const { width: targetW, height: targetH } = this.stageSize(newPortrait);
     this.applyContainerStyles(targetW, targetH);
 
     const scaleNeedsResize = !this.game?.scale || this.game.scale.width !== targetW || this.game.scale.height !== targetH;

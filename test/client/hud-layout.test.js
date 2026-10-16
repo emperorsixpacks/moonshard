@@ -36,13 +36,13 @@ function rectsFor(hud, content) {
   return rects;
 }
 
-function assertNoCollisions(rects, where) {
+function assertNoCollisions(rects, where, screenWidth = 480) {
   const names = Object.keys(rects);
   for (let i = 0; i < names.length; i++) {
     for (let j = i + 1; j < names.length; j++) {
       assert.equal(overlap(rects[names[i]], rects[names[j]]), false, `${names[i]} overlaps ${names[j]} (${where})`);
     }
-    assert.ok(rects[names[i]].x0 >= 0 && rects[names[i]].x1 <= 480, `${names[i]} is inside the screen (${where})`);
+    assert.ok(rects[names[i]].x0 >= 0 && rects[names[i]].x1 <= screenWidth, `${names[i]} is inside the screen (${where})`);
   }
 }
 
@@ -81,3 +81,22 @@ test('width estimates follow the two typefaces', () => {
   assert.ok(Math.abs(estimateWidth('ABCDE', 10, 'body') - 20) < 1e-9);
   assert.ok(estimateWidth('💎 1', 10, 'body') > estimateWidth('x 1', 10, 'body'), 'emoji are wide');
 });
+
+// A run held upright is narrower than the other screens (engine/playStage.js): the same content has to fit there too.
+for (const width of [360, 400]) {
+  const unit = 390 / width; // CSS px per game unit on a 390-wide phone
+  test(`a ${width}-wide upright run: the story HUD content does not collide and stays on screen`, () => {
+    const hud = layoutHud({ unit, width, variant: 'story' });
+    for (const title of [STORY.title, STORY.titleLong]) {
+      for (const objective of [STORY.objective, 'OBJECTIVE: Defeat Foes (0/16)', 'OBJECTIVE: Defeat Archmage Malakor!']) {
+        assertNoCollisions(rectsFor(hud, { title, objective, materials: STORY.materials, harvest: STORY.harvest }), `${width}: ${title} / ${objective}`, width);
+      }
+    }
+  });
+
+  test(`a ${width}-wide upright run: the endless HUD content does not collide and stays on screen`, () => {
+    const hud = layoutHud({ unit, width, variant: 'survival' });
+    assertNoCollisions(rectsFor(hud, SURVIVAL), `${width}`, width);
+    assertNoCollisions(rectsFor(hud, { ...SURVIVAL, harvest: '💎 +0 G$', score: 'SCORE: 0', foes: 'FOES: ∞' }), `${width} (short)`, width);
+  });
+}

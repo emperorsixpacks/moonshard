@@ -26,6 +26,7 @@ import { startIsBlocked } from '../engine/playGate.js';
 import { layoutHud } from '../ui/hudLayout.js';
 import { cssPerUnitOf } from '../engine/uiScale.js';
 import { useHudHeight } from '../engine/HudAnchor.js';
+import { fillUnderground } from '../engine/underground.js';
 import { juice } from '../engine/JuiceEffects.js';
 import confetti from 'canvas-confetti';
 import ShardDrop from '../entities/ShardDrop.js';
@@ -43,11 +44,20 @@ export default class SurvivalScene extends Phaser.Scene {
     super({ key: 'SurvivalScene' });
   }
 
+  init() {
+    // held upright, a run takes the whole screen (engine/playStage.js); the size is set before create() reads it
+    window.viewportManager?.enterPlay(this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => window.viewportManager?.leavePlay(this));
+  }
+
   create() {
-    const w = GAME_CONFIG.WIDTH;
-    const h = GAME_CONFIG.HEIGHT;
+    const w = this.cameras.main.width;
+    const h = this.cameras.main.height;
     this.arenaWidth = 840;
-    this.arenaHeight = 440;
+    // the arena is built 440 tall; a taller picture (a phone held upright) shows more earth under the ground, and on a
+    // short screen the picture is scrolled down by `camTop` so the ground rises clear of the pad (engine/playStage.js)
+    this.camTop = window.viewportManager?.playOwner === this ? (window.viewportManager.playLift || 0) : 0;
+    this.arenaHeight = Math.max(440, h + this.camTop);
 
     if (typeof window !== 'undefined' && window.touchController) {
       window.touchController.show();
@@ -111,7 +121,7 @@ export default class SurvivalScene extends Phaser.Scene {
     this.physics.add.collider(this.player, this.platforms);
 
     // Camera setup
-    this.cameras.main.setBounds(0, 0, this.arenaWidth, this.arenaHeight);
+    this.cameras.main.setBounds(0, this.camTop, this.arenaWidth, this.arenaHeight - this.camTop);
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
 
     // Collisions
@@ -222,16 +232,18 @@ export default class SurvivalScene extends Phaser.Scene {
     if (h > 270) this.bgSky.tileScaleY = h / 270;
 
     // 2. Mountains
-    this.bgMountains = this.add.tileSprite(0, 20, w, Math.max(200, h - 20), 'sky_mountains').setOrigin(0, 0).setScrollFactor(0).setDepth(1);
-    if (h > 270) this.bgMountains.tileScaleY = Math.max(1, (h - 20) / 250);
+    // (the hills and trees are drawn for the arena's 440; more height than that is sky)
+    const hb = Math.min(h, GAME_CONFIG.PORTRAIT_HEIGHT || 440);
+    this.bgMountains = this.add.tileSprite(0, 20, w, Math.max(200, hb - 20), 'sky_mountains').setOrigin(0, 0).setScrollFactor(0).setDepth(1);
+    if (hb > 270) this.bgMountains.tileScaleY = Math.max(1, (hb - 20) / 250);
 
     // 3. Fog pines
-    this.bgFogPines = this.add.tileSprite(0, 50, w, Math.max(220, h - 50), 'forest_bg_p0').setOrigin(0, 0).setScrollFactor(0).setDepth(2);
-    if (h > 270) this.bgFogPines.tileScaleY = Math.max(1, (h - 50) / 206);
+    this.bgFogPines = this.add.tileSprite(0, 50, w, Math.max(220, hb - 50), 'forest_bg_p0').setOrigin(0, 0).setScrollFactor(0).setDepth(2);
+    if (hb > 270) this.bgFogPines.tileScaleY = Math.max(1, (hb - 50) / 206);
 
     // 4. Midground pines
-    this.bgMidPines = this.add.tileSprite(0, 80, w, Math.max(220, h - 80), 'forest_bg_p1').setOrigin(0, 0).setScrollFactor(0).setDepth(3);
-    if (h > 270) this.bgMidPines.tileScaleY = Math.max(1, (h - 80) / 176);
+    this.bgMidPines = this.add.tileSprite(0, 80, w, Math.max(220, hb - 80), 'forest_bg_p1').setOrigin(0, 0).setScrollFactor(0).setDepth(3);
+    if (hb > 270) this.bgMidPines.tileScaleY = Math.max(1, (hb - 80) / 176);
 
     // 5. Tall Forest Pines in Arena
     const treePositions = [
@@ -286,21 +298,22 @@ export default class SurvivalScene extends Phaser.Scene {
   }
 
   onViewportResize(w, h) {
+    const hb = Math.min(h, GAME_CONFIG.PORTRAIT_HEIGHT || 440);
     if (this.bgSky) {
       this.bgSky.setSize(w, h);
       this.bgSky.tileScaleY = h > 270 ? h / 270 : 1;
     }
     if (this.bgMountains) {
-      this.bgMountains.setSize(w, Math.max(200, h - 20));
-      this.bgMountains.tileScaleY = h > 270 ? Math.max(1, (h - 20) / 250) : 1;
+      this.bgMountains.setSize(w, Math.max(200, hb - 20));
+      this.bgMountains.tileScaleY = hb > 270 ? Math.max(1, (hb - 20) / 250) : 1;
     }
     if (this.bgFogPines) {
-      this.bgFogPines.setSize(w, Math.max(220, h - 50));
-      this.bgFogPines.tileScaleY = h > 270 ? Math.max(1, (h - 50) / 206) : 1;
+      this.bgFogPines.setSize(w, Math.max(220, hb - 50));
+      this.bgFogPines.tileScaleY = hb > 270 ? Math.max(1, (hb - 50) / 206) : 1;
     }
     if (this.bgMidPines) {
-      this.bgMidPines.setSize(w, Math.max(220, h - 80));
-      this.bgMidPines.tileScaleY = h > 270 ? Math.max(1, (h - 80) / 176) : 1;
+      this.bgMidPines.setSize(w, Math.max(220, hb - 80));
+      this.bgMidPines.tileScaleY = hb > 270 ? Math.max(1, (hb - 80) / 176) : 1;
     }
     if (this.cameras && this.cameras.main) {
       this.cameras.main.setSize(w, h);
@@ -333,6 +346,7 @@ export default class SurvivalScene extends Phaser.Scene {
       if (isGround) {
         // Render lush grass cliff top
         const numTiles = Math.ceil(plat.width / 16);
+        const bodyBottom = Math.max(topY + 50, 440 + 20); // the arena's own 440, as it was before the taller picture
         for (let i = 0; i < numTiles; i++) {
           const tileX = startX + i * 16;
           let topKey = (i % 3 === 0) ? 'tile_cliff_top_mid2' : 'tile_cliff_top_mid1';
@@ -341,10 +355,12 @@ export default class SurvivalScene extends Phaser.Scene {
 
           this.add.image(tileX, topY - 10, topKey).setOrigin(0, 0).setDepth(depth);
 
-          for (let cy = topY + 6; cy <= Math.max(topY + 50, this.arenaHeight + 20); cy += 16) {
+          for (let cy = topY + 6; cy <= bodyBottom; cy += 16) {
             this.add.image(tileX, cy, 'tile_cliff_body_mid').setOrigin(0, 0).setDepth(depth - 1);
           }
         }
+        // the arena is 440 tall; a taller picture shows more earth, as one tiled sprite rather than a tile each
+        fillUnderground(this, { x: startX, top: topY + 6 + 16 * (Math.floor((bodyBottom - (topY + 6)) / 16) + 1), width: numTiles * 16, bottom: this.arenaHeight + 20 });
 
         // Flora along the grass
         for (let px = startX + 30; px < startX + plat.width - 30; px += 64) {
@@ -1000,7 +1016,7 @@ export default class SurvivalScene extends Phaser.Scene {
   }
 
   announceWave(title) {
-    const w = GAME_CONFIG.WIDTH;
+    const w = this.cameras.main.width;
     const waveText = this.add.text(w / 2, 48, title, {
       fontFamily: 'Press Start 2P',
       fontSize: '8px',
@@ -1019,7 +1035,7 @@ export default class SurvivalScene extends Phaser.Scene {
   }
 
   createSurvivalHUD() {
-    const w = GAME_CONFIG.WIDTH;
+    const w = this.cameras.main.width;
     // One layout for every screen (ui/hudLayout.js): type sized for the screen, nothing overlapping, and the page's
     // wallet / timer / pause buttons kept just below the bar.
     const hud = layoutHud({ width: w, unit: cssPerUnitOf(this), variant: 'survival' });
@@ -1423,8 +1439,8 @@ export default class SurvivalScene extends Phaser.Scene {
   }
 
   showGameOverModal(proof) {
-    const w = GAME_CONFIG.WIDTH;
-    const h = GAME_CONFIG.HEIGHT;
+    const w = this.cameras.main.width;
+    const h = this.cameras.main.height;
 
     // Full screen backdrop overlay to capture clicks and dim the arena
     const backdrop = this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.78)
@@ -1654,22 +1670,22 @@ export default class SurvivalScene extends Phaser.Scene {
         this.offscreenArrow.setVisible(true);
       } else if (isRight) {
         // Offscreen to the right
-        this.offscreenArrow.setX(GAME_CONFIG.WIDTH - 54);
+        this.offscreenArrow.setX(cam.width - 54);
         this.offscreenArrow.setY((this.hudLayout?.barH ?? 28) + 10);
         this.offscreenArrow.setText(`${mobName} ►`);
         this.offscreenArrow.setVisible(true);
       } else if (isAbove) {
         // Offscreen strictly above
-        const screenX = Phaser.Math.Clamp(offscreenEnemy.x - cam.worldView.x, 60, GAME_CONFIG.WIDTH - 60);
+        const screenX = Phaser.Math.Clamp(offscreenEnemy.x - cam.worldView.x, 60, cam.width - 60);
         this.offscreenArrow.setX(screenX);
         this.offscreenArrow.setY(34);
         this.offscreenArrow.setText(`▲ ${mobName} ▲`);
         this.offscreenArrow.setVisible(true);
       } else if (isBelow) {
         // Offscreen strictly below
-        const screenX = Phaser.Math.Clamp(offscreenEnemy.x - cam.worldView.x, 60, GAME_CONFIG.WIDTH - 60);
+        const screenX = Phaser.Math.Clamp(offscreenEnemy.x - cam.worldView.x, 60, cam.width - 60);
         this.offscreenArrow.setX(screenX);
-        this.offscreenArrow.setY(GAME_CONFIG.HEIGHT - 22);
+        this.offscreenArrow.setY(Math.min(cam.height - 22, GAME_CONFIG.HEIGHT - 22));
         this.offscreenArrow.setText(`▼ ${mobName} ▼`);
         this.offscreenArrow.setVisible(true);
       } else {
