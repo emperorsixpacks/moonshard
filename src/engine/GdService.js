@@ -3,6 +3,7 @@ import { apiFetch } from '../gd/api.js';
 import { signIn } from '../gd/auth.js';
 import { clearSession, getToken, loadSession } from '../gd/session.js';
 import { createWalletManager, normalizeError } from '../gd/wallet.js';
+import { emailLogin } from '../gd/magic.js';
 import { GD } from '../gd/config.js';
 import { detectHost, hostLanguage } from '../gd/host.js';
 import { setBlessed } from '../gd/blessing.js';
@@ -23,7 +24,7 @@ async function loadWalletConnect() {
   return provider;
 }
 
-const wallet = createWalletManager({ getFallbackProvider: GD.reownProjectId ? loadWalletConnect : null });
+const wallet = createWalletManager({ getFallbackProvider: GD.reownProjectId ? loadWalletConnect : null, email: emailLogin });
 
 /** The pieces of server/chain data that refresh independently. `ok`/`fail` = number of the newest refresh that succeeded/failed. */
 const FIELDS = ['rewards', 'bounty', 'spoils', 'ubi', 'shop', 'balance', 'config'];
@@ -167,7 +168,9 @@ class GdServiceManager {
       wrongChain: w.wrongChain,
       // wallet extensions that announced themselves (EIP-6963): one connect button each
       wallets: w.wallets ?? [],
-      hasWallet: (w.wallets?.length ?? 0) > 0 || (typeof window !== 'undefined' && Boolean(window.ethereum)) || Boolean(GD.reownProjectId),
+      // signing in with an email makes a wallet (gd/magic.js): offered whenever the game has a Magic key
+      emailAvailable: Boolean(w.emailAvailable),
+      hasWallet: (w.wallets?.length ?? 0) > 0 || (typeof window !== 'undefined' && Boolean(window.ethereum)) || Boolean(GD.reownProjectId) || Boolean(w.emailAvailable),
       needsReconnect: connected && this.s.needsReconnect,
       offline: this.s.offline,
       sessionExpired: this.s.sessionExpired || lapsed,

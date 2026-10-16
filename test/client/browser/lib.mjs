@@ -14,11 +14,12 @@ const ROOT = new URL('../../../', import.meta.url).pathname;
  *  - `deviceScaleFactor`: the screen's pixel density (a sharp 2x display, say).
  *  - `clock`: install Playwright's fake clock before the page loads (Date, timers, rAF and performance.now all follow it).
  *  - `tutorialDone`: the player has been through the tutorial (the menu's big button then leads to the story, not to it).
+ *  - `env`: more environment for the dev server, e.g. `{ VITE_MAGIC_PUBLISHABLE_KEY: 'pk_test' }`.
  */
-export async function bootGame({ api = false, clock = false, viewport = { width: 1280, height: 800 }, deviceScaleFactor, init, tutorialDone = false } = {}) {
+export async function bootGame({ api = false, clock = false, viewport = { width: 1280, height: 800 }, deviceScaleFactor, init, tutorialDone = false, env: extraEnv = {} } = {}) {
   const port = await freePort();
   const web = `http://127.0.0.1:${port}`;
-  const env = { ...process.env };
+  const env = { ...process.env, ...extraEnv };
   if (api) delete env.VITE_API_URL;
   else env.VITE_API_URL = 'http://127.0.0.1:9';
   const vite = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { cwd: ROOT, env, stdio: 'ignore' });

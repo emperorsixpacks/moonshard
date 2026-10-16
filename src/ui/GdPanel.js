@@ -5,6 +5,7 @@ import { panelTitle, renderPanelHtml } from './gdPanelView.js';
 import { openSheet } from './sheet.js';
 import { rememberGate } from '../engine/gateMemory.js';
 import { fetchConfig } from '../gd/leaderboard.js';
+import { openEmailSheet } from './emailSheet.js';
 
 /**
  * The wallet and the way into the game, drawn as one sheet over the screen (src/ui/sheet.js). What it says is decided by
@@ -78,7 +79,24 @@ export class GdPanel {
     this.sheet.setBody(renderPanelHtml(status, Date.now(), this.view()));
   }
 
+  /**
+   * Sign in with an email. It has a sheet of its own (this one is redrawn whenever the status changes, which would wipe what
+   * the player is typing); when it is over, the wallet's sheet (or the gate) comes back where it was.
+   */
+  openEmail() {
+    openEmailSheet(this.host, {
+      connect: () => gdService.connect('email'),
+      onBack: () => this.open(),
+      onConnected: (res) => {
+        const toast = describeOutcome('connect', res, { blessing: gdService.getStatus().blessing });
+        if (toast) showToast(toast.text, { type: toast.type });
+        this.open();
+      },
+    });
+  }
+
   async onAction(act, el) {
+    if (act === 'email') { this.openEmail(); return; }
     if (act === 'play') {
       const request = this.gate;
       this.close();
@@ -101,6 +119,8 @@ export class GdPanel {
     };
     const res = await actions[act]?.();
     if (!res) return;
+    // the player's email wallet is signed out (Magic forgot them): sign in again, instead of an error they cannot fix here
+    if (res.ok === false && res.error === 'not_signed_in') { this.openEmail(); return; }
     const toast = describeOutcome(act, res, { blessing: gdService.getStatus().blessing });
     if (toast) showToast(toast.text, { type: toast.type });
   }

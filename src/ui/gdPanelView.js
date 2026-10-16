@@ -54,6 +54,14 @@ const walletIcon = (w) => (typeof w.icon === 'string' && /^data:image\//i.test(w
  */
 function connectHtml(s, busy) {
   const wallets = Array.isArray(s.wallets) ? s.wallets : [];
+  // Signing in with an email makes a wallet, so it is the main way in for someone with none, and one more choice for
+  // someone with extensions; the "No wallet detected" advice is only for a game without it.
+  if (s.emailAvailable) {
+    const withEmail = button('email', `${ico('mail', 22)}<span>Continue with email</span>`, { disabled: busy, kind: wallets.length ? 'plain' : 'gold', cls: 'gd-wallet' });
+    if (!wallets.length) return `${withEmail}${note('No wallet app? An email is all you need.')}${button('connect', 'I have a wallet', { disabled: busy, kind: 'ghost' })}`;
+    if (wallets.length > 1) return `<p class="note">Choose how to sign in</p><div class="gd-wallets">${withEmail}${wallets.map((w) => button('connect', `${walletIcon(w)}<span>${esc(w.name)}</span>`, { id: w.id, disabled: busy, kind: 'plain', cls: 'gd-wallet' })).join('')}</div>`;
+    return `<div class="gd-wallets">${withEmail}${button('connect', `${walletIcon(wallets[0])}<span>Connect ${esc(wallets[0].name)}</span>`, { id: wallets[0].id, disabled: busy, kind: 'plain', cls: 'gd-wallet' })}</div>`;
+  }
   if (wallets.length > 1) {
     const buttons = wallets.map((w) => button('connect', `${walletIcon(w)}<span>${esc(w.name)}</span>`, { id: w.id, disabled: busy, kind: 'plain', cls: 'gd-wallet' }));
     return `<p class="note">Choose your wallet</p><div class="gd-wallets">${buttons.join('')}</div>`;
@@ -246,7 +254,7 @@ function gateHtml(s, gate, busy, txDisabled, now) {
   });
   let action;
   if (step === 'connect') {
-    action = `${lead('Moonshard is for real people: one human, one slot. Connect a Celo wallet to get started.')}${connectHtml(s, busy)}`;
+    action = `${lead(s.emailAvailable ? 'Moonshard is for real people: one human, one slot. Sign in with your email, or connect a Celo wallet, to get started.' : 'Moonshard is for real people: one human, one slot. Connect a Celo wallet to get started.')}${connectHtml(s, busy)}`;
   } else if (step === 'checking') {
     action = note(s.verified ? 'Checking your blade…' : 'Checking your verification…');
   } else if (step === 'unreachable') {
@@ -279,7 +287,7 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null, config = nul
     if (s.connected) out.push(button('disconnect', 'Disconnect', { disabled: busy, kind: 'ghost' }));
   } else if (!s.connected) {
     // why on the left, which wallet on the right
-    const why = `${s.sessionExpired ? warn('Your session ended. Connect your wallet again to keep earning.') : ''}${lead('Moonshard is for verified humans. Connect your Celo wallet and prove you are human (GoodDollar face scan) to claim your daily G$ and play.')}`;
+    const why = `${s.sessionExpired ? warn('Your session ended. Connect your wallet again to keep earning.') : ''}${lead(s.emailAvailable ? 'Moonshard is for verified humans. Sign in with your email, or connect your Celo wallet, then prove you are human (GoodDollar face scan) to claim your daily G$ and play.' : 'Moonshard is for verified humans. Connect your Celo wallet and prove you are human (GoodDollar face scan) to claim your daily G$ and play.')}`;
     out.push(col(why), col(connectHtml(s, busy)));
   } else {
     // the top row of a wide sheet: who the player is (and what is wrong with the connection) beside the next thing to do
