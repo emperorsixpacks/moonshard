@@ -58,7 +58,11 @@ function connectHtml(s, busy) {
   // someone with extensions; the "No wallet detected" advice is only for a game without it.
   if (s.emailAvailable) {
     const withEmail = button('email', `${ico('mail', 22)}<span>Continue with email</span>`, { disabled: busy, kind: wallets.length ? 'plain' : 'gold', cls: 'gd-wallet' });
-    if (!wallets.length) return `${withEmail}${note('No wallet app? An email is all you need.')}${button('connect', 'I have a wallet', { disabled: busy, kind: 'ghost' })}`;
+    if (!wallets.length) {
+      // "I have a wallet" only where a wallet could connect; elsewhere (a phone browser with no WalletConnect) it could only fail
+      const other = s.walletAppAvailable ? button('connect', 'I have a wallet', { disabled: busy, kind: 'ghost' }) : note("Using a wallet app? Open Moonshard from inside that app's browser.");
+      return `${withEmail}${note('No wallet app? An email is all you need.')}${other}`;
+    }
     if (wallets.length > 1) return `<p class="note">Choose how to sign in</p><div class="gd-wallets">${withEmail}${wallets.map((w) => button('connect', `${walletIcon(w)}<span>${esc(w.name)}</span>`, { id: w.id, disabled: busy, kind: 'plain', cls: 'gd-wallet' })).join('')}</div>`;
     return `<div class="gd-wallets">${withEmail}${button('connect', `${walletIcon(wallets[0])}<span>Connect ${esc(wallets[0].name)}</span>`, { id: wallets[0].id, disabled: busy, kind: 'plain', cls: 'gd-wallet' })}</div>`;
   }

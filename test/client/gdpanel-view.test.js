@@ -414,8 +414,20 @@ test('with a Magic key and no wallet app, email is the main way in and the walle
   for (const h of [gated({ ...anonymous, wallets: [], emailAvailable: true }), html({ ...anonymous, wallets: [], emailAvailable: true })]) {
     assert.match(h, /<button type="button" class="gold btn gd-wallet" data-act="email"[^>]*>.*Continue with email/s);
     assert.match(h, /An email is all you need/);
-    assert.match(h, /data-act="connect"[^>]*>I have a wallet</);
     assert.doesNotMatch(h, /No wallet detected/);
+  }
+});
+
+test('"I have a wallet" is offered only where a wallet could connect', () => {
+  for (const h of [gated({ ...anonymous, wallets: [], emailAvailable: true, walletAppAvailable: true }), html({ ...anonymous, wallets: [], emailAvailable: true, walletAppAvailable: true })]) {
+    assert.match(h, /data-act="connect"[^>]*>I have a wallet</);
+  }
+  // a phone browser with no injected wallet and no WalletConnect: the button could only fail, so it is not there
+  for (const h of [gated({ ...anonymous, wallets: [], emailAvailable: true, walletAppAvailable: false }), html({ ...anonymous, wallets: [], emailAvailable: true, walletAppAvailable: false })]) {
+    assert.doesNotMatch(h, /data-act="connect"/);
+    assert.doesNotMatch(h, /I have a wallet/);
+    assert.match(h, /Open Moonshard from inside that app/);
+    assert.match(h, /data-act="email"/, 'the email stays the way in');
   }
 });
 

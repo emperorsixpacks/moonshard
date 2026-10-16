@@ -170,6 +170,8 @@ class GdServiceManager {
       wallets: w.wallets ?? [],
       // signing in with an email makes a wallet (gd/magic.js): offered whenever the game has a Magic key
       emailAvailable: Boolean(w.emailAvailable),
+      // something other than the email can connect: an announced extension, an injected wallet, or WalletConnect
+      walletAppAvailable: (w.wallets?.length ?? 0) > 0 || (typeof window !== 'undefined' && Boolean(window.ethereum)) || Boolean(GD.reownProjectId),
       hasWallet: (w.wallets?.length ?? 0) > 0 || (typeof window !== 'undefined' && Boolean(window.ethereum)) || Boolean(GD.reownProjectId) || Boolean(w.emailAvailable),
       needsReconnect: connected && this.s.needsReconnect,
       offline: this.s.offline,
