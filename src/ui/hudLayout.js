@@ -35,7 +35,8 @@ export function layoutHud({ width = 480, unit = 2, variant = 'story' } = {}) {
   const stacked = unit < 1.1;
   const left = stacked ? 8 : 12;
   const right = width - left;
-  const healthBar = { width: 104, height: stacked ? 12 : 9, fontPx: stacked ? 15 : 12 };
+  // (a run held upright is narrower than 480, see engine/playStage.js: a slimmer bar leaves room for the text beside it)
+  const healthBar = { width: width < 420 ? 84 : 104, height: stacked ? 12 : 9, fontPx: stacked ? 15 : 12 };
   const healthW = healthBar.width + 6;
   const healthH = healthBar.height + 6;
 
@@ -45,10 +46,11 @@ export function layoutHud({ width = 480, unit = 2, variant = 'story' } = {}) {
 
   if (variant === 'survival') {
     if (stacked) {
-      health = { x: 314, y: rowMid[1] };
+      // (the fixed x are for the 480-wide picture; a narrower one, a run held upright, pulls them in)
+      health = { x: Math.min(314, width - 112), y: rowMid[1] };
       slots = {
         mode: at(left, 0, 0, 'pixel'),
-        wave: at(190, 0, 0, 'pixel'),
+        wave: at(Math.min(190, Math.max(128, width - 232)), 0, 0, 'pixel'),
         harvest: at(right, 0, 1, 'body'),
         score: at(left, 1, 0, 'pixel'),
         foes: at(right, 1, 1, 'body'),
@@ -65,7 +67,7 @@ export function layoutHud({ width = 480, unit = 2, variant = 'story' } = {}) {
       };
     }
   } else if (stacked) {
-    health = { x: 318, y: rowMid[1] };
+    health = { x: Math.min(318, width - 112), y: rowMid[1] };
     slots = {
       title: at(left, 0, 0, 'pixel'),
       materials: at(right, 0, 1, 'body'),
