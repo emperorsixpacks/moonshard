@@ -112,7 +112,27 @@ Verified: 516 client unit tests (the wallet, gate, guide and menu tests were por
 - **The chrome.** The pad is squares with the stepped edge, Jump big and gold under the right thumb with Slash beside it and Up above it, sizes following the screen width; the page header, pause button and G$ pill dropped the green; the G$ pill hides while a run is on (the wallet is one tap away from the menu).
 - **Feel.** Dust at the feet when running, jumping and landing (more for a harder fall), and a gold burst when a lesson is done. The swing's white crescent was already in the attack animation, so no extra arc was added.
 
+### In the run (third pass): the whole screen on a phone held upright
+
+The owner: the picture was small on a phone and the lower half of the screen was an empty pad deck. Now a run takes the whole screen under the page header and the pad floats on top of it.
+
+- **How.** While a run is on (the tutorial, a story chapter, Endless: each calls `viewportManager.enterPlay(this)` in `init()` and leaves on shutdown), the page's `#game-wrapper` is `data-stage="play"`: the picture fills the area and the pad is overlaid, no longer a deck. The picture is **360 units wide** (the other screens are 480), so the hero is about a third bigger than before, and as tall as the screen is in proportion, from 440 to 760 (`src/engine/playStage.js`, tested). The levels are still built 440 tall with the ground at 380; a taller picture shows more earth under them (`src/engine/underground.js`: one tiled sprite per stretch of ground, darker with depth), which the pad covers. On a short screen the picture is scrolled down by a few units (`groundLift`) so the ground rises clear of the pad.
+- **What changed in the scenes.** Screen-space UI (HUD, banners, result panels) uses the camera's real size instead of 480x270; the tutorial's glade (480 wide) is followed by a narrower camera; the HUD layout pulls its health bar in on a narrow picture (`hudLayout.js`, tested at 360 and 400 wide). Hills and trees keep the size they were drawn for; more height is sky.
+- **Unchanged.** Sideways (480x270, full screen, as before), the screens that are not a run (Forge, Ranks, the chapter card keep 480x440 with the pad deck below), keyboard play (no pad, the picture still fills the window). The width is one constant, `PLAY_WIDTH`: 400 shows more of the level ahead, 320 draws the hero bigger still.
+- **Verified:** `test/client/browser/play-stage.mjs` (three phone sizes, a keyboard player in a narrow window, a rotation during a run): the picture fills the width and reaches the bottom, the pad floats over it, the ground is above the pad, and the usual picture is back after the run.
+
 Still on the old look (next passes): the story's HUD bar, dialogue boxes and chapter card, the story and Endless result screens, the Forge and the Leaderboard.
+
+## Sixth pass: sign in with an email (Magic) (2026-10)
+
+The owner: players without a wallet app should be able to connect with an email. It uses [Magic](https://magic.link) (`magic-sdk`, the email one-time-passcode login), which keeps an embedded wallet's key and gives the page an ordinary EIP-1193 provider (`magic.rpcProvider`), so everything downstream (the login signature, the claim, the Moon Shop payment) works as it does for any wallet.
+
+- **Switched on by a key.** `VITE_MAGIC_PUBLISHABLE_KEY` (a publishable key, safe in the page). Without it nothing changes and the SDK is never downloaded; with it the wallet and the gate offer **Continue with email**, the main button when no wallet app is found and one more choice beside extensions otherwise. The SDK is its own lazy chunk, loaded when a player chooses it.
+- **Our own screens, not Magic's.** `loginWithEmailOTP({ showUI: false })`: the email and the six-digit code are typed into a sheet of the game's look (`src/ui/emailView.js` pure, `src/ui/emailSheet.js` the flow, `src/gd/magic.js` the SDK). It is a sheet of its own because the wallet's sheet is redrawn on every status change and would wipe what is being typed. A wrong code, an expired code, too many tries and an account that asks for a second factor each say so in words.
+- **In the wallet manager** (`src/gd/wallet.js`): `connect('email')`, remembered like any wallet so a reload reconnects without a prompt; Disconnect signs out of Magic for real (otherwise the next reload signs straight back in); if Magic has forgotten the player, Reconnect opens the email sheet again.
+- **Privacy.** The address goes from the player's screen to Magic; Moonshard sees only the wallet address.
+- **Verified:** unit tests for the sign-in module against a stand-in SDK, the wallet manager's email paths, the views and the connect choices; `test/client/browser/email-login.mjs` drives the whole flow in a real browser against the stand-in (no key, bad email, wrong code, right code, sign-in as the Magic wallet, reload, disconnect, forgotten, backing out); `npm run test:build`.
+- **Not verified: a real Magic account.** Needs a key from dashboard.magic.link with this site's origin allowed. Also open: an email wallet starts with **no CELO**, so the first claim or purchase needs gas. GoodDollar's faucet is documented to top up a verified wallet for the daily claim; that has not been checked for an email wallet.
 
 ## What was verified, and how
 

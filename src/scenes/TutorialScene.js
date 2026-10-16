@@ -13,6 +13,7 @@ import confetti from 'canvas-confetti';
 import { createCoach, doneHtml } from '../ui/coachView.js';
 import { openSheet } from '../ui/sheet.js';
 import { LESSONS } from '../ui/tutorialLessons.js';
+import { fillUnderground, GROUND_TILES_DEPTH } from '../engine/underground.js';
 
 /*
  * Sizes for the two canvases (480x270 landscape, 480x440 tall), in game units.
@@ -37,11 +38,16 @@ export default class TutorialScene extends Phaser.Scene {
 
   init(data) {
     this.fromPrologue = Boolean(data && data.fromPrologue);
+    // held upright, a run takes the whole screen (engine/playStage.js); the size is set before create() reads it
+    window.viewportManager?.enterPlay(this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => window.viewportManager?.leavePlay(this));
   }
 
   create() {
-    const w = this.cameras.main.width || GAME_CONFIG.WIDTH;
+    const w = GAME_CONFIG.WIDTH; // the glade is 480 wide; the picture may be narrower and follow the hero
+    const cw = this.cameras.main.width || GAME_CONFIG.WIDTH;
     const h = this.cameras.main.height || GAME_CONFIG.HEIGHT;
+    const hb = Math.min(h, GAME_CONFIG.PORTRAIT_HEIGHT || 440); // the hills and trees are drawn for the level's 440; more height is sky
 
     this.cameras.main.resetFX();
     this.cameras.main.setBackgroundColor('#050e08');
@@ -57,16 +63,19 @@ export default class TutorialScene extends Phaser.Scene {
     }
 
     // Parallax High Forest Background Layers
-    this.bgSky = this.add.tileSprite(0, 0, w, h, 'sky_backdrop').setOrigin(0, 0).setScrollFactor(0).setDepth(0);
+    this.bgSky = this.add.tileSprite(0, 0, cw, h, 'sky_backdrop').setOrigin(0, 0).setScrollFactor(0).setDepth(0);
     if (h > 270) this.bgSky.tileScaleY = h / 270;
-    this.bgMountains = this.add.tileSprite(0, 20, w, Math.max(200, h - 20), 'sky_mountains').setOrigin(0, 0).setScrollFactor(0).setDepth(1);
-    if (h > 270) this.bgMountains.tileScaleY = Math.max(1, (h - 20) / 250);
-    this.bgFogPines = this.add.tileSprite(0, 50, w, Math.max(220, h - 50), 'forest_bg_p0').setOrigin(0, 0).setScrollFactor(0).setDepth(2);
-    if (h > 270) this.bgFogPines.tileScaleY = Math.max(1, (h - 50) / 206);
-    this.bgMidPines = this.add.tileSprite(0, 80, w, Math.max(220, h - 80), 'forest_bg_p1').setOrigin(0, 0).setScrollFactor(0).setDepth(3);
-    if (h > 270) this.bgMidPines.tileScaleY = Math.max(1, (h - 80) / 176);
+    this.bgMountains = this.add.tileSprite(0, 20, cw, Math.max(200, hb - 20), 'sky_mountains').setOrigin(0, 0).setScrollFactor(0).setDepth(1);
+    if (hb > 270) this.bgMountains.tileScaleY = Math.max(1, (hb - 20) / 250);
+    this.bgFogPines = this.add.tileSprite(0, 50, cw, Math.max(220, hb - 50), 'forest_bg_p0').setOrigin(0, 0).setScrollFactor(0).setDepth(2);
+    if (hb > 270) this.bgFogPines.tileScaleY = Math.max(1, (hb - 50) / 206);
+    this.bgMidPines = this.add.tileSprite(0, 80, cw, Math.max(220, hb - 80), 'forest_bg_p1').setOrigin(0, 0).setScrollFactor(0).setDepth(3);
+    if (hb > 270) this.bgMidPines.tileScaleY = Math.max(1, (hb - 80) / 176);
 
-    const groundY = h > 300 ? h - 70 : 210;
+    // the ground is 70 above the bottom of the 440 picture; a taller picture keeps it there and shows earth below
+    // (and on a short screen the ground rises clear of the pad: engine/playStage.js)
+    const lift = window.viewportManager?.playOwner === this ? (window.viewportManager.playLift || 0) : 0;
+    const groundY = h > 300 ? Math.min(h - 70, 370 - lift) : 210;
     this.groundY = groundY;
 
     // Decorative background pine trees
@@ -119,6 +128,9 @@ export default class TutorialScene extends Phaser.Scene {
     this.player = new Player(this, 160, groundY - 30);
     this.player.body.setCollideWorldBounds(true);
     this.physics.add.collider(this.player, this.platforms);
+    // a picture narrower than the glade follows the hero along it
+    this.cameras.main.setBounds(0, 0, w, h);
+    if (cw < w) this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
 
     // Fallback cursors for desktop development
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -186,21 +198,22 @@ export default class TutorialScene extends Phaser.Scene {
   }
 
   onViewportResize(w, h) {
+    const hb = Math.min(h, GAME_CONFIG.PORTRAIT_HEIGHT || 440);
     if (this.bgSky) {
       this.bgSky.setSize(w, h);
       this.bgSky.tileScaleY = h > 270 ? h / 270 : 1;
     }
     if (this.bgMountains) {
-      this.bgMountains.setSize(w, Math.max(200, h - 20));
-      this.bgMountains.tileScaleY = h > 270 ? Math.max(1, (h - 20) / 250) : 1;
+      this.bgMountains.setSize(w, Math.max(200, hb - 20));
+      this.bgMountains.tileScaleY = hb > 270 ? Math.max(1, (hb - 20) / 250) : 1;
     }
     if (this.bgFogPines) {
-      this.bgFogPines.setSize(w, Math.max(220, h - 50));
-      this.bgFogPines.tileScaleY = h > 270 ? Math.max(1, (h - 50) / 206) : 1;
+      this.bgFogPines.setSize(w, Math.max(220, hb - 50));
+      this.bgFogPines.tileScaleY = hb > 270 ? Math.max(1, (hb - 50) / 206) : 1;
     }
     if (this.bgMidPines) {
-      this.bgMidPines.setSize(w, Math.max(220, h - 80));
-      this.bgMidPines.tileScaleY = h > 270 ? Math.max(1, (h - 80) / 176) : 1;
+      this.bgMidPines.setSize(w, Math.max(220, hb - 80));
+      this.bgMidPines.tileScaleY = hb > 270 ? Math.max(1, (hb - 80) / 176) : 1;
     }
     if (this.cameras && this.cameras.main) {
       this.cameras.main.setSize(w, h);
@@ -219,7 +232,8 @@ export default class TutorialScene extends Phaser.Scene {
     this.platforms.add(body);
 
     const numTiles = Math.ceil(width / 16);
-    const maxBottom = Math.max(y + 68, (this.cameras?.main?.height || GAME_CONFIG.PORTRAIT_HEIGHT || 380) + 20);
+    const pictureBottom = (this.cameras?.main?.height || GAME_CONFIG.PORTRAIT_HEIGHT || 380) + 20;
+    const maxBottom = y + GROUND_TILES_DEPTH;
     for (let i = 0; i < numTiles; i++) {
       const tileX = x + i * 16;
       let topKey = (i % 2 === 0) ? 'tile_cliff_top_mid1' : 'tile_cliff_top_mid2';
@@ -229,6 +243,8 @@ export default class TutorialScene extends Phaser.Scene {
         this.add.image(tileX, cy, 'tile_cliff_body_mid').setOrigin(0, 0).setDepth(depth - 1);
       }
     }
+    // a run held upright is taller than the glade: carry the earth on down to the bottom of the picture
+    fillUnderground(this, { x, top: y + 6 + 16 * (Math.floor((maxBottom - (y + 6)) / 16) + 1), width: numTiles * 16, bottom: pictureBottom });
 
     for (let px = x + 24; px < x + width - 24; px += 56) {
       const roll = Math.floor(px % 4);

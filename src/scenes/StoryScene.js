@@ -44,6 +44,7 @@ import { fetchRewardsStatus } from '../gd/rewards.js';
 import { runs, bossLine, shardsLine } from '../gd/runs.js';
 import { ActiveClock, pageHidden } from '../gd/activeClock.js';
 import { SHARD_RATE_GD, DAILY_SHARD_CAP_GD } from '../gd/config.js';
+import { fillUnderground, GROUND_TILES_DEPTH } from '../engine/underground.js';
 
 // Colours of the reward lines on the end screens, by the tone the copy helpers (gd/runs.js) give each line.
 const TONE_COLOR = { muted: '#a0c4a0', warn: '#f59e0b', bad: '#ff7777', good: '#ffd700', shard: '#38e1ff' };
@@ -55,6 +56,9 @@ export default class StoryScene extends Phaser.Scene {
   }
 
   init(data) {
+    // held upright, a run takes the whole screen (engine/playStage.js); the size is set before create() reads it
+    window.viewportManager?.enterPlay(this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => window.viewportManager?.leavePlay(this));
     this.chapterId = data.chapter || 1;
     this.showcaseMob = data && data.showcaseMob ? data.showcaseMob : null;
     this.spawnPlayerX = (data && typeof data.playerX === 'number') ? data.playerX : 60;
@@ -67,7 +71,10 @@ export default class StoryScene extends Phaser.Scene {
     this.comboCount = 0;
     this.comboTimer = 0;
     this.levelWidth = this.chapterId === 1 ? 2800 : 2600;
-    this.levelHeight = 440;
+    // the levels are built 440 tall (the ground is at 380); a taller picture shows more earth under them, and on a short
+    // screen the picture is scrolled down by `camTop` so the ground rises clear of the pad (engine/playStage.js)
+    this.camTop = window.viewportManager?.playOwner === this ? (window.viewportManager.playLift || 0) : 0;
+    this.levelHeight = Math.max(440, (this.cameras.main.height || 0) + this.camTop);
     this.gateX = this.chapterId === 1 ? 2310 : 2090;
     this.groundSegments = [];
     this.victoryAdvanceCallback = null;
@@ -100,8 +107,8 @@ export default class StoryScene extends Phaser.Scene {
   }
 
   create() {
-    const w = GAME_CONFIG.WIDTH;
-    const h = GAME_CONFIG.HEIGHT;
+    const w = this.cameras.main.width;
+    const h = this.cameras.main.height;
 
     this.isGameOver = false;
     this.isVictory = false;
@@ -232,7 +239,7 @@ export default class StoryScene extends Phaser.Scene {
     this.physics.add.collider(this.player, this.platforms);
 
     // Camera follow
-    this.cameras.main.setBounds(0, 0, this.levelWidth, this.levelHeight);
+    this.cameras.main.setBounds(0, this.camTop, this.levelWidth, this.levelHeight - this.camTop);
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08, 0, -28);
     this.cameras.main.setZoom(1);
     this.cameras.main.scrollX = 0;
@@ -756,18 +763,20 @@ export default class StoryScene extends Phaser.Scene {
       this.bgSky.tileScaleY = h / 270;
     }
 
+    // (the hills and trees are drawn for the level's 440; more height than that is sky)
+    const hb = Math.min(h, GAME_CONFIG.PORTRAIT_HEIGHT || 440);
     if (this.chapterId <= 3) {
       // 2. Distant Mountains (very slow parallax)
-      this.bgMountains = this.add.tileSprite(0, 20, w, Math.max(200, h - 20), 'sky_mountains').setOrigin(0, 0).setScrollFactor(0).setDepth(1);
-      if (h > 270) this.bgMountains.tileScaleY = Math.max(1, (h - 20) / 250);
+      this.bgMountains = this.add.tileSprite(0, 20, w, Math.max(200, hb - 20), 'sky_mountains').setOrigin(0, 0).setScrollFactor(0).setDepth(1);
+      if (hb > 270) this.bgMountains.tileScaleY = Math.max(1, (hb - 20) / 250);
 
       // 3. Foggy Distant Mountain Pines (slow parallax)
-      this.bgFogPines = this.add.tileSprite(0, 50, w, Math.max(220, h - 50), 'forest_bg_p0').setOrigin(0, 0).setScrollFactor(0).setDepth(2);
-      if (h > 270) this.bgFogPines.tileScaleY = Math.max(1, (h - 50) / 206);
+      this.bgFogPines = this.add.tileSprite(0, 50, w, Math.max(220, hb - 50), 'forest_bg_p0').setOrigin(0, 0).setScrollFactor(0).setDepth(2);
+      if (hb > 270) this.bgFogPines.tileScaleY = Math.max(1, (hb - 50) / 206);
 
       // 4. Midground Forest Silhouettes
-      this.bgMidPines = this.add.tileSprite(0, 80, w, Math.max(220, h - 80), 'forest_bg_p1').setOrigin(0, 0).setScrollFactor(0).setDepth(3);
-      if (h > 270) this.bgMidPines.tileScaleY = Math.max(1, (h - 80) / 176);
+      this.bgMidPines = this.add.tileSprite(0, 80, w, Math.max(220, hb - 80), 'forest_bg_p1').setOrigin(0, 0).setScrollFactor(0).setDepth(3);
+      if (hb > 270) this.bgMidPines.tileScaleY = Math.max(1, (hb - 80) / 176);
 
       // 5. Standalone Tall Pine Trees placed along the level
       const treeSpacing = 140;
@@ -872,21 +881,22 @@ export default class StoryScene extends Phaser.Scene {
   }
 
   onViewportResize(w, h) {
+    const hb = Math.min(h, GAME_CONFIG.PORTRAIT_HEIGHT || 440);
     if (this.bgSky) {
       this.bgSky.setSize(w, h);
       this.bgSky.tileScaleY = h > 270 ? h / 270 : 1;
     }
     if (this.bgMountains) {
-      this.bgMountains.setSize(w, Math.max(200, h - 20));
-      this.bgMountains.tileScaleY = h > 270 ? Math.max(1, (h - 20) / 250) : 1;
+      this.bgMountains.setSize(w, Math.max(200, hb - 20));
+      this.bgMountains.tileScaleY = hb > 270 ? Math.max(1, (hb - 20) / 250) : 1;
     }
     if (this.bgFogPines) {
-      this.bgFogPines.setSize(w, Math.max(220, h - 50));
-      this.bgFogPines.tileScaleY = h > 270 ? Math.max(1, (h - 50) / 206) : 1;
+      this.bgFogPines.setSize(w, Math.max(220, hb - 50));
+      this.bgFogPines.tileScaleY = hb > 270 ? Math.max(1, (hb - 50) / 206) : 1;
     }
     if (this.bgMidPines) {
-      this.bgMidPines.setSize(w, Math.max(220, h - 80));
-      this.bgMidPines.tileScaleY = h > 270 ? Math.max(1, (h - 80) / 176) : 1;
+      this.bgMidPines.setSize(w, Math.max(220, hb - 80));
+      this.bgMidPines.tileScaleY = hb > 270 ? Math.max(1, (hb - 80) / 176) : 1;
     }
     if (this.cameras && this.cameras.main) {
       this.cameras.main.setSize(w, h);
@@ -917,7 +927,7 @@ export default class StoryScene extends Phaser.Scene {
       if (this.chapterId === 4) topImg.setTint(0x774433);
       else if (this.chapterId === 5) topImg.setTint(0x7788aa);
 
-      for (let cy = y + 6; cy <= y + 68; cy += 16) {
+      for (let cy = y + 6; cy <= y + GROUND_TILES_DEPTH; cy += 16) {
         let bodyKey = 'tile_cliff_body_mid';
         if (i === 0 && x > 0) bodyKey = 'tile_cliff_body_left';
         else if (i === numTiles - 1 && (x + width < this.levelWidth)) bodyKey = 'tile_cliff_body_right';
@@ -926,6 +936,10 @@ export default class StoryScene extends Phaser.Scene {
         else if (this.chapterId === 5) bodyImg.setTint(0x556688);
       }
     }
+
+    // a run held upright is taller than the level: carry the earth on down to the bottom of the picture
+    const earthTint = this.chapterId === 4 ? 0x442211 : (this.chapterId === 5 ? 0x556688 : undefined);
+    fillUnderground(this, { x, top: y + 6 + 16 * (Math.floor((GROUND_TILES_DEPTH - 6) / 16) + 1), width: numTiles * 16, bottom: this.levelHeight + 20, tint: earthTint });
 
     // Add decorative flora / crystals along the surface
     for (let px = x + 24; px < x + width - 24; px += 56) {
@@ -1381,8 +1395,8 @@ export default class StoryScene extends Phaser.Scene {
     }[this.chapterId] || { name: 'UNKNOWN FOE', title: 'Ancient Guardian', color: '#ffffff', border: 0xaaaaaa };
 
     // 3. Atmospheric Screen Flash / Vignette Pulse
-    const w = GAME_CONFIG.WIDTH;
-    const h = GAME_CONFIG.HEIGHT;
+    const w = this.cameras.main.width;
+    const h = this.cameras.main.height;
     const flash = this.add.rectangle(w / 2, h / 2, w, h, bossInfo.border, 0.28)
       .setScrollFactor(0)
       .setDepth(440);
@@ -1592,7 +1606,7 @@ export default class StoryScene extends Phaser.Scene {
       this.bossLockedBanner = null;
     }
 
-    const w = GAME_CONFIG.WIDTH;
+    const w = this.cameras.main.width;
     const banner = this.add.container(w / 2, -45).setScrollFactor(0).setDepth(446);
     this.bossLockedBanner = banner;
 
@@ -1708,7 +1722,7 @@ export default class StoryScene extends Phaser.Scene {
   }
 
   showLeftEdgeOffscreenIndicator(count) {
-    const h = GAME_CONFIG.HEIGHT;
+    const h = this.cameras.main.height;
     if (!this.leftEdgeIndicator) {
       this.leftEdgeIndicator = this.add.container(18, h / 2).setScrollFactor(0).setDepth(440);
       const bg = this.add.rectangle(0, 0, 26, 22, 0x220808, 0.92)
@@ -1760,7 +1774,7 @@ export default class StoryScene extends Phaser.Scene {
 
     const foesBehind = this.getEnemiesLeftBehind();
     const isNearGate = this.player && this.player.x >= gateX - 220;
-    const w = GAME_CONFIG.WIDTH;
+    const w = this.cameras.main.width;
 
     // 1. Immediately indicate when enemies have been passed and are outside the screen
     if (foesBehind.count > 0) {
@@ -1827,7 +1841,7 @@ export default class StoryScene extends Phaser.Scene {
     sound.playSparkle();
 
     // Announcement banner
-    const w = GAME_CONFIG.WIDTH;
+    const w = this.cameras.main.width;
     const banner = this.add.container(w / 2, -45).setScrollFactor(0).setDepth(446);
     const bg = this.add.rectangle(0, 0, 310, 34, 0x08180c, 0.95)
       .setStrokeStyle(1.5, 0x22cc66);
@@ -1934,7 +1948,7 @@ export default class StoryScene extends Phaser.Scene {
     if (chapter === 1) {
       if (this.player && this.player.x < 2330) this.player.x = 2330;
       // Restrict camera to Chapter 1 Boss Arena
-      this.cameras.main.setBounds(2300, 0, 500, this.levelHeight);
+      this.cameras.main.setBounds(2300, this.camTop, 500, this.levelHeight - this.camTop);
 
       // Arena barricade gate at x = 2310
       this.arenaGateWall = this.add.rectangle(2310, 340, 20, 100, 0x000000, 0);
@@ -1971,7 +1985,7 @@ export default class StoryScene extends Phaser.Scene {
     } else if (chapter === 2) {
       if (this.player && this.player.x < 2120) this.player.x = 2120;
       // Restrict camera to Chapter 2 Boss Arena
-      this.cameras.main.setBounds(2080, 0, 520, this.levelHeight);
+      this.cameras.main.setBounds(2080, this.camTop, 520, this.levelHeight - this.camTop);
 
       // Arena barricade gate at x = 2090
       this.arenaGateWall = this.add.rectangle(2090, 340, 20, 100, 0x000000, 0);
@@ -2007,7 +2021,7 @@ export default class StoryScene extends Phaser.Scene {
     } else if (chapter === 3) {
       if (this.player && this.player.x < 2120) this.player.x = 2120;
       // Restrict camera to Chapter 3 Vorgath Arena
-      this.cameras.main.setBounds(2080, 0, 520, this.levelHeight);
+      this.cameras.main.setBounds(2080, this.camTop, 520, this.levelHeight - this.camTop);
 
       // Arena barricade gate at x = 2090
       this.arenaGateWall = this.add.rectangle(2090, 340, 20, 100, 0x000000, 0);
@@ -2045,7 +2059,7 @@ export default class StoryScene extends Phaser.Scene {
         if (this.player.body) this.player.setVelocity(0, 0);
       }
       // Restrict camera to Chapter 4 Ignis Arena
-      this.cameras.main.setBounds(2080, 0, 520, this.levelHeight);
+      this.cameras.main.setBounds(2080, this.camTop, 520, this.levelHeight - this.camTop);
 
       // Arena barricade gate at x = 2090
       this.arenaGateWall = this.add.rectangle(2090, 340, 20, 100, 0x000000, 0);
@@ -2083,7 +2097,7 @@ export default class StoryScene extends Phaser.Scene {
         if (this.player.body) this.player.setVelocity(0, 0);
       }
       // Restrict camera to Chapter 5 Umbra Pinnacle Arena
-      this.cameras.main.setBounds(2080, 0, 520, this.levelHeight);
+      this.cameras.main.setBounds(2080, this.camTop, 520, this.levelHeight - this.camTop);
 
       // Arena barricade gate at x = 2090
       this.arenaGateWall = this.add.rectangle(2090, 340, 20, 100, 0x000000, 0);
@@ -2125,7 +2139,7 @@ export default class StoryScene extends Phaser.Scene {
       this.bossBattleBanner = null;
     }
 
-    const w = GAME_CONFIG.WIDTH;
+    const w = this.cameras.main.width;
     const banner = this.add.container(w / 2, 84).setScrollFactor(0).setDepth(480);
     this.bossBattleBanner = banner;
 
@@ -2183,7 +2197,7 @@ export default class StoryScene extends Phaser.Scene {
     }
 
     // Unlock camera bounds back to entire level
-    this.cameras.main.setBounds(0, 0, this.levelWidth, this.levelHeight);
+    this.cameras.main.setBounds(0, this.camTop, this.levelWidth, this.levelHeight - this.camTop);
   }
 
   spawnCrate(x, y) {
@@ -2220,7 +2234,7 @@ export default class StoryScene extends Phaser.Scene {
   }
 
   createStoryHUD() {
-    const w = GAME_CONFIG.WIDTH;
+    const w = this.cameras.main.width;
     // One layout for every screen (ui/hudLayout.js): type sized for the screen, nothing overlapping, and the page's
     // wallet / timer / pause buttons kept just below the bar.
     const hud = layoutHud({ width: w, unit: cssPerUnitOf(this), variant: 'story' });
@@ -2322,8 +2336,8 @@ export default class StoryScene extends Phaser.Scene {
       window.touchController.hide();
     }
     this.physics.pause();
-    const w = GAME_CONFIG.WIDTH;
-    const h = GAME_CONFIG.HEIGHT;
+    const w = this.cameras.main.width;
+    const h = this.cameras.main.height;
 
     const card = this.add.container(w / 2, h / 2).setScrollFactor(0).setDepth(300);
     this.chapterIntroCard = card;
@@ -3084,8 +3098,8 @@ export default class StoryScene extends Phaser.Scene {
       });
     } catch (e) {}
 
-    const w = GAME_CONFIG.WIDTH;
-    const h = GAME_CONFIG.HEIGHT;
+    const w = this.cameras.main.width;
+    const h = this.cameras.main.height;
     this.victoryInputReadyTime = performance.now() + 350; // brief delay so final attack swing doesn't accidentally skip
 
     // Victory Banner Container
@@ -3335,8 +3349,8 @@ export default class StoryScene extends Phaser.Scene {
       this.chapterIntroCard = null;
     }
 
-    const w = GAME_CONFIG.WIDTH;
-    const h = GAME_CONFIG.HEIGHT;
+    const w = this.cameras.main.width;
+    const h = this.cameras.main.height;
 
     // Use scene-level UI objects with setScrollFactor(0) to guarantee
     // button hit-tests are never offset by camera scroll!

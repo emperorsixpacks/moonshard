@@ -6,6 +6,8 @@ export const GD = {
   rpcUrl: env.VITE_CELO_RPC_URL || 'https://forno.celo.org',
   env: env.VITE_GD_ENV || 'production',
   reownProjectId: env.VITE_REOWN_PROJECT_ID || '',
+  // Magic (magic.link) publishable key: when set, a player can sign in with an email and get a wallet, no extension needed.
+  magicKey: env.VITE_MAGIC_PUBLISHABLE_KEY || '',
   // Optional pin: when set, the app refuses to redeem from, or pay into, any other vault address than this one.
   vault: env.VITE_VAULT_ADDRESS || '',
   // The G$ token on Celo. Moon Shop payments are made on this token only, whatever a server answer says.

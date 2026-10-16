@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Moonshard: The High Forest \u2014 a pixel action-platformer powered by GoodDollar (G$) on Celo",
+  "description": "Moonshard: The High Forest — a pixel action-platformer powered by GoodDollar (G$) on Celo",
   "scripts": {
     "dev": "vite",
     "dev:local": "node scripts/local-dev/launch.mjs",
@@ -29,6 +29,7 @@
     "@goodsdks/engagement-sdk": "^1.0.4",
     "@walletconnect/ethereum-provider": "^2.25.0",
     "canvas-confetti": "^1.9.4",
+    "magic-sdk": "^33.13.0",
     "phaser": "^4.2.1",
     "viem": "^2.57.2"
   },

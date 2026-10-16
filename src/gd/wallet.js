@@ -20,6 +20,9 @@ const OFFER_ANNOUNCED_WALLETS = true;
 /** Where the wallet the player picked is remembered, so a reload reconnects to that same one. */
 const REMEMBERED_WALLET = 'moonshard.wallet.v1';
 
+/** The id of the wallet made by signing in with an email (gd/magic.js); it is not one of the announced extensions. */
+export const EMAIL_WALLET = 'email';
+
 /** An icon is shown only when it is an image inside the page itself (a data: URL), never one fetched from elsewhere. */
 const safeIcon = (icon) => (typeof icon === 'string' && /^data:image\/[a-z0-9.+-]+[;,]/i.test(icon) ? icon : null);
 
@@ -65,6 +68,8 @@ export function normalizeError(err) {
  * `getFallbackProvider` (optional, async) supplies one when nothing is injected, e.g. WalletConnect.
  * `page` is where wallets announce themselves (EIP-6963); `state.wallets` lists them ({ id, name, icon }) and
  * `connect(id)` uses the one picked. With several and none picked yet, `connect()` answers `choose_wallet`.
+ * `email` (optional) is the sign-in by email (gd/magic.js: `available`, `provider()`, `logout()`): once the player has signed
+ * in there, `connect('email')` uses the wallet it made, and a reload reconnects to it like to any other remembered wallet.
  */
 export function createWalletManager({
   getProvider: getInjected = () => globalThis.window?.ethereum,
@@ -74,12 +79,14 @@ export function createWalletManager({
   page = globalThis.window,
   offerAnnounced = OFFER_ANNOUNCED_WALLETS,
   storage = defaultStorage(),
+  email = null,
 } = {}) {
-  let state = { connected: false, address: null, chainId: null, wrongChain: false, wallets: [] };
+  let state = { connected: false, address: null, chainId: null, wrongChain: false, wallets: [], emailAvailable: Boolean(email?.available) };
   const listeners = new Set();
   let bound = null;
   let fallback = null;
   let chosen = null; // the provider of the announced wallet the player picked
+  let chosenIsEmail = false;
   const getProvider = () => chosen || getInjected() || fallback;
 
   const notify = () => listeners.forEach((fn) => { try { fn({ ...state }); } catch (e) { console.error(e); } });
@@ -98,7 +105,18 @@ export function createWalletManager({
     const wallet = announced.list().find((w) => w.id === id);
     if (!wallet) return false;
     chosen = wallet.provider;
+    chosenIsEmail = false;
     try { storage?.setItem(REMEMBERED_WALLET, id); } catch { /* not remembered: asked again next time */ }
+    return true;
+  }
+  /** Use the wallet the player's email sign-in made, and remember it. False when they are not signed in there. */
+  async function pickEmail() {
+    if (!email?.available) return false;
+    const provider = await email.provider();
+    if (!provider) return false;
+    chosen = provider;
+    chosenIsEmail = true;
+    try { storage?.setItem(REMEMBERED_WALLET, EMAIL_WALLET); } catch { /* not remembered: asked again next time */ }
     return true;
   }
 
@@ -148,7 +166,15 @@ export function createWalletManager({
 
   /** `walletId`: the announced wallet to use (from `state.wallets`); without one, the remembered or only wallet is used. */
   async function connect(walletId) {
-    if (offerAnnounced) {
+    if (walletId === EMAIL_WALLET || (!chosen && (walletId === undefined || walletId === null) && remembered() === EMAIL_WALLET)) {
+      let signedIn = false;
+      try {
+        signedIn = await pickEmail();
+      } catch (err) {
+        return { ok: false, reason: 'wallet_error', message: err?.message };
+      }
+      if (!signedIn) return { ok: false, reason: 'not_signed_in' };
+    } else if (offerAnnounced) {
       const wallets = announced.list();
       if (walletId !== undefined && walletId !== null) {
         if (!pick(walletId)) return { ok: false, reason: 'no_wallet' };
@@ -181,7 +207,9 @@ export function createWalletManager({
 
   /** Reconnect without a prompt, only if the wallet still exposes `expectedAddress`: the remembered wallet, when it is here. */
   async function restore(expectedAddress) {
-    if (offerAnnounced && !chosen) pick(remembered());
+    if (!chosen && remembered() === EMAIL_WALLET) {
+      try { await pickEmail(); } catch { return false; }
+    } else if (offerAnnounced && !chosen) pick(remembered());
     const provider = getProvider();
     if (!provider) return false;
     try {
@@ -198,6 +226,13 @@ export function createWalletManager({
   }
 
   function disconnect() {
+    if (chosenIsEmail) {
+      // signing out of an email wallet is real: otherwise the next reload would sign straight back in
+      chosen = null;
+      chosenIsEmail = false;
+      try { storage?.removeItem(REMEMBERED_WALLET); } catch { /* nothing to forget */ }
+      Promise.resolve(email?.logout?.()).catch(() => { /* already signed out, or offline: the wallet is forgotten here either way */ });
+    }
     set({ connected: false, address: null, wrongChain: false });
   }
 

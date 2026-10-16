@@ -246,3 +246,107 @@ test('a session that turns announced wallets off (the local test launcher) only 
   assert.ok(own.calls.includes('eth_requestAccounts'));
   assert.deepEqual(m.provider.calls, [], 'the real wallet extension was never asked');
 });
+
+// ---- signing in with an email (gd/magic.js) ---------------------------------------------------------------------------------
+
+const memory = () => { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), has: (k) => m.has(k) }; };
+/** A stand-in for the email sign-in: `provider` is what a signed-in player has, null before they sign in. */
+const emailStub = ({ provider = null, available = true } = {}) => {
+  const e = { available, provider: provider, logouts: 0 };
+  e.provider = async () => e.signedIn;
+  e.signedIn = provider;
+  e.logout = async () => { e.logouts += 1; e.signedIn = null; };
+  return e;
+};
+const manager = (email, storage = memory(), extra = {}) => createWalletManager({ getProvider: () => undefined, offerAnnounced: false, storage, email, ...extra });
+
+test('email: not offered unless the game has a key', () => {
+  assert.equal(manager(null).getState().emailAvailable, false);
+  assert.equal(manager(emailStub({ available: false })).getState().emailAvailable, false);
+  assert.equal(manager(emailStub()).getState().emailAvailable, true);
+});
+
+test('email: connecting before signing in says so, and connects after', async () => {
+  const e = emailStub();
+  const w = manager(e);
+  assert.deepEqual(await w.connect('email'), { ok: false, reason: 'not_signed_in' });
+  assert.equal(w.getState().connected, false);
+  e.signedIn = stub();
+  const r = await w.connect('email');
+  assert.equal(r.ok, true);
+  assert.equal(w.getState().address, ADDR.toLowerCase());
+  assert.doesNotThrow(() => w.clients());
+});
+
+test('email: a failure while looking for the signed-in wallet does not throw', async () => {
+  const e = emailStub();
+  e.provider = async () => { throw new Error('Magic is unreachable'); };
+  assert.equal((await manager(e).connect('email')).reason, 'wallet_error');
+});
+
+test('email: a signature and the chain come from the email wallet like from any other', async () => {
+  const w = manager(emailStub({ provider: stub() }));
+  await w.connect('email');
+  assert.equal(w.getState().wrongChain, false);
+  assert.match(await w.signMessage('Moonshard login'), /^0x[0-9a-f]+$/);
+});
+
+test('email: the wallet is remembered, and a reload reconnects to it without a prompt', async () => {
+  const storage = memory();
+  const e = emailStub({ provider: stub() });
+  await manager(e, storage).connect('email');
+  const reloaded = manager(e, storage);
+  assert.equal(await reloaded.restore(ADDR), true);
+  assert.equal(reloaded.getState().connected, true);
+  // an account Magic does not hold any more is not restored
+  const other = manager(emailStub({ provider: stub({ accounts: ['0x0000000000000000000000000000000000000001'] }) }), storage);
+  assert.equal(await other.restore(ADDR), false);
+});
+
+test('email: after a sign-out elsewhere the reload finds nothing to restore', async () => {
+  const storage = memory();
+  const e = emailStub({ provider: stub() });
+  await manager(e, storage).connect('email');
+  e.signedIn = null; // Magic says the player is no longer signed in
+  assert.equal(await manager(e, storage).restore(ADDR), false);
+});
+
+test('email: "reconnect" with no wallet chosen reuses the remembered email wallet', async () => {
+  const storage = memory();
+  const e = emailStub({ provider: stub() });
+  await manager(e, storage).connect('email');
+  const again = manager(e, storage);
+  assert.equal((await again.connect()).ok, true);
+});
+
+test('email: disconnecting signs out of Magic and forgets the wallet, so a reload does not sign back in', async () => {
+  const storage = memory();
+  const e = emailStub({ provider: stub() });
+  const w = manager(e, storage);
+  await w.connect('email');
+  w.disconnect();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(e.logouts, 1);
+  assert.equal(w.getState().connected, false);
+  assert.equal(storage.has('moonshard.wallet.v1'), false);
+  assert.equal(await manager(e, storage).restore(ADDR), false);
+});
+
+test('email: a failed sign-out still disconnects', async () => {
+  const e = emailStub({ provider: stub() });
+  e.logout = async () => { throw new Error('offline'); };
+  const w = manager(e);
+  await w.connect('email');
+  w.disconnect();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(w.getState().connected, false);
+});
+
+test('email: disconnecting a browser wallet leaves Magic alone', async () => {
+  const e = emailStub({ provider: stub() });
+  const w = createWalletManager({ getProvider: () => stub(), offerAnnounced: false, storage: memory(), email: e });
+  await w.connect();
+  w.disconnect();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(e.logouts, 0);
+});

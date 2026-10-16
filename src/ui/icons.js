@@ -138,6 +138,7 @@ IC.spk_off = speaker().line(10, 5, 14, 11, 'e', 2).line(14, 5, 10, 11, 'e', 2).r
 const note = () => canvas().rect(5, 3, 9, 2, '#').rect(5, 3, 2, 9, '#').rect(12, 3, 2, 9, '#').disc(4, 11.5, 2.2, '#').disc(11, 11.5, 2.2, '#');
 IC.note_on = note().rows();
 IC.note_off = note().line(2, 14, 14, 2, 'e', 2).rows();
+IC.mail = canvas().rect(2, 4, 12, 1, '#').rect(2, 12, 12, 1, '#').rect(2, 4, 1, 9, '#').rect(13, 4, 1, 9, '#').line(2, 4, 7, 9, '#').line(13, 4, 8, 9, '#').rows();
 IC.lock = canvas().rect(3, 7, 10, 7, '#').ring(7.5, 6.5, 3.8, 1.8, '#', 180, 360).px(7, 10, '.').px(8, 10, '.').px(7, 11, '.').px(8, 11, '.').rows();
 
 /** An icon as inline SVG, `px` pixels on its longest side. */

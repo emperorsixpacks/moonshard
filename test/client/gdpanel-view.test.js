@@ -398,3 +398,42 @@ test('an icon that is not an image inside the page is not shown', () => {
   const h = gated({ ...anonymous, wallets: [{ id: 'x', name: 'X', icon: 'https://tracker.example/x.png' }, WALLETS[1]] });
   assert.doesNotMatch(h, /tracker\.example/);
 });
+
+/* ---- signing in with an email (src/ui/emailSheet.js): offered only when the game has a Magic key ---- */
+
+test('without a Magic key there is no email button', () => {
+  for (const wallets of [[], [WALLETS[0]], WALLETS]) {
+    for (const h of [gated({ ...anonymous, wallets }), html({ ...anonymous, wallets })]) {
+      assert.doesNotMatch(h, /data-act="email"/);
+      assert.doesNotMatch(h, /Continue with email/);
+    }
+  }
+});
+
+test('with a Magic key and no wallet app, email is the main way in and the wallet is one tap away', () => {
+  for (const h of [gated({ ...anonymous, wallets: [], emailAvailable: true }), html({ ...anonymous, wallets: [], emailAvailable: true })]) {
+    assert.match(h, /<button type="button" class="gold btn gd-wallet" data-act="email"[^>]*>.*Continue with email/s);
+    assert.match(h, /An email is all you need/);
+    assert.match(h, /data-act="connect"[^>]*>I have a wallet</);
+    assert.doesNotMatch(h, /No wallet detected/);
+  }
+});
+
+test('with a Magic key and wallet extensions, email is one more choice beside them, not the main one', () => {
+  const one = gated({ ...anonymous, wallets: [WALLETS[0]], emailAvailable: true });
+  assert.match(one, /class="btn-2 gd-wallet" data-act="email"/);
+  assert.match(one, /data-act="connect" data-id="io\.metamask"/);
+  const many = html({ ...anonymous, wallets: WALLETS, emailAvailable: true });
+  assert.match(many, /Choose how to sign in/);
+  assert.match(many, /data-act="email"/);
+  assert.match(many, /data-act="connect" data-id="io\.rabby"/);
+});
+
+test('the intro lines mention the email only when it is offered', () => {
+  for (const h of [gated({ ...anonymous, wallets: [], emailAvailable: true }), html({ ...anonymous, wallets: [], emailAvailable: true })]) assert.match(h, /Sign in with your email, or connect/);
+  for (const h of [gated({ ...anonymous, wallets: [] }), html({ ...anonymous, wallets: [] })]) assert.doesNotMatch(h, /Sign in with your email/);
+});
+
+test('the email button waits while the wallet is busy', () => {
+  assert.match(gated({ ...anonymous, wallets: [], emailAvailable: true, busy: 'connect' }), /data-act="email"[^>]*disabled/);
+});

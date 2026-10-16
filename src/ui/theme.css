@@ -398,3 +398,17 @@
   #ms-ui .co-title{font-size:23px}
   #ms-ui .co-tasks li{font-size:18px}
 }
+
+/* ===== Signing in with an email (src/ui/emailView.js) ===== */
+#ms-ui .email-form{display:flex;flex-direction:column;gap:14px}
+#ms-ui .email-form .who{color:var(--gold-hi);overflow-wrap:anywhere}
+#ms-ui .field{display:flex;flex-direction:column;gap:6px}
+#ms-ui .field > span{font:400 21px/1 var(--font-ui);color:var(--mist)}
+#ms-ui .field input{
+  width:100%;min-height:56px;padding:0 14px;border:0;border-radius:0;background:var(--ink);color:var(--bone);
+  font:400 28px/1.2 var(--font-ui);box-shadow:var(--bx),var(--sunk);caret-color:var(--gold-hi);
+}
+#ms-ui .field input::placeholder{color:var(--mist-dim)}
+#ms-ui .field input:focus{outline:3px solid var(--gold-hi);outline-offset:2px}
+#ms-ui .field input:disabled{opacity:.5}
+#ms-ui .field input[inputmode="numeric"]{letter-spacing:.35em;text-align:center;font-size:34px}

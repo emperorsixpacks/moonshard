@@ -20,7 +20,7 @@ A pixel action-platformer built with **Phaser 4**, where **GoodDollar (G$) on Ce
 
 **The way in.** Before the story or Endless mode starts, the player connects a wallet, proves they are a verified human, and buys their blade with G$; the game shows these steps as a gate, one step at a time (with today's free claim offered first when the wallet is short of the price), and starts the mode they asked for once they are through. The tutorial needs none of it, so a new player can try the game first: the menu's big button leads there until it has been done. The menu, forge, leaderboard and public stats are open to everyone. The gate is the experience of the rule; the server independently only ranks and pays verified humans, and starts no run for a player without a paid blade. A server with no vault configured has no shop: the first blade is free there and blades are forged from materials alone.
 
-Wallets: any EIP-1193 browser wallet (it signs a login message), plus WalletConnect when `VITE_REOWN_PROJECT_ID` is set. With several wallet extensions installed (MetaMask and Rabby, say), the game finds each one through EIP-6963 and offers a button for each, rather than relying on `window.ethereum`, which only one of them can hold (or none, when they fight over it); the one picked is remembered. **MiniPay is not supported**: it cannot sign messages, and the boss bounty needs a signature.
+Wallets: any EIP-1193 browser wallet (it signs a login message), plus WalletConnect when `VITE_REOWN_PROJECT_ID` is set, plus **Continue with email** when `VITE_MAGIC_PUBLISHABLE_KEY` is set: [Magic](https://magic.link) makes a wallet for a player who types an email and a six-digit code (`src/gd/magic.js`, `src/ui/emailSheet.js`; the SDK is loaded only when a player chooses it, and Moonshard never sees the email address). With several wallet extensions installed (MetaMask and Rabby, say), the game finds each one through EIP-6963 and offers a button for each, rather than relying on `window.ethereum`, which only one of them can hold (or none, when they fight over it); the one picked is remembered. **MiniPay is not supported**: it cannot sign messages, and the boss bounty needs a signature.
 
 ## Run it
 
@@ -75,7 +75,7 @@ Tests:
 
 ## Configuration
 
-Web (`.env.example`): `VITE_API_URL`, `VITE_CELO_RPC_URL`, `VITE_GD_ENV`, `VITE_VAULT_ADDRESS` (pins the vault the app will redeem against), `VITE_REOWN_PROJECT_ID` (WalletConnect: needed for phones without a browser wallet, since a wallet is required to play).
+Web (`.env.example`): `VITE_API_URL`, `VITE_CELO_RPC_URL`, `VITE_GD_ENV`, `VITE_VAULT_ADDRESS` (pins the vault the app will redeem against), `VITE_REOWN_PROJECT_ID` (WalletConnect: needed for phones without a browser wallet, since a wallet is required to play), `VITE_MAGIC_PUBLISHABLE_KEY` (email sign-in; allow the site's origin in the Magic dashboard).
 
 Server (`server/.env.example`): `PORT`, `JWT_SECRET`, `CORS_ORIGINS`, `TRUST_PROXY` (number of proxies in front of the API, default 1), `DATABASE_URL` (empty = in-memory), `CELO_RPC_URL`, `CHAIN_ID`, `VAULT_ADDRESS`, `VOUCHER_SIGNER_KEY`, `APP_SIGNER_KEY`. Prize sizes, caps, anti-cheat limits and the Moon Shop's items and prices live in `server/config.js` (`GAME`); the shop is open only when `VAULT_ADDRESS` is set, since that is where every payment goes. `PRIZES_ENABLED` (off unless `true`) switches the daily prizes and the Shard Harvest on.
 
