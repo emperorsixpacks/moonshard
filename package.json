@@ -22,6 +22,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@fontsource/jersey-15": "5.3.0",
     "@fontsource/press-start-2p": "5.3.0",
     "@fontsource/vt323": "5.3.0",
     "@goodsdks/citizen-sdk": "^1.2.7",

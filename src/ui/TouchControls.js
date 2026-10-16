@@ -2,6 +2,7 @@ import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
 import { gdService } from '../engine/GdService.js';
 import { walletPillText } from './gdPanelView.js';
+import { input } from '../engine/inputMode.js';
 
 export class TouchController {
   constructor(game) {
@@ -18,12 +19,10 @@ export class TouchController {
 
     this.touchContainer = document.getElementById('touch-controls');
     this.isVisible = false;
-    const isPortrait = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
-    if (isPortrait) {
-      this.show();
-    } else {
-      this.hide();
-    }
+    // A scene asks for the pad (show) or not (hide); it is drawn only while the player plays with their fingers.
+    this.wanted = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
+    this.paint();
+    input.subscribe(() => this.paint());
     this.initTouchButtons();
     this.initHeaderButtons();
     this.initWalletButton();
@@ -31,10 +30,8 @@ export class TouchController {
   }
 
   show() {
-    this.isVisible = true;
-    if (this.touchContainer) {
-      this.touchContainer.classList.remove('hidden');
-    }
+    this.wanted = true;
+    this.paint();
   }
 
   hide(force = false) {
@@ -44,10 +41,18 @@ export class TouchController {
       this.show();
       return;
     }
-    this.isVisible = false;
+    this.wanted = false;
+    this.paint();
+  }
+
+  /** Draw or hide the pad: it is wanted by the scene and the player is on touch. */
+  paint() {
+    const visible = this.wanted && input.mode === 'touch';
+    this.isVisible = visible;
     if (this.touchContainer) {
-      this.touchContainer.classList.add('hidden');
+      this.touchContainer.classList.toggle('hidden', !visible);
     }
+    if (visible) return;
     // Clear any held directional / action states so inputs do not stick
     for (const k of Object.keys(this.state)) {
       this.state[k] = false;
@@ -109,7 +114,8 @@ export class TouchController {
     document.addEventListener(
       'touchmove',
       (e) => {
-        if (e.target.closest('#gd-panel') || e.target.closest('.modal-body')) {
+        // a sheet's body scrolls with the thumb; everything else holds still
+        if (e.target.closest('#ms-ui .sheet-b')) {
           return;
         }
         e.preventDefault();
@@ -327,9 +333,10 @@ export class TouchController {
     if (btnTouch && this.touchContainer) {
       btnTouch.addEventListener('click', () => {
         if (this.touchContainer.classList.contains('hidden')) {
+          input.touched();
           this.show();
         } else {
-          this.hide();
+          this.hide(true);
         }
       });
     }

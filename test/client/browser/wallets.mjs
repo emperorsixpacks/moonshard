@@ -5,15 +5,13 @@
 //   after a reload, the session comes back through that same wallet
 //   with one wallet, its button names it
 //   node test/client/browser/wallets.mjs        (run from the repository root)
-import { bootGame } from './lib.mjs';
+import { bootGame, waitSheet } from './lib.mjs';
 import { installApi } from './api-stub.mjs';
 
 const log = (...a) => console.log(...a);
 const failures = [];
 const check = (ok, message) => { if (!ok) { failures.push(message); log(`   ✗ ${message}`); } else log(`   ✓ ${message}`); };
-const panelText = (page) => page.evaluate(() => document.querySelector('#gd-panel')?.innerText ?? '');
-const waitPanel = (page, re) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('#gd-panel')?.innerText ?? ''), re.source, { timeout: 20_000 })
-  .then(() => true, () => false);
+const waitPanel = (page, re) => waitSheet(page, re);
 
 /** Two wallet extensions that announce themselves, and a window.ethereum that two extensions fighting over it broke. */
 const extensions = (wallets) => `
@@ -54,7 +52,7 @@ const extensions = (wallets) => `
     const buttons = await g.page.$$eval('[data-act="connect"]', (els) => els.map((el) => ({ id: el.dataset.id, text: el.innerText.trim() })));
     check(JSON.stringify(buttons) === JSON.stringify([{ id: 'io.metamask', text: 'MetaMask' }, { id: 'io.rabby', text: 'Rabby Wallet' }]), `one button each (${JSON.stringify(buttons)})`);
     await g.page.click('[data-act="connect"][data-id="io.rabby"]');
-    check(await waitPanel(g.page, /VERIFIED HUMAN/), 'picking Rabby connects and signs in');
+    check(await waitPanel(g.page, /Verified human/), 'picking Rabby connects and signs in');
     const calls = await g.page.evaluate(() => window.__walletCalls);
     check(calls.includes('io.rabby eth_requestAccounts') && calls.includes('io.rabby personal_sign'), 'Rabby was asked to connect and to sign');
     check(!calls.some((c) => c.startsWith('io.metamask') || c.startsWith('window.ethereum')), `MetaMask and the broken window.ethereum were never asked (${calls.join(', ')})`);
@@ -78,9 +76,9 @@ const extensions = (wallets) => `
     await g.goto();
     log('▶ only MetaMask');
     await g.page.evaluate(() => window.__gdPanel.open());
-    check(await waitPanel(g.page, /CONNECT METAMASK/), 'the button names the wallet');
+    check(await waitPanel(g.page, /Connect MetaMask/), 'the button names the wallet');
     await g.page.click('[data-act="connect"]');
-    check(await waitPanel(g.page, /VERIFIED HUMAN/), 'and connects with it');
+    check(await waitPanel(g.page, /Verified human/), 'and connects with it');
     check(g.errors.length === 0, `no browser errors ${g.errors.join(' | ')}`);
   } finally { await g.close(); }
 }

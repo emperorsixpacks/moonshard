@@ -92,6 +92,28 @@ What the owner decided (above), built test first at every level, then proven on 
 
 **Trying it by hand.** `npm run dev:local` starts a local fork of Celo mainnet (the real GoodDollar contracts), the vault, the API and the game, with a built-in test wallet and a stand-in for the face scan that passes on a click, plus a page showing the test player's G$ in and out. It exists only in that launcher's own dev server; `npm run test:build` fails if any of it reaches a production build.
 
+## Fifth pass: the front door, redesigned (2026-10)
+
+The owner's brief: onboarding had too many sections, the interface was too green and looked dated, and most players are on phones. Decisions, agreed with the owner:
+
+- **Look.** Cool ink and slate for every interface surface, gold for the one main action and for G$, green only in the forest art and the verified tick. Pixel type: Press Start 2P for the logo and the G$ numbers only; Jersey 15 for all other text. (Pixelify Sans was tried and dropped: capital B and G look the same at phone sizes.) Icons are drawn by code (`src/ui/icons.js`), 16x16 with an automatic dark outline, not emoji.
+- **Where it lives.** The menu, the wallet, the way in, settings, the chapter list, the pause menu and the loading screen are page elements under one root, `#ms-ui` (`src/ui/theme.css`, every selector scoped under it), not shapes in the game canvas. The canvas keeps the world and the in-run HUD. The wallet's content is still a pure function of the service status (`src/ui/gdPanelView.js`), which is what the unit tests cover.
+- **The way in.** The tutorial needs no wallet any more (`GATED_SCENES` no longer lists it): a new player's big button leads there first, and the gate meets them when they leave it for the story. The gate shows one step at a time; the Prologue skips its own "play the tutorial?" question for anyone who has done it.
+- **Less.** The seven-row menu is one button (Play, or Continue at the furthest unlocked chapter) and three tiles (Endless, Forge, Ranks), with the wallet chip and a settings gear. The G$ guide no longer opens by itself or has a row: its content (still entirely server-driven, never invented) is the closed "How G$ works" card at the bottom of the wallet. A bounty the server has not set up is not shown, instead of "coming soon".
+- **Mobile.** Sheets scroll with a thumb (the touch controls used to block every touch move outside the old panel); the loading screen stops taking taps the moment the game is ready; the pause menu sits below the sheets so a refused restart opens the gate over it.
+
+Verified: 516 client unit tests (the wallet, gate, guide and menu tests were ported, not dropped), the real-browser checks in `test/client/browser` (rewritten for the new menu and sheets: `menu`, `gate`, `gate-restart`, `shop`, `prizes`, `wallets`, `scene-teardown`), and `npm run test:smoke`. Not run here: `local-dev` and `npm run test:browser` (they need internet and Foundry); their selectors were translated and are untested.
+
+### In the run (second pass)
+
+- **Controls.** Keyboard: move with A/D or the arrows, jump with Space, W or Up, attack with **E** (J and Enter still work; Z no longer does), strike upward by holding W/Up with E, or with K. E already turns the pages of a story dialogue; pressing it to close one does not also swing the sword (`test/client/browser/tutorial.mjs` checks it).
+- **Keyboard or fingers.** `src/engine/inputMode.js` follows how the player is playing: a phone starts as touch and a computer as keys, and the first real touch or game key switches it. The on-screen pad is drawn only for touch (it used to cover the screen of every computer), and the tutorial names keys or buttons to match (the old lesson text only ever said "tap the D-Pad").
+- **The lesson card.** The tutorial's card is now a page element (`src/ui/coachView.js`, copy in `src/ui/tutorialLessons.js`): Sylva, six steps, the instruction, and a checklist whose boxes tick as the moves are made. A "Skip" link counts the tutorial as done and returns to the menu. All six lessons are kept (the four-lesson cut is still undecided). "Training complete" is a sheet like the rest of the front door.
+- **The chrome.** The pad is squares with the stepped edge, Jump big and gold under the right thumb with Slash beside it and Up above it, sizes following the screen width; the page header, pause button and G$ pill dropped the green; the G$ pill hides while a run is on (the wallet is one tap away from the menu).
+- **Feel.** Dust at the feet when running, jumping and landing (more for a harder fall), and a gold burst when a lesson is done. The swing's white crescent was already in the attack animation, so no extra arc was added.
+
+Still on the old look (next passes): the story's HUD bar, dialogue boxes and chapter card, the story and Endless result screens, the Forge and the Leaderboard.
+
 ## What was verified, and how
 
 | Claim | Evidence |

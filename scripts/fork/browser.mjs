@@ -62,8 +62,9 @@ await context.addInitScript(({ address }) => {
 }, { address: player.address });
 
 const shot = (name) => page.screenshot({ path: `${SHOTS}${name}.png` });
-// the header button is shown in portrait, the floating one in landscape
-const openWallet = () => page.locator('#btn-wallet:visible, #btn-wallet-landscape:visible').first().click();
+// the wallet chip on the menu (the menu is page elements over the whole screen)
+const openWallet = async () => { await page.waitForSelector('#ms-menu [data-act="wallet"]', { timeout: 30_000 }); await page.click('#ms-menu [data-act="wallet"]'); };
+const closeSheet = async () => { await page.click('#ms-sheets [data-sheet="close"]'); await page.waitForFunction(() => !document.querySelector('#ms-sheets .sheet'), null, { timeout: 5000 }); };
 const startScene = async (key, data) => {
   // Phaser's scene.start leaves other scenes running underneath; stop them so one scene (and one run ticket) is live
   await page.evaluate(([k, d]) => {
@@ -73,7 +74,7 @@ const startScene = async (key, data) => {
   await page.waitForFunction((k) => window.game.scene.isActive(k), key, { timeout: 30_000 });
 };
 const gameReady = () => page.waitForFunction(() => window.game?.scene?.isActive('MenuScene'), null, { timeout: 60_000 });
-const panelHas = (text) => page.waitForFunction((t) => document.querySelector('#gd-panel')?.innerText.includes(t), text, { timeout: 60_000 });
+const panelHas = (text) => page.waitForFunction((t) => document.querySelector('#ms-sheets .sheet')?.innerText.includes(t), text, { timeout: 60_000 });
 const forgeTexts = () => page.evaluate(() => window.game.scene.getScene('ForgeScene').contentContainer.list.filter((o) => o.type === 'Text').map((o) => o.text));
 /** A real click on the Forge button whose label starts with `label` (the first one, top to bottom). */
 async function clickForge(label) {
@@ -92,53 +93,51 @@ try {
   await page.goto(web);
   await gameReady();
 
-  console.log('▶ a first visit opens the G$ guide');
-  await panelHas('WHAT G$ IS');
-  await panelHas('Rusted Shortsword: 20 G$');
-  await shot('guide-first-visit');
-  await page.click('#gd-close');
-  await page.waitForTimeout(800);
+  console.log('▶ a first visit opens nothing by itself');
+  await page.waitForTimeout(1500);
+  assert.equal(await page.evaluate(() => Boolean(document.querySelector('#ms-sheets .sheet'))), false, 'a guide or panel opened by itself');
   await shot('menu-desktop');
 
   console.log('▶ panel, disconnected');
   await openWallet();
-  await panelHas('NOT CONNECTED');
+  await panelHas('Connect wallet');
+  await panelHas('How G$ works');
   await shot('panel-disconnected');
 
   console.log('▶ the way in: connect, prove you are human, buy your blade with G$, play');
-  await page.click('#gd-close');
-  await page.evaluate(() => window.game.scene.getScene('MenuScene').scene.start('SurvivalScene')); // what a menu row does
-  await panelHas('VERIFIED HUMANS ONLY');
+  await closeSheet();
+  await page.evaluate(() => window.game.scene.getScene('MenuScene').scene.start('SurvivalScene')); // what a menu tile does
+  await panelHas('one human, one slot');
   assert.equal(await page.evaluate(() => window.game.scene.isActive('SurvivalScene')), false, 'play started without a verified human');
   await shot('gate-connect');
-  await page.click('[data-act="connect"]');
+  await page.click('#ms-sheets [data-act="connect"]');
   // this wallet is a whitelisted human on the fork, holding no G$ yet: the blade step offers today's free claim first
-  await panelHas('3. Buy your blade with G$');
+  await panelHas('Get your blade');
   await panelHas('You need 20 G$');
   await shot('gate-blade-claim-first');
   console.log('   claim daily G$ through the real ClaimSDK, from the gate');
-  await page.click('[data-act="ubi"]');
-  await panelHas('BUY RUSTED SHORTSWORD — 20 G$');
+  await page.click('#ms-sheets [data-act="ubi"]');
+  await panelHas('Buy for 20 G$');
   await shot('gate-blade-buy');
   console.log('   buy the blade: a real G$ transfer into the prize vault');
   const vaultBefore = await f.pub.readContract({ address: f.contracts.token, abi: erc20, functionName: 'balanceOf', args: [f.contracts.vault] });
-  await page.click('[data-act="buy"]');
-  await panelHas('PLAY ENDLESS MODE');
+  await page.click('#ms-sheets [data-act="buy"]');
+  await panelHas('Play Endless mode');
   const vaultAfter = await f.pub.readContract({ address: f.contracts.token, abi: erc20, functionName: 'balanceOf', args: [f.contracts.vault] });
   assert.equal(vaultAfter - vaultBefore, 20n * 10n ** 18n, 'the prize vault received the 20 G$');
   await shot('gate-ready');
-  await page.click('[data-act="play"]');
+  await page.click('#ms-sheets [data-act="play"]');
   const firstEndlessAt = Date.now();
   await page.waitForFunction(() => window.game.scene.isActive('SurvivalScene'), null, { timeout: 30_000 });
   await startScene('MenuScene');
 
   console.log('▶ verified human with a blade: the blessing from the claim, the balance on the G$ button');
   await openWallet();
-  await panelHas('VERIFIED HUMAN');
-  await panelHas('BLESSING ACTIVE');
+  await panelHas('Verified human');
+  await panelHas("Citizen's Blessing");
   await page.waitForFunction(() => /^G\$ [0-9]/.test(document.querySelector('#wallet-btn-text-landscape')?.textContent ?? ''), null, { timeout: 30_000 });
   await shot('panel-claimed');
-  await page.click('#gd-close');
+  await closeSheet();
 
   console.log('▶ Daily Shard Trial in the real game (ticketed run, 35 s)');
   // The server paces Endless starts 10 s apart per player (GAME.START_GAP_MS), and PLAY in the gate started one moments ago.
@@ -184,12 +183,12 @@ try {
   await startScene('MenuScene');
   await openWallet();
   // the player's share of the pool's 5,000 G$ (registered at 80 / 60), read from the chain by the API: not the headline
-  await panelHas('CLAIM 2,400 G$ BOUNTY');
+  await panelHas('Claim 2,400 G$ bounty');
   await shot('panel-bounty');
-  await page.click('[data-act="bounty"]');
+  await page.click('#ms-sheets [data-act="bounty"]');
   await panelHas('First-boss bounty claimed');
   await shot('panel-bounty-claimed');
-  await page.click('#gd-close');
+  await closeSheet();
 
   console.log('▶ the Forge: a look bought with G$, and a blade forged from materials plus a G$ fee');
   await startScene('ForgeScene');
@@ -216,12 +215,12 @@ try {
   api.advance(27 * 3600_000);
   await settleDue(api.ctx);
   await openWallet();
-  await panelHas('REDEEM');
+  await panelHas('Redeem');
   await shot('panel-spoils');
-  await page.click('[data-act="redeem"]');
-  await panelHas('CLAIMED');
+  await page.click('#ms-sheets [data-act="redeem"]');
+  await panelHas('Claimed');
   await shot('panel-spoils-redeemed');
-  await page.click('#gd-close');
+  await closeSheet();
 
   console.log('▶ mobile portrait');
   await page.setViewportSize({ width: 390, height: 844 });
@@ -250,8 +249,8 @@ try {
     url: location.href,
     hasGame: Boolean(window.game),
     activeScenes: window.game?.scene?.getScenes(true).map((s) => s.scene.key),
-    gdPanel: document.querySelector('#gd-panel')?.className,
-    panelText: document.querySelector('#gd-panel')?.innerText.slice(0, 600),
+    sheet: document.querySelector('#ms-sheets .sheet')?.className,
+    sheetText: document.querySelector('#ms-sheets .sheet')?.innerText.slice(0, 600),
   })).catch((e) => `unavailable: ${e.message}`));
   await page.screenshot({ path: `${SHOTS}FAILURE.png` }).catch(() => {});
   process.exitCode = 1;

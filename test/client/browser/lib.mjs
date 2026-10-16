@@ -13,9 +13,9 @@ const ROOT = new URL('../../../', import.meta.url).pathname;
  *    origin so the test can answer it with `page.route`.
  *  - `deviceScaleFactor`: the screen's pixel density (a sharp 2x display, say).
  *  - `clock`: install Playwright's fake clock before the page loads (Date, timers, rAF and performance.now all follow it).
- *  - `guide`: a first visit, on which the G$ guide opens by itself. By default the page is a returning player's.
+ *  - `tutorialDone`: the player has been through the tutorial (the menu's big button then leads to the story, not to it).
  */
-export async function bootGame({ api = false, clock = false, viewport = { width: 1280, height: 800 }, deviceScaleFactor, init, guide = false } = {}) {
+export async function bootGame({ api = false, clock = false, viewport = { width: 1280, height: 800 }, deviceScaleFactor, init, tutorialDone = false } = {}) {
   const port = await freePort();
   const web = `http://127.0.0.1:${port}`;
   const env = { ...process.env };
@@ -34,8 +34,8 @@ export async function bootGame({ api = false, clock = false, viewport = { width:
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
     if (clock) await page.clock.install();
-    // a returning player: the G$ guide that opens by itself on a first visit has been seen (`guide: true` for a first visit)
-    if (!guide) await page.addInitScript({ content: "localStorage.setItem('moonshard.guide.seen.v1', '1');" });
+    // a player who has done the tutorial: the menu's big button leads to the story
+    if (tutorialDone) await page.addInitScript({ content: "localStorage.setItem('MOONSHARD_SAVE_V1', JSON.stringify({ tutorialDone: true, prologueSeen: true }));" });
     if (init) await page.addInitScript({ content: init }); // a string of JS, run before the app on every load
     return {
       page, web, errors, close, context,
@@ -95,3 +95,33 @@ export async function clickMenuRow(page, label) {
   }, label);
   await page.mouse.click(at.x, at.y);
 }
+
+/* ---- the interface layer: the menu and the sheets over the screen (src/ui) ---- */
+
+/** The sheet over the screen right now (the wallet, the way in, settings, the chapter list). */
+export const sheetOpen = (page) => page.evaluate(() => Boolean(document.querySelector('#ms-sheets .sheet:not(.out)')));
+export const sheetText = (page) => page.evaluate(() => document.querySelector('#ms-sheets .sheet')?.innerText ?? '');
+/** The kind of sheet: 'wallet', 'gate', 'settings', 'chapters' or '' when none is open. */
+export const sheetName = (page) => page.evaluate(() => (document.querySelector('#ms-sheets .sheet')?.className.match(/\bs-(\w+)/) ?? [])[1] ?? '');
+/** Waits for a sheet whose text matches `re` (any sheet when `re` is omitted). Resolves true, or false after `timeout`. */
+export const waitSheet = (page, re = /./, timeout = 20_000) => page.waitForFunction(
+  (src) => new RegExp(src).test(document.querySelector('#ms-sheets .sheet:not(.out)')?.innerText ?? ''),
+  re.source, { timeout },
+).then(() => true, () => false);
+/** Closes the sheet with its close button, and waits for it to slide away. */
+export async function closeSheet(page) {
+  if (!(await sheetOpen(page))) return;
+  await page.click('#ms-sheets [data-sheet="close"]');
+  await page.waitForFunction(() => !document.querySelector('#ms-sheets .sheet'), null, { timeout: 5000 });
+}
+/** A real click on a control of the menu: play, endless, forge, ranks, wallet, settings, chapters. */
+export async function clickMenu(page, act) {
+  const sel = `#ms-menu [data-act="${act}"]`;
+  await page.waitForSelector(sel, { timeout: 30_000 });
+  await page.click(sel);
+}
+/** What the menu's big button says: its title and the line under it. */
+export const playButton = (page) => page.evaluate(() => {
+  const b = document.querySelector('#ms-menu .btn-main');
+  return b ? { title: b.querySelector('b').textContent, sub: b.querySelector('small').textContent } : null;
+});

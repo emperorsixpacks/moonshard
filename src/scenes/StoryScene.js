@@ -348,7 +348,7 @@ export default class StoryScene extends Phaser.Scene {
 
     // Keyboard inputs
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.cursors.keys = this.input.keyboard.addKeys('W,A,S,D,J,K,Z,X,E,R,ENTER,ESC');
+    this.cursors.keys = this.input.keyboard.addKeys('W,A,S,D,J,K,X,E,R,ENTER,ESC');
 
     // On-screen HUD
     this.createStoryHUD();
@@ -3546,7 +3546,6 @@ export default class StoryScene extends Phaser.Scene {
         Phaser.Input.Keyboard.JustDown(this.cursors.space) ||
         (this.cursors.keys?.ENTER && Phaser.Input.Keyboard.JustDown(this.cursors.keys.ENTER)) ||
         (this.cursors.keys?.J && Phaser.Input.Keyboard.JustDown(this.cursors.keys.J)) ||
-        (this.cursors.keys?.Z && Phaser.Input.Keyboard.JustDown(this.cursors.keys.Z)) ||
         (this.cursors.keys?.E && Phaser.Input.Keyboard.JustDown(this.cursors.keys.E))
       );
       if (advancePressed) {

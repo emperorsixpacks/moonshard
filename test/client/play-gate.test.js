@@ -41,7 +41,7 @@ test('a verified human without a blade is at step three: get the blade, which is
     assert.equal(gateStep(s), 'blade', JSON.stringify(owned));
     assert.equal(canPlay(s), false);
     assert.equal(blocksStart('SurvivalScene', s), true);
-    assert.equal(blocksStart('TutorialScene', s), true, 'the tutorial too');
+    assert.equal(blocksStart('TutorialScene', s), false, 'the tutorial is open to everyone');
   }
   assert.deepEqual(entryBlade(SHOP), BLADE);
 });
@@ -73,14 +73,14 @@ test('only a verified human can play; everyone else cannot', () => {
 });
 
 test('every way into play is covered, and the places that are not play are not', () => {
-  for (const key of ['StoryScene', 'StoryIntroScene', 'TutorialScene', 'SurvivalScene']) assert.ok(GATED_SCENES.has(key), key);
-  for (const key of ['MenuScene', 'ForgeScene', 'LeaderboardScene', 'BootScene', 'StoryEndingScene']) assert.equal(GATED_SCENES.has(key), false, key);
+  for (const key of ['StoryScene', 'StoryIntroScene', 'SurvivalScene']) assert.ok(GATED_SCENES.has(key), key);
+  for (const key of ['MenuScene', 'TutorialScene', 'ForgeScene', 'LeaderboardScene', 'BootScene', 'StoryEndingScene']) assert.equal(GATED_SCENES.has(key), false, key);
 });
 
 test('starting a play scene is blocked until verified; other scenes always start', () => {
   const anon = status({ connected: false, verified: false, status: 'anonymous' });
   assert.equal(blocksStart('SurvivalScene', anon), true);
-  assert.equal(blocksStart('TutorialScene', anon), true);
+  assert.equal(blocksStart('TutorialScene', anon), false, 'a visitor with no wallet can play the tutorial');
   assert.equal(blocksStart('StoryScene', status({ verified: false, status: 'unverified' })), true);
   assert.equal(blocksStart('LeaderboardScene', anon), false);
   assert.equal(blocksStart('ForgeScene', anon), false);
@@ -98,7 +98,7 @@ test('each mode has a name the gate can show', () => {
   assert.equal(gateLabel('SurvivalScene'), 'ENDLESS MODE');
   assert.equal(gateLabel('StoryScene'), 'STORY MODE');
   assert.equal(gateLabel('StoryIntroScene'), 'STORY MODE');
-  assert.equal(gateLabel('TutorialScene'), 'THE TUTORIAL');
+  assert.equal(gateLabel('TutorialScene'), 'THE GAME', 'the tutorial never opens the gate, so it has no name there');
   assert.equal(gateLabel('SomethingElse'), 'THE GAME');
 });
 

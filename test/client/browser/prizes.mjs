@@ -1,18 +1,14 @@
 // Prizes switched off on the server (PRIZES_ENABLED, the deployed default), in a real browser: nothing in the game promises
 // or pays them. No Shards drop and the Shard counter is gone, the result screen has no Shard line, the wallet panel has no
-// Spoils, the guide names only the bounty, and the leaderboard has no Spoils button or footer. The daily claim, the blade and
+// Spoils, "How G$ works" names only the bounty, and the leaderboard has no Spoils button or footer. The daily claim, the blade and
 // the bounty are not prizes and stay. (With prizes on, the other browser checks cover them.)
 //   node test/client/browser/prizes.mjs        (run from the repository root)
-import { bootGame, inScene, sceneTexts, settled } from './lib.mjs';
+import { bootGame, closeSheet, inScene, sceneTexts, settled, sheetText, waitSheet } from './lib.mjs';
 import { installApi, sessionInit } from './api-stub.mjs';
 
 const log = (...a) => console.log(...a);
 const failures = [];
 const check = (ok, message) => { if (!ok) { failures.push(message); log(`   ✗ ${message}`); } else log(`   ✓ ${message}`); };
-const panelText = (page) => page.evaluate(() => document.querySelector('#gd-panel')?.innerText ?? '');
-const waitPanel = (page, re) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('#gd-panel')?.innerText ?? ''), re.source, { timeout: 20_000 })
-  .then(() => true, () => false);
-
 const g = await bootGame({ api: true, init: sessionInit() });
 try {
   await installApi(g.page, { verified: true, prizes: false });
@@ -32,17 +28,17 @@ try {
   const details = await inScene(g.page, 'SurvivalScene', (scene) => scene.gameOverDetailsText({ shards: 0, result: null, label: 'Run recorded' }));
   check(!/Shard/.test(details) && !/\n\n/.test(details), 'the result screen has no Shard line, and no gap where it was');
 
-  log('▶ the wallet panel and the guide');
+  log('▶ the wallet and "How G$ works"');
   await g.startScene('MenuScene');
   await g.page.evaluate(() => window.__gdPanel.open());
-  check(await waitPanel(g.page, /VERIFIED HUMAN/), 'the panel opens');
-  const panel = await panelText(g.page);
-  check(!/SPOILS|Shards today/.test(panel), 'no Spoils section and no Shard line');
-  check(/FIRST-BOSS BOUNTY/.test(panel), 'the bounty stays (GoodDollar pays it)');
-  await g.page.evaluate(() => window.__gdPanel.openGuide());
-  check(await waitPanel(g.page, /THE FIRST-BOSS BOUNTY/), 'the guide names the bounty as what there is to win');
-  check(!/Daily prizes|Shard Harvest|top 3/.test(await panelText(g.page)), 'and no daily prizes or Shard Harvest');
-  await g.page.click('#gd-close');
+  check(await waitSheet(g.page, /Verified human/), 'the wallet opens');
+  const panel = await sheetText(g.page);
+  check(!/Spoils|Shards today/.test(panel), 'no Spoils section and no Shard line');
+  check(/First-boss bounty/.test(panel), 'the bounty stays (GoodDollar pays it)');
+  await g.page.click('#ms-sheets details.how summary');
+  check(await waitSheet(g.page, /bounty for your first boss|First-boss bounty:/), 'the card names the bounty as what there is to win');
+  check(!/Daily prizes|Shard Harvest|top 3/.test(await sheetText(g.page)), 'and no daily prizes or Shard Harvest');
+  await closeSheet(g.page);
 
   log('▶ the leaderboard');
   await g.startScene('LeaderboardScene');

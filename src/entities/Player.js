@@ -116,6 +116,15 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       this.isWallSliding = false;
     }
 
+    // A hard landing kicks up dust; the faster the fall, the more
+    if (!onGround) {
+      this.fallSpeed = Math.max(this.fallSpeed || 0, this.body.velocity.y);
+    } else {
+      if (this.wasAirborne && this.fallSpeed > 140) this.spawnDust(this.fallSpeed > 300 ? 8 : 5);
+      this.fallSpeed = 0;
+    }
+    this.wasAirborne = !onGround;
+
     // Input state combining keyboard & touch
     const left = cursors.left.isDown || cursors.keys?.A?.isDown || customInputs.left;
     const right = cursors.right.isDown || cursors.keys?.D?.isDown || customInputs.right;
@@ -126,7 +135,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                         Phaser.Input.Keyboard.JustDown(cursors.keys?.W) ||
                         customInputs.justJump;
     const attackPressed = (cursors.keys?.J && Phaser.Input.Keyboard.JustDown(cursors.keys.J)) ||
-                          (cursors.keys?.Z && Phaser.Input.Keyboard.JustDown(cursors.keys.Z)) ||
+                          (cursors.keys?.E && Phaser.Input.Keyboard.JustDown(cursors.keys.E)) ||
                           (cursors.keys?.ENTER && Phaser.Input.Keyboard.JustDown(cursors.keys.ENTER)) ||
                           customInputs.justAttack;
     const upSlashPressed = (cursors.keys?.K && Phaser.Input.Keyboard.JustDown(cursors.keys.K)) ||
@@ -149,6 +158,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     // Movement (locked or restricted during heavy attack swing)
     if (!this.isAttacking || !onGround) {
       const speed = GAME_CONFIG.PLAYER.RUN_SPEED;
+      if (onGround && (left || right) && !this.isAttacking && this.scene.time.now - (this.lastDustAt || 0) > 160) {
+        this.lastDustAt = this.scene.time.now;
+        this.spawnDust(1);
+      }
       if (left) {
         this.setVelocityX(-speed);
         this.setFlipX(true);
@@ -184,6 +197,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       } else if (onGround) {
         // Normal jump
         this.setVelocityY(GAME_CONFIG.PLAYER.JUMP_FORCE);
+        this.spawnDust(4);
         sound.playJump(false);
         this.play('player_jump_start', true);
       } else if (this.canDoubleJump) {
@@ -460,6 +474,26 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.pet) this.pet.destroy();
     sound.playEnemyDeath();
     this.play('player_dead', true);
+  }
+
+  /** Dust at the feet: a few specks that drift up and fade. */
+  spawnDust(count = 4) {
+    const scene = this.scene;
+    if (!scene?.add) return;
+    const y = this.body.bottom - 1;
+    for (let i = 0; i < count; i++) {
+      const x = this.x + Phaser.Math.Between(-8, 8);
+      const speck = scene.add.circle(x, y, Phaser.Math.FloatBetween(2, 3.4), 0xdfe6f2, 0.8).setDepth(this.depth - 1);
+      scene.tweens.add({
+        targets: speck,
+        x: x + Phaser.Math.Between(-14, 14),
+        y: y - Phaser.Math.Between(3, 10),
+        alpha: 0,
+        scale: 0.3,
+        duration: Phaser.Math.Between(240, 380),
+        onComplete: () => speck.destroy(),
+      });
+    }
   }
 
   spawnDoubleJumpPuff() {

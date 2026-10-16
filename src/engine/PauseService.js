@@ -1,5 +1,6 @@
 import { sound } from './Audio.js';
 import { startIsBlocked } from './playGate.js';
+import { audioHtml, pauseHtml } from '../ui/pauseView.js';
 
 export class PauseService {
   constructor() {
@@ -32,33 +33,25 @@ export class PauseService {
     this.headerTimerBadge = document.getElementById('header-timer-badge');
     this.headerTimerText = document.getElementById('header-timer-text');
     this.modal = document.getElementById('pause-modal');
-    this.txtMode = document.getElementById('pause-mode-desc');
-
-    const btnClose = document.getElementById('btn-close-pause');
-    const btnResume = document.getElementById('btn-pause-resume');
-    const btnRetry = document.getElementById('btn-pause-retry');
-    const btnMenu = document.getElementById('btn-pause-menu');
-
-    this.btnPauseSound = document.getElementById('btn-pause-sound');
-    this.txtPauseSound = document.getElementById('txt-pause-sound');
-    this.btnPauseMusic = document.getElementById('btn-pause-music');
-    this.txtPauseMusic = document.getElementById('txt-pause-music');
-
-    if (this.btnPauseSound) {
-      this.btnPauseSound.addEventListener('click', (e) => {
-        e.preventDefault();
-        const isMuted = sound.toggleSound();
-        this.updateAudioButtons();
-        if (!isMuted) sound.playBlip(true);
-      });
-    }
-
-    if (this.btnPauseMusic) {
-      this.btnPauseMusic.addEventListener('click', (e) => {
-        e.preventDefault();
-        sound.toggleMusic();
-        this.updateAudioButtons();
-        sound.playBlip(true);
+    if (this.modal) {
+      this.modal.innerHTML = pauseHtml({ soundOn: !sound.isSoundMuted(), musicOn: !sound.isMusicMuted() });
+      this.txtMode = document.getElementById('pause-mode-desc');
+      this.audioEl = document.getElementById('pause-audio');
+      // one listener serves every button in the pause menu (and the dimmed screen behind it)
+      this.modal.addEventListener('click', (e) => {
+        const act = e.target.closest('[data-act]')?.dataset.act;
+        if (act === 'resume') this.resume();
+        else if (act === 'retry') this.retry();
+        else if (act === 'menu') this.goToMenu();
+        else if (act === 'sound') {
+          const isMuted = sound.toggleSound();
+          this.updateAudioButtons();
+          if (!isMuted) sound.playBlip(true);
+        } else if (act === 'music') {
+          sound.toggleMusic();
+          this.updateAudioButtons();
+          sound.playBlip(true);
+        }
       });
     }
 
@@ -87,30 +80,6 @@ export class PauseService {
       this.headerTimerBadge.addEventListener('click', (e) => {
         e.preventDefault();
         this.toggle();
-      });
-    }
-
-    if (btnClose) {
-      btnClose.addEventListener('click', () => this.resume());
-    }
-
-    if (btnResume) {
-      btnResume.addEventListener('click', () => this.resume());
-    }
-
-    if (btnRetry) {
-      btnRetry.addEventListener('click', () => this.retry());
-    }
-
-    if (btnMenu) {
-      btnMenu.addEventListener('click', () => this.goToMenu());
-    }
-
-    if (this.modal) {
-      this.modal.addEventListener('click', (e) => {
-        if (e.target === this.modal) {
-          this.resume();
-        }
       });
     }
 
@@ -216,30 +185,7 @@ export class PauseService {
   }
 
   updateAudioButtons() {
-    const soundMuted = sound.isSoundMuted();
-    const musicMuted = sound.isMusicMuted();
-
-    if (this.btnPauseSound) {
-      this.btnPauseSound.classList.toggle('muted', soundMuted);
-    }
-    if (this.txtPauseSound) {
-      this.txtPauseSound.textContent = soundMuted ? 'SOUND: OFF' : 'SOUND: ON';
-    }
-    const soundIcon = this.btnPauseSound ? this.btnPauseSound.querySelector('.audio-icon') : null;
-    if (soundIcon) {
-      soundIcon.textContent = soundMuted ? '🔇' : '🔊';
-    }
-
-    if (this.btnPauseMusic) {
-      this.btnPauseMusic.classList.toggle('muted', musicMuted);
-    }
-    if (this.txtPauseMusic) {
-      this.txtPauseMusic.textContent = musicMuted ? 'MUSIC: OFF' : 'MUSIC: ON';
-    }
-    const musicIcon = this.btnPauseMusic ? this.btnPauseMusic.querySelector('.audio-icon') : null;
-    if (musicIcon) {
-      musicIcon.textContent = musicMuted ? '🔇' : '🎵';
-    }
+    if (this.audioEl) this.audioEl.innerHTML = audioHtml({ soundOn: !sound.isSoundMuted(), musicOn: !sound.isMusicMuted() });
   }
 
   resume() {

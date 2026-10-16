@@ -28,7 +28,7 @@ test('a request without data comes back without data', () => {
 
 test('an old request is forgotten: the player wandered off', () => {
   const storage = memoryStorage();
-  rememberGate(storage, { key: 'TutorialScene' }, { now: 0 });
+  rememberGate(storage, { key: 'StoryScene' }, { now: 0 });
   assert.equal(takeGate(storage, { now: 31 * 60 * 1000 }), null);
   assert.equal(storage.size(), 0);
 });

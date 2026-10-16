@@ -246,141 +246,6 @@ html, body {
   background-size: 100% 3px, 6px 100%;
 }
 
-/* Animated Retro Game Loader */
-.game-loader {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: radial-gradient(circle at center, #152b15 0%, #0a170a 60%, #030803 100%);
-  z-index: 60;
-  transition: opacity 0.4s ease-out;
-  pointer-events: none;
-  font-family: var(--font-retro);
-  text-align: center;
-  padding: 16px;
-  box-sizing: border-box;
-}
-
-.game-loader.fade-out {
-  opacity: 0;
-}
-
-.loader-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  max-width: 90%;
-}
-
-.loader-mascot-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  font-size: 26px;
-  margin-bottom: 12px;
-}
-
-.loader-icon-moon {
-  display: inline-block;
-  animation: loaderFloat 1.8s ease-in-out infinite alternate;
-  filter: drop-shadow(0 0 8px rgba(246, 192, 38, 0.8));
-}
-
-.loader-icon-blade {
-  display: inline-block;
-  animation: loaderSlash 1.2s ease-in-out infinite alternate;
-  filter: drop-shadow(0 0 8px rgba(152, 255, 32, 0.7));
-}
-
-.loader-icon-sprite {
-  display: inline-block;
-  animation: loaderGlow 1.4s ease-in-out infinite alternate;
-  filter: drop-shadow(0 0 10px rgba(100, 223, 223, 0.9));
-}
-
-.loader-game-title {
-  font-size: 13px;
-  color: #f6c026;
-  letter-spacing: 2px;
-  text-shadow: 0 0 10px rgba(246, 192, 38, 0.6), 2px 2px #000;
-  margin-bottom: 12px;
-}
-
-.loader-progress-box {
-  width: 220px;
-  max-width: 80vw;
-  height: 14px;
-  background: #091309;
-  border: 2px solid #38b000;
-  border-radius: 4px;
-  padding: 2px;
-  box-sizing: border-box;
-  box-shadow: 0 0 12px rgba(56, 176, 0, 0.4), inset 0 2px 4px rgba(0, 0, 0, 0.7);
-  overflow: hidden;
-}
-
-.loader-bar-fill {
-  width: 14%;
-  height: 100%;
-  background: linear-gradient(90deg, #2e7d32 0%, #76ff03 50%, #f6c026 100%);
-  background-size: 200% 100%;
-  border-radius: 2px;
-  animation: loaderShimmer 1.5s linear infinite;
-  transition: width 0.3s ease;
-  box-shadow: 0 0 8px #76ff03;
-}
-
-.loader-status-text {
-  margin-top: 10px;
-  font-size: 8px;
-  color: #a3e635;
-  text-shadow: 1px 1px 2px #000;
-  min-height: 14px;
-  letter-spacing: 0.5px;
-  animation: loaderPulseText 1.6s ease-in-out infinite;
-}
-
-.loader-tip-hint {
-  margin-top: 8px;
-  font-size: 6px;
-  color: #7da57d;
-  letter-spacing: 1px;
-  opacity: 0.85;
-}
-
-@keyframes loaderFloat {
-  0% { transform: translateY(0px) rotate(0deg); }
-  100% { transform: translateY(-6px) rotate(-6deg); }
-}
-
-@keyframes loaderSlash {
-  0% { transform: scale(1) rotate(0deg); }
-  50% { transform: scale(1.15) rotate(12deg); }
-  100% { transform: scale(1) rotate(-8deg); }
-}
-
-@keyframes loaderGlow {
-  0% { transform: scale(0.85); opacity: 0.7; }
-  100% { transform: scale(1.2); opacity: 1; }
-}
-
-@keyframes loaderShimmer {
-  0% { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
-}
-
-@keyframes loaderPulseText {
-  0%, 100% { opacity: 0.85; }
-  50% { opacity: 1; }
-}
-
 /* Dedicated Portrait Controls Area */
 .touch-controls {
   flex: 1;
@@ -410,9 +275,6 @@ html, body {
 /* In portrait mode, keep the arcade touch deck active throughout to eliminate bottom empty void */
 @media (orientation: portrait) {
   .touch-controls {
-    display: flex !important;
-  }
-  .touch-controls.hidden {
     display: flex !important;
   }
 }
@@ -556,229 +418,6 @@ html, body {
   border-color: #aaddff;
   transform: scale(0.92);
   filter: brightness(1.2);
-}
-
-/* Modal Window */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.75);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  touch-action: none;
-}
-
-.modal-overlay.hidden {
-  display: none;
-}
-
-.modal-card {
-  width: 90%;
-  max-width: 540px;
-  max-height: calc(100vh - 32px);
-  max-height: calc(100dvh - 32px - var(--ms-inset-top, 0px) - var(--ms-inset-bottom, 0px));
-  background: #152215;
-  border: 3px solid #3c6e3c;
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 0 25px rgba(0, 0, 0, 0.9);
-  overflow: hidden;
-  touch-action: auto;
-}
-
-.modal-header {
-  padding: 12px 16px;
-  background: #1e351e;
-  border-bottom: 2px solid #3c6e3c;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.modal-header h3 {
-  font-size: 12px;
-  color: var(--primary-gold);
-}
-
-.pixel-close-btn {
-  background: transparent;
-  border: none;
-  color: #ff5555;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.modal-body {
-  padding: 16px;
-  overflow-y: auto;
-  font-size: 11px;
-  line-height: 1.6;
-  flex: 1;
-  min-height: 0;
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-}
-
-/* In-Game Pause Modal */
-.pause-modal-card {
-  max-width: 360px;
-  background: #0f1c0f;
-  border: 2px solid #4ade80;
-  box-shadow: 0 0 30px rgba(0, 0, 0, 0.95), 0 0 15px rgba(74, 222, 128, 0.25);
-  border-radius: 8px;
-}
-
-.pause-modal-header {
-  background: #183318;
-  border-bottom: 2px solid #2e592e;
-}
-
-.pause-header-icon {
-  color: #4ade80;
-  font-size: 14px;
-}
-
-.pause-modal-body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 20px 16px;
-}
-
-.pause-mode-desc {
-  font-family: var(--font-retro);
-  font-size: 7px;
-  color: #a0c4a0;
-  text-align: center;
-  letter-spacing: 0.5px;
-  line-height: 1.4;
-}
-
-.pause-audio-controls {
-  display: flex;
-  width: 100%;
-  gap: 10px;
-  margin-top: -2px;
-  margin-bottom: 2px;
-}
-
-.pause-audio-toggle {
-  flex: 1;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  background: #132b1a;
-  border: 1.5px solid #4ade80;
-  border-radius: 4px;
-  color: #4ade80;
-  font-family: var(--font-retro);
-  font-size: 6.5px;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
-  touch-action: manipulation;
-}
-
-.pause-audio-toggle:hover {
-  background: #1b3d25;
-  border-color: #86efac;
-}
-
-.pause-audio-toggle:active {
-  transform: scale(0.96);
-}
-
-.pause-audio-toggle.muted {
-  background: #2a1212;
-  border-color: #f87171;
-  color: #f87171;
-}
-
-.pause-audio-toggle.muted:hover {
-  background: #3a1818;
-  border-color: #fca5a5;
-}
-
-.pause-audio-toggle .audio-icon {
-  font-size: 11px;
-}
-
-.pause-btn-group {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  gap: 10px;
-}
-
-.pixel-modal-btn {
-  font-family: var(--font-retro);
-  font-size: 8px;
-  letter-spacing: 0.5px;
-  height: 38px;
-  width: 100%;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-  touch-action: manipulation;
-  user-select: none;
-}
-
-.pixel-modal-btn:active {
-  transform: translateY(1px) scale(0.98);
-}
-
-.pixel-modal-btn.btn-resume {
-  background: linear-gradient(180deg, #1d4d1d 0%, #112e11 100%);
-  border: 1.5px solid #4ade80;
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(74, 222, 128, 0.2);
-}
-.pixel-modal-btn.btn-resume:hover {
-  background: #286628;
-  border-color: #86efac;
-}
-
-.pixel-modal-btn.btn-retry {
-  background: linear-gradient(180deg, #3d2314 0%, #24140a 100%);
-  border: 1.5px solid #f59e0b;
-  color: #ffd166;
-}
-.pixel-modal-btn.btn-retry:hover {
-  background: #522f1a;
-  border-color: #fbbf24;
-}
-
-.pixel-modal-btn.btn-menu {
-  background: linear-gradient(180deg, #1c261c 0%, #0d140d 100%);
-  border: 1.5px solid #476647;
-  color: #a0c4a0;
-}
-.pixel-modal-btn.btn-menu:hover {
-  background: #2c3d2c;
-  color: #ffffff;
-}
-
-.pause-tip {
-  font-family: var(--font-retro);
-  font-size: 5.5px;
-  color: #627d62;
-  text-align: center;
 }
 
 /* Responsive adjustments for mobile screens */
@@ -1104,42 +743,72 @@ html, body {
   }
 }
 
-
-.modal-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* ===== The run's chrome in the moonlit indigo + gold look (tokens are in src/ui/theme.css) ===== */
+#arcade-header { background: linear-gradient(var(--slate), var(--ink)); border-bottom: 3px solid var(--edge); box-shadow: 0 3px 0 var(--ink-deep); }
+.tree-icon { display: none; }
+.game-title { font-size: 12px; color: var(--gold-hi); text-shadow: 2px 2px 0 var(--gold-edge); }
+.pixel-wallet-btn, .pause-header-btn, .header-timer-badge, .landscape-timer-badge {
+  background: var(--ink); border: 0; border-radius: 0; color: var(--gold-hi); height: 34px;
+  box-shadow: var(--bx), var(--sunk); backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.pause-header-btn { color: var(--bone); }
+.header-timer-badge, .landscape-timer-badge { color: var(--bone); }
+.pixel-wallet-btn:hover, .pause-header-btn:hover { background: var(--slate); box-shadow: var(--bx), var(--raise); }
+.wallet-bolt { color: var(--gold); }
+.wallet-dot { border-radius: 0; }
+.wallet-dot.online { background: var(--mint); box-shadow: none; }
+.wallet-dot.offline { background: var(--mist-dim); }
+@media (orientation: landscape) {
+  .landscape-wallet-btn, .landscape-pause-btn {
+    background: var(--ink); border: 0; border-radius: 0; color: var(--gold-hi);
+    box-shadow: var(--bx), var(--sunk); backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .landscape-wallet-btn { padding: 6px 12px; font-size: 9px; }
+  .landscape-pause-btn { width: 32px; height: 32px; color: var(--bone); }
+  .landscape-wallet-btn:active, .landscape-pause-btn:active { background: var(--slate); transform: none; border-color: transparent; }
+  .landscape-timer-badge { height: auto; padding: 7px 10px; }
+  /* while a run is on, the pause button is the only thing up here */
+  .landscape-pause-group:not(.hidden) ~ .landscape-wallet-btn { display: none !important; }
 }
 
-/* ---- G$ wallet panel ---- */
-.gd-card { width: calc(100% - 24px); max-width: 430px; max-height: calc(100% - 24px); display: flex; flex-direction: column; }
-.gd-body { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; font-family: 'Press Start 2P', monospace; font-size: 8px; line-height: 1.7; color: #cfe8cf; padding-bottom: env(safe-area-inset-bottom, 0); }
-.gd-body p { margin: 0; }
-.gd-status { display: flex; align-items: center; gap: 10px; padding: 8px; border: 2px solid #2e4e2e; background: #0e170e; }
-.gd-st-verified { border-color: #98ff20; }
-.gd-st-unverified, .gd-st-expired, .gd-st-unknown { border-color: #e9b213; }
-.gd-avatar { width: 28px; height: 28px; flex: none; image-rendering: pixelated; }
-.gd-avatar svg { width: 100%; height: 100%; display: block; }
-.gd-dot { width: 10px; height: 10px; flex: none; background: #6b7b6b; }
-.gd-status-text { display: flex; flex-direction: column; gap: 3px; }
-.gd-status-text small { color: #8cb38c; font-size: 7px; }
-.gd-sec { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid #2e4e2e; background: #111e11; }
-.gd-sec h4 { margin: 0; color: #ffd166; font-size: 8px; letter-spacing: 1px; }
-.gd-muted { color: #8cb38c; }
-.gd-warn { color: #f59e0b; }
-.gd-blessing { color: #98ff20; }
-.gd-btn { width: 100%; }
-.gd-btn[disabled] { opacity: .45; pointer-events: none; }
-.gd-wallets { display: flex; flex-direction: column; gap: 6px; }
-.gd-wallet { display: flex; align-items: center; justify-content: center; gap: 8px; }
-.gd-wallet-icon { width: 18px; height: 18px; flex: none; }
-.gd-ghost { opacity: .75; }
-.gd-spoil { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.gd-spoil small { display: block; color: #8cb38c; font-size: 7px; }
-.gd-spoil .gd-btn { width: auto; }
-.gd-link { color: #38e1ff; text-align: center; text-decoration: none; padding: 4px 0; }
-.gd-steps { list-style: none; margin: 2px 0 4px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.gd-steps li { padding: 6px 8px; border: 1px solid #2e4e2e; background: #0d170d; }
-.gd-step-done { color: #98ff20; }
-.gd-step-now { color: #ffd166; border-color: #e9b213 !important; background: #1a1a0a !important; }
-.gd-step-todo { color: #5f7f5f; }
+/* ===== The on-screen pad: squares with a stepped edge; Jump is the big gold one in the corner under the right thumb ===== */
+#touch-controls { --pad: clamp(60px, 18.5vw, 88px); }
+@media (orientation: landscape) { #touch-controls { --pad: clamp(52px, 15vh, 74px); } }
+@media (orientation: portrait) {
+  /* the pad sits at the bottom under the thumbs, 30px clear of the iPhone's home bar */
+  #touch-controls {
+    background: var(--dither), var(--ink); border-top: 3px solid var(--edge); box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.4);
+    align-items: flex-end; padding-bottom: max(34px, calc(var(--ms-inset-bottom, 0px) + 30px));
+  }
+}
+#touch-controls .touch-btn {
+  border: 0; border-radius: 0; background: var(--panel); color: var(--bone);
+  font: 400 calc(var(--pad) * 0.3)/1 var(--font-ui); letter-spacing: 0.4px; transition: none;
+  box-shadow: var(--bx), var(--raise), 0 6px 0 0 rgba(0, 0, 0, 0.3);
+}
+#touch-controls .touch-btn:active, #touch-controls .touch-btn.pressed {
+  background: var(--slate-hi); transform: translateY(4px); filter: none; box-shadow: var(--bx), var(--sunk);
+}
+#touch-controls .touch-dpad { gap: calc(var(--pad) * 0.2); }
+#touch-controls .dpad-btn { width: var(--pad); height: calc(var(--pad) * 0.92); font-size: calc(var(--pad) * 0.34); }
+#touch-controls .touch-actions {
+  grid-template-columns: auto auto;
+  grid-template-areas: ". upslash" "attack jump";
+  gap: calc(var(--pad) * 0.16);
+  align-items: end; justify-items: end;
+}
+#touch-controls .action-btn { width: calc(var(--pad) * 0.92); height: calc(var(--pad) * 0.92); font-size: calc(var(--pad) * 0.28); }
+#touch-controls .action-btn.jump {
+  width: calc(var(--pad) * 1.2); height: calc(var(--pad) * 1.2); font-size: calc(var(--pad) * 0.3);
+  background: linear-gradient(var(--gold-hi), var(--gold)); color: var(--gold-ink);
+  box-shadow: var(--gold-bx), var(--raise), 0 6px 0 0 rgba(0, 0, 0, 0.3);
+}
+#touch-controls .action-btn.jump:active, #touch-controls .action-btn.jump.pressed {
+  background: var(--gold); box-shadow: var(--gold-bx), var(--sunk);
+}
+#touch-controls .touch-btn.tutorial-highlight {
+  animation: ms-pad-hint 0.75s ease-in-out infinite alternate !important;
+  box-shadow: 0 0 0 3px var(--gold-hi), 0 0 18px rgba(255, 217, 122, 0.7), var(--raise) !important;
+}
+#touch-controls .action-btn.jump.tutorial-highlight { color: var(--gold-ink) !important; }
+@keyframes ms-pad-hint { from { filter: none; } to { filter: brightness(1.2); } }

@@ -1,42 +1,35 @@
 import { gdService } from '../engine/GdService.js';
 import { describeOutcome } from '../gd/outcome.js';
 import { showToast } from './toast.js';
-import { renderGuideHtml, renderPanelHtml } from './gdPanelView.js';
+import { panelTitle, renderPanelHtml } from './gdPanelView.js';
+import { openSheet } from './sheet.js';
 import { rememberGate } from '../engine/gateMemory.js';
 import { fetchConfig } from '../gd/leaderboard.js';
 
+/**
+ * The wallet and the way into the game, drawn as one sheet over the screen (src/ui/sheet.js). What it says is decided by
+ * gdPanelView.js from the wallet service's status; this class opens and closes it, keeps it fresh and carries out taps.
+ */
 export class GdPanel {
   constructor() {
-    this.el = null;
+    this.host = null;
+    this.sheet = null;
     this.gate = null; // { label, launch } while the verified-human gate is showing
-    this.guide = false; // true while the G$ guide is showing
-    this.config = null; // /api/config, for the amounts the guide names
+    this.config = null; // /api/config, for the amounts "How G$ works" names
+    this.howOpen = false;
+    this.unsubscribe = null;
   }
 
   mount() {
-    if (this.el) return;
-    this.el = document.createElement('div');
-    this.el.id = 'gd-panel';
-    this.el.className = 'modal-overlay hidden';
-    this.el.innerHTML = `
-      <div class="modal-card gd-card" role="dialog" aria-modal="true" aria-label="G$ wallet">
-        <div class="modal-header">
-          <h3 id="gd-title">G$ WALLET</h3>
-          <button id="gd-close" class="pixel-close-btn" type="button" aria-label="Close">✖</button>
-        </div>
-        <div id="gd-body" class="modal-body gd-body"></div>
-      </div>`;
-    document.body.appendChild(this.el);
-    // Phaser also listens for pointer and keyboard events on `window`, so a click or a key press on this panel would
-    // otherwise fall through to whatever game button sits behind it (e.g. "Connect" landing on the Menu's Leaderboard
-    // entry, or Space on a focused panel button advancing a game dialogue).
+    if (this.unsubscribe) return;
+    this.host = document.getElementById('ms-sheets');
+    // Phaser also listens for pointer and keyboard events on `window`, so a click or a key press on a sheet would otherwise
+    // fall through to whatever game button sits behind it (e.g. "Connect" landing on a menu tile, or Space on a focused
+    // button advancing a game dialogue).
     for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click', 'keydown', 'keyup']) {
-      this.el.addEventListener(type, (e) => e.stopPropagation());
+      this.host.addEventListener(type, (e) => e.stopPropagation());
     }
-    this.el.querySelector('#gd-close').addEventListener('click', () => this.close());
-    this.el.addEventListener('pointerdown', (e) => { if (e.target === this.el) this.close(); });
-    this.el.addEventListener('click', (e) => this.onClick(e));
-    gdService.subscribe(() => this.render());
+    this.unsubscribe = gdService.subscribe(() => this.render());
   }
 
   /** The verified-human gate: the player asked to start `label`; `launch()` carries it out once they may play. */
@@ -45,45 +38,47 @@ export class GdPanel {
     this.open();
   }
 
-  /** The G$ guide: what G$ does in Moonshard, and this player's next step. */
-  openGuide() {
-    this.gate = null;
-    this.open({ guide: true });
+  open() {
+    this.mount();
+    const status = gdService.getStatus();
+    this.sheet = openSheet(this.host, {
+      title: panelTitle(status, { gate: this.gate }),
+      name: this.gate ? 'gate' : 'wallet',
+      body: renderPanelHtml(status, Date.now(), this.view()),
+      onClose: () => {
+        this.gate = null;
+        this.sheet = null;
+        // The button that was clicked is gone now but would keep the keyboard until the browser notices, and this sheet
+        // swallows key presses meant for itself: give the keyboard back to the game at once.
+        if (this.host.contains(document.activeElement)) document.activeElement.blur();
+      },
+      onAction: (act, el) => this.onAction(act, el),
+    });
+    this.sheet.el.addEventListener('toggle', (e) => {
+      if (e.target.classList?.contains('how')) this.howOpen = e.target.open;
+    }, true);
+    gdService.refreshAll().catch(() => {});
     if (!this.config) {
-      fetchConfig().then((config) => { this.config = config; this.render(); }).catch(() => { /* the guide says less */ });
+      fetchConfig().then((config) => { this.config = config; this.render(); }).catch(() => { /* the amounts say less */ });
     }
   }
 
-  open({ guide = false } = {}) {
-    this.guide = guide;
-    this.mount();
-    this.el.classList.remove('hidden');
-    this.render();
-    gdService.refreshAll().catch(() => {});
+  close() {
+    this.sheet?.close();
   }
 
-  close() {
-    this.gate = null;
-    this.guide = false;
-    this.el?.classList.add('hidden');
-    // The button that was clicked is hidden now but would keep the keyboard until the browser notices, and this panel
-    // swallows key presses meant for itself: give the keyboard back to the game at once.
-    if (this.el?.contains(document.activeElement)) document.activeElement.blur();
+  view() {
+    return { gate: this.gate ? { label: this.gate.label } : null, config: this.config, howOpen: this.howOpen };
   }
 
   render() {
-    if (!this.el) return;
+    if (!this.sheet?.isOpen()) return;
     const status = gdService.getStatus();
-    this.el.querySelector('#gd-title').textContent = this.guide ? 'G$ IN MOONSHARD' : 'G$ WALLET';
-    this.el.querySelector('#gd-body').innerHTML = this.guide
-      ? renderGuideHtml(status, { config: this.config, now: Date.now() })
-      : renderPanelHtml(status, Date.now(), { gate: this.gate ? { label: this.gate.label } : null });
+    this.sheet.setTitle(panelTitle(status, { gate: this.gate }));
+    this.sheet.setBody(renderPanelHtml(status, Date.now(), this.view()));
   }
 
-  async onClick(e) {
-    const el = e.target.closest('[data-act]');
-    if (!el || el.disabled) return;
-    const act = el.dataset.act;
+  async onAction(act, el) {
     if (act === 'play') {
       const request = this.gate;
       this.close();
