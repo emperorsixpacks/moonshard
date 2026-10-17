@@ -1,5 +1,6 @@
 import { GAME_CONFIG } from '../config.js';
 import { playStageSize, groundLift } from './playStage.js';
+import { input } from './inputMode.js';
 
 /**
  * Reliable portrait mode detector across standard desktop browsers,
@@ -133,8 +134,15 @@ export class ViewportManager {
   /** How far the pad reaches up over the picture, as a lift for the ground (0 when the pad is not shown). */
   measureLift(area, size) {
     if (typeof document === 'undefined' || !(area?.width > 0)) return 0;
-    const cluster = document.querySelector('#touch-controls .touch-actions');
-    const padRect = cluster && cluster.offsetParent !== null ? cluster.getBoundingClientRect() : null;
+    // The pad is asked for by the scene a moment after the stage is made, so it may still be hidden here: count it whenever
+    // the player is on touch, by showing it for the length of the measurement.
+    const pad = document.getElementById('touch-controls');
+    const cluster = pad?.querySelector('.touch-actions');
+    if (!pad || !cluster || input.mode !== 'touch') return 0;
+    const wasHidden = pad.classList.contains('hidden');
+    pad.classList.remove('hidden');
+    const padRect = cluster.offsetParent !== null ? cluster.getBoundingClientRect() : null;
+    if (wasHidden) pad.classList.add('hidden');
     if (!padRect || !(padRect.height > 0)) return 0;
     // the picture is fitted into the area and centred: its top and its size on screen
     const unit = Math.min(area.width / size.width, area.height / size.height);

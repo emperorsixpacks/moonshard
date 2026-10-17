@@ -61,11 +61,16 @@ for (const phone of PHONES) {
       check(m.groundScreenY <= m.pad.y + 1, `${sc.key}: the ground is above the pad (ground ${Math.round(m.groundScreenY)}, pad ${Math.round(m.pad.y)})`);
     }
 
-    // leaving a run puts the usual picture back
-    await g.startScene('LeaderboardScene');
-    await g.page.waitForTimeout(800);
-    before = await measure(g.page);
-    check(before.stage === 'screen' && before.game[0] === 480 && before.game[1] === 440, `after the run the picture is the usual 480x440 (${before.game.join('x')}, ${before.stage})`);
+    // leaving a run puts the usual picture back, with no pad on a screen that has nothing to play
+    for (const key of ['LeaderboardScene', 'ForgeScene']) {
+      await g.startScene(key);
+      await g.page.waitForTimeout(800);
+      before = await measure(g.page);
+      check(before.stage === 'screen' && before.game[0] === 480 && before.game[1] === 440, `${key}: after the run the picture is the usual 480x440 (${before.game.join('x')}, ${before.stage})`);
+      check(before.pad === null, `${key}: and the game's pad is not drawn (a player is not playing here)`);
+      const gap = await g.page.evaluate(() => { const c = document.querySelector('#game-container').getBoundingClientRect(); const w = document.getElementById('game-wrapper').getBoundingClientRect(); return { above: Math.round(c.top - w.top), below: Math.round(w.bottom - c.bottom) }; });
+      check(Math.abs(gap.above - gap.below) <= 3, `${key}: the picture sits in the middle of the screen (${gap.above}px above, ${gap.below}px below)`);
+    }
     check(g.errors.length === 0, `no browser errors ${g.errors.join(' | ')}`);
   } finally { await g.close(); }
 }
