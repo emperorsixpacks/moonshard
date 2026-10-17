@@ -830,3 +830,9 @@ html, body {
   #game-wrapper[data-stage="play"] #touch-controls .touch-btn:active,
   #game-wrapper[data-stage="play"] #touch-controls .touch-btn.pressed { opacity: 1; }
 }
+
+/* Screens that are not a run (the Forge, the Leaderboard) have no pad: their picture sits in the middle of the screen rather
+   than at the top above an empty deck. (A screen that does ask for the pad, such as the story's chapter card, keeps its deck.) */
+@media (orientation: portrait) {
+  #game-wrapper[data-stage="screen"] { justify-content: center; background: var(--ink-deep, #070b16); }
+}

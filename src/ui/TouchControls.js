@@ -20,7 +20,7 @@ export class TouchController {
     this.touchContainer = document.getElementById('touch-controls');
     this.isVisible = false;
     // A scene asks for the pad (show) or not (hide); it is drawn only while the player plays with their fingers.
-    this.wanted = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
+    this.wanted = false;
     this.paint();
     input.subscribe(() => this.paint());
     this.initTouchButtons();
@@ -34,13 +34,8 @@ export class TouchController {
     this.paint();
   }
 
-  hide(force = false) {
-    const isPortrait = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
-    if (isPortrait && !force) {
-      // In portrait mode, keep touch controls active throughout to prevent lower area from looking empty
-      this.show();
-      return;
-    }
+  /** A screen with nothing to play (the Forge, the Leaderboard, a result) has no pad, held either way. */
+  hide() {
     this.wanted = false;
     this.paint();
   }
@@ -336,7 +331,7 @@ export class TouchController {
           input.touched();
           this.show();
         } else {
-          this.hide(true);
+          this.hide();
         }
       });
     }
