@@ -11,20 +11,37 @@ export function positiveNumber(value) {
 }
 
 /**
- * "1st Boss" and "Harvest" status line for a connected player. An amount or cap the server did not send is left out, and so
- * is the Shard Harvest (a prize) while the server pays no prizes.
+ * What a connected player's rewards come to, as the server reported them: the first-boss bounty (an amount or cap the server
+ * did not send is left out) and the day's Shard Harvest, which is null while the server pays no prizes.
+ * @returns {{ claimed: boolean, prize: number|null, harvest: { earned: string, cap: string|null, capped: boolean }|null }}
  */
-export function rewardsPillText(status) {
-  const prize = positiveNumber(status.firstBossPrizeG);
-  const bossText = status.firstBossClaimed
-    ? `CLAIMED${prize === null ? '' : ` (+${prize} G$)`}`
-    : `UNCLAIMED${prize === null ? '' : ` (${prize} G$)`}`;
-  if (status.prizesEnabled === false) return `🏆 1st Boss: ${bossText}`;
+export function rewardsFacts(status) {
   const cap = positiveNumber(status.crystalStatus?.dailyCapGd);
-  const earned = Number(status.crystalStatus?.gdEarned || 0).toFixed(0);
-  const amount = cap === null ? `${earned} G$` : `${earned} / ${cap.toFixed(0)} G$`;
-  const harvestText = status.crystalStatus?.isCapped ? `${amount} (MAX 🔒)` : amount;
-  return `🏆 1st Boss: ${bossText}  |  💎 Harvest: ${harvestText}`;
+  return {
+    claimed: Boolean(status.firstBossClaimed),
+    prize: positiveNumber(status.firstBossPrizeG),
+    harvest: status.prizesEnabled === false ? null : {
+      earned: Number(status.crystalStatus?.gdEarned || 0).toFixed(0),
+      cap: cap === null ? null : cap.toFixed(0),
+      capped: Boolean(status.crystalStatus?.isCapped),
+    },
+  };
+}
+
+/**
+ * The first-boss bounty and the day's Shard Harvest, in words, for a connected player: "First boss: unclaimed (2400 G$)" and
+ * "Harvest today: 4 / 100 G$". An amount or cap the server did not send is left out, and so is the harvest itself while the
+ * server pays no prizes.
+ * @returns {{ boss: string, harvest: string|null }}
+ */
+export function rewardsLine(status) {
+  const { claimed, prize, harvest } = rewardsFacts(status);
+  const boss = claimed
+    ? `First boss: claimed${prize === null ? '' : ` (+${prize} G$)`}`
+    : `First boss: unclaimed${prize === null ? '' : ` (${prize} G$)`}`;
+  if (!harvest) return { boss, harvest: null };
+  const amount = harvest.cap === null ? `${harvest.earned} G$` : `${harvest.earned} / ${harvest.cap} G$`;
+  return { boss, harvest: `Harvest today: ${amount}${harvest.capped ? ' (full)' : ''}` };
 }
 
 /**
@@ -51,9 +68,24 @@ export function secondsLabel(durationMs) {
   return `${Math.floor(s / 1000)}s`;
 }
 
-/** The prize cell of a daily-board row: a medal and the amount for the top three, a tree for everyone else. */
-export function prizeLabel(idx, amount) {
-  const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
-  if (idx < 3) return medal && amount ? `${medal} ${amount} G$` : (medal || '🌲');
-  return '🌲';
+/**
+ * The honors cell of a row: a medal for the top three (gold, silver, bronze), with the prize amount on the daily board when
+ * the server named one. Everyone else has none.
+ * @returns {{ medal: 'gold'|'silver'|'bronze', amount: string|null }|null}
+ */
+export function honorsFor(idx, amount) {
+  const medal = ['gold', 'silver', 'bronze'][idx];
+  if (!medal) return null;
+  const n = positiveNumber(amount);
+  return { medal, amount: n === null ? null : String(n) };
+}
+
+/** The three daily prize amounts, from the config or else from the daily board itself, or null when neither has them. */
+export function dailyPrizeAmounts(cfg, daily) {
+  for (const source of [cfg?.prizesG, daily?.prizesG]) {
+    if (!Array.isArray(source) || source.length < 3) continue;
+    const top = source.slice(0, 3);
+    if (top.every((p) => positiveNumber(p) !== null)) return top.map(String);
+  }
+  return null;
 }

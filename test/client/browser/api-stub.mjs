@@ -35,7 +35,7 @@ const RANKED = { ok: true, isNewBest: true, rankedOk: true, bossCleared: false, 
  * `api.runs` the server's view of each run. Per-test behaviour: `api.latencyMs`, and `api.handlers[name]` (start,
  * checkpoints, submit) replaced by `async ({ call, run }) => ({ status, body, delayMs, hang })`.
  */
-export async function installApi(page, { verified = true, rewardG = '2400', firstBossClaimed = false, owned = ['iron_starter'], shop = SHOP, prizes = true } = {}) {
+export async function installApi(page, { verified = true, rewardG = '2400', firstBossClaimed = false, owned = ['iron_starter'], shop = SHOP, prizes = true, boards = {} } = {}) {
   const api = {
     calls: [],
     verified,
@@ -47,6 +47,8 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
     // what the server says about the first-boss bounty: flip `canClaim` to false (and `rewardG` to null) for an app that
     // GoodDollar has not approved yet
     engagement: { configured: true, canClaim: true, reason: null, rewardG },
+    // the leaderboard's rows, per board (`daily`, `alltime`), as the server sends them: { rank, wallet, score, durationMs }
+    boards: { daily: [], alltime: [], ...boards },
     latencyMs: 0,
     runs: new Map(), // runId -> { runId, mode, chapter, status: 'open' | 'void' | 'submitted', submit }
     handlers: {
@@ -69,7 +71,7 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
     let body;
     try { body = request.postDataJSON(); } catch { body = undefined; }
     await sleep(api.latencyMs); // the request travels
-    const call = { method, path, body, at: Date.now(), answeredAt: null };
+    const call = { method, path, query: url.search, body, at: Date.now(), answeredAt: null };
     api.calls.push(call);
     const json = async (status, payload) => {
       await sleep(api.latencyMs); // the answer travels
@@ -104,8 +106,8 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
     }
     if (path === '/spoils') return json(200, { spoils: [], vault: null });
     // the real shapes: server/src/leaderboard.js and the /config route in server/src/app.js
-    if (path === '/leaderboard/daily') return json(200, { day: '2026-10-05', view: 'ranked', entries: [], prizesG: api.prizes ? ['1000', '600', '300'] : [] });
-    if (path === '/leaderboard/alltime') return json(200, { view: 'ranked', entries: [] });
+    if (path === '/leaderboard/daily') return json(200, { day: '2026-10-05', view: url.searchParams.get('view') ?? 'ranked', entries: api.boards.daily, prizesG: api.prizes ? ['1000', '600', '300'] : [] });
+    if (path === '/leaderboard/alltime') return json(200, { view: url.searchParams.get('view') ?? 'ranked', entries: api.boards.alltime });
     if (path === '/config') {
       return json(200, api.prizes
         ? { appName: 'Moonshard', chainId: 42220, prizesEnabled: true, prizesG: ['1000', '600', '300'], shardRateG: '2', dailyShardCap: 50 }

@@ -138,6 +138,17 @@ IC.spk_off = speaker().line(10, 5, 14, 11, 'e', 2).line(14, 5, 10, 11, 'e', 2).r
 const note = () => canvas().rect(5, 3, 9, 2, '#').rect(5, 3, 2, 9, '#').rect(12, 3, 2, 9, '#').disc(4, 11.5, 2.2, '#').disc(11, 11.5, 2.2, '#');
 IC.note_on = note().rows();
 IC.note_off = note().line(2, 14, 14, 2, 'e', 2).rows();
+/** A medal on a ribbon: gold, silver and bronze are the same shape in three metals (the Leaderboard's top three). */
+function medal(rim, face, hi) {
+  return canvas()
+    .rect(4, 9, 3, 6, 'I').rect(9, 9, 3, 6, 'i').px(5, 14, '.').px(10, 14, '.') // the ribbon, with a notch in its end
+    .disc(7.5, 5.5, 5.4, rim).disc(7.5, 5.5, 4.4, face)
+    .ring(7.5, 5.5, 3.5, 1.2, hi, 190, 285)
+    .outline().rows();
+}
+IC.medal = medal('o', 'g', 'G');
+IC.medal_silver = medal('D', 'S', 's');
+IC.medal_bronze = medal('B', 'b', 'r');
 IC.mail = canvas().rect(2, 4, 12, 1, '#').rect(2, 12, 12, 1, '#').rect(2, 4, 1, 9, '#').rect(13, 4, 1, 9, '#').line(2, 4, 7, 9, '#').line(13, 4, 8, 9, '#').rows();
 IC.lock = canvas().rect(3, 7, 10, 7, '#').ring(7.5, 6.5, 3.8, 1.8, '#', 180, 360).px(7, 10, '.').px(8, 10, '.').px(7, 11, '.').px(8, 11, '.').rows();
 

@@ -412,3 +412,83 @@
 #ms-ui .field input:focus{outline:3px solid var(--gold-hi);outline-offset:2px}
 #ms-ui .field input:disabled{opacity:.5}
 #ms-ui .field input[inputmode="numeric"]{letter-spacing:.35em;text-align:center;font-size:34px}
+
+/* ===== The leaderboard (src/ui/leaderboardView.js): a page under the page header, one card per player ===== */
+#ms-ui .lb{
+  position:absolute;left:0;right:0;bottom:0;top:0;display:flex;flex-direction:column;pointer-events:auto;
+  background:var(--dither),linear-gradient(#0B1224,#070B16);
+}
+#ms-ui .lb-head,#ms-ui .lb-scroll,#ms-ui .lb-foot{width:min(100%,640px);margin-left:auto;margin-right:auto}
+#ms-ui .lb-head{flex:none;display:flex;flex-direction:column;gap:8px;padding:14px 16px 4px}
+#ms-ui .lb-title{margin:0;text-align:center;font:400 44px/1 var(--font-ui);color:var(--gold);text-shadow:3px 3px 0 var(--gold-edge)}
+#ms-ui .lb-tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .lb-tab{display:flex;align-items:center;justify-content:center;text-align:center;min-height:50px;font:400 25px/1 var(--font-ui);color:var(--mist)}
+#ms-ui .lb-tab.on{background:var(--panel);color:var(--gold-hi);box-shadow:var(--raise)}
+#ms-ui .lb-view{align-self:flex-end;min-height:34px;padding:0 4px;font:400 20px/1 var(--font-ui);color:var(--mist);text-decoration:underline;text-decoration-style:dotted;text-underline-offset:4px}
+#ms-ui .lb-prizes{margin:0;text-align:center;font:400 20px/1.3 var(--font-ui);color:var(--gold-hi)}
+#ms-ui .lb-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:6px 16px 12px}
+#ms-ui .lb-cols,#ms-ui .lb-row{display:grid;grid-template-columns:26px 36px minmax(0,1fr) 44px auto 42px;column-gap:7px;align-items:center}
+#ms-ui .lb-cols{padding:8px 10px;margin-bottom:8px;background:var(--slate);box-shadow:var(--raise);font:400 19px/1 var(--font-ui);color:var(--mist);text-align:center}
+#ms-ui .lb-cols .nm{text-align:left}
+#ms-ui .lb-cols .sc{text-align:right}
+#ms-ui .lb-rows{list-style:none;margin:0;padding:0}
+#ms-ui .lb-row{min-height:58px;padding:6px 10px;margin-bottom:7px;background:var(--slate);box-shadow:inset 0 2px 0 rgba(255,255,255,.07),0 3px 0 0 var(--ink-deep)}
+#ms-ui .lb-row.me{background:#2A2740;outline:3px solid var(--gold);outline-offset:-3px}
+#ms-ui .lb-row .rk{font:400 24px/1 var(--font-ui);color:var(--mist-dim);text-align:left}
+#ms-ui .lb-row .rk.r1{color:var(--gold-hi)}
+#ms-ui .lb-row .rk.r2{color:#DCE3F2}
+#ms-ui .lb-row .rk.r3{color:#D9965A}
+#ms-ui .lb-row .av{width:36px;height:36px;display:block;box-shadow:0 0 0 2px var(--ink-deep)}
+#ms-ui .lb-row .av svg{display:block;width:100%;height:100%}
+#ms-ui .lb-row .nm{font:400 22px/1 var(--font-ui);color:var(--bone);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ms-ui .lb-row .tm{font:400 20px/1 var(--font-ui);color:var(--mist);text-align:center}
+#ms-ui .lb-row .sc{font:400 23px/1 var(--font-ui);color:var(--gold-hi);text-align:right;white-space:nowrap}
+#ms-ui .lb-row .sc small{margin-left:3px;font:400 16px/1 var(--font-ui);color:var(--mist)}
+#ms-ui .lb-row .hn{display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}
+#ms-ui .lb-row .hn small{margin-top:2px;font:400 15px/1 var(--font-ui);color:var(--gold-hi)}
+#ms-ui .lb-row .hn.none{color:var(--mist-dim);font:400 22px/1 var(--font-ui)}
+#ms-ui .lb-note{margin:48px 0 0;text-align:center;color:var(--mist);font:400 22px/1.35 var(--font-ui)}
+#ms-ui .lb-note b{display:block;font:400 30px/1.2 var(--font-ui);color:var(--bone)}
+#ms-ui .lb-note p{margin:8px 0 0}
+#ms-ui .lb-note.err{color:var(--ember)}
+#ms-ui .lb-note.err .btn-2{width:auto;margin:16px auto 0;padding:0 28px}
+#ms-ui .lb-foot{flex:none;display:flex;flex-direction:column;gap:4px;padding:4px 16px max(14px,env(safe-area-inset-bottom))}
+#ms-ui .lb-status{display:block;width:100%;min-height:44px;padding:4px 8px;text-align:center;font:400 21px/1.25 var(--font-ui);color:var(--mist)}
+#ms-ui .lb-status.good{color:var(--bone)}
+#ms-ui .lb-status.warn{color:#F2B25C}
+#ms-ui .lb-extra{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+#ms-ui .lb-rewards,#ms-ui .lb-spoils{margin:0;text-align:center;font:400 19px/1.3 var(--font-ui)}
+#ms-ui .lb-rewards{color:var(--gold-hi)}
+#ms-ui .lb-spoils{color:var(--mist)}
+#ms-ui .lb-spoils .lnk{display:inline;min-height:0;padding:0}
+#ms-ui .lb-bar{display:grid;grid-template-columns:1fr 1.5fr;gap:14px;margin-top:6px}
+#ms-ui .lb-bar .btn,#ms-ui .lb-bar .btn-2{margin:0}
+@container ms (orientation:landscape){
+  /* a short screen: the title, the switch and the view link share a row, and the status and the buttons another */
+  #ms-ui .lb-head{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 14px;padding:6px 16px 2px}
+  #ms-ui .lb-title{font-size:32px;text-shadow:2px 2px 0 var(--gold-edge)}
+  #ms-ui .lb-tabs{width:260px}
+  #ms-ui .lb-tab{min-height:38px;font-size:21px}
+  #ms-ui .lb-view{min-height:30px;font-size:18px}
+  #ms-ui .lb-prizes{flex-basis:100%;font-size:17px}
+  #ms-ui .lb-cols{margin-bottom:5px;padding:5px 10px}
+  #ms-ui .lb-row{min-height:46px;margin-bottom:5px}
+  #ms-ui .lb-row .av{width:30px;height:30px}
+  #ms-ui .lb-foot{flex-direction:row;align-items:center;gap:14px;padding:4px 16px 8px}
+  #ms-ui .lb-status{flex:1;min-height:0;text-align:left;font-size:18px}
+  #ms-ui .lb-bar{width:300px;margin-top:0;gap:10px}
+  #ms-ui .lb-bar .btn,#ms-ui .lb-bar .btn-2{min-height:44px;font-size:20px}
+}
+@container ms (max-width:380px){
+  /* a narrow phone: smaller type and tighter columns, so an address is never cut off */
+  #ms-ui .lb-head,#ms-ui .lb-scroll,#ms-ui .lb-foot{padding-left:12px;padding-right:12px}
+  #ms-ui .lb-cols,#ms-ui .lb-row{grid-template-columns:22px 30px minmax(0,1fr) 38px auto 36px;column-gap:6px}
+  #ms-ui .lb-cols,#ms-ui .lb-row{padding-left:8px;padding-right:8px}
+  #ms-ui .lb-cols{font-size:17px}
+  #ms-ui .lb-row .rk{font-size:21px}
+  #ms-ui .lb-row .av{width:30px;height:30px}
+  #ms-ui .lb-row .nm{font-size:19px}
+  #ms-ui .lb-row .tm{font-size:17px}
+  #ms-ui .lb-row .sc{font-size:20px}
+  #ms-ui .lb-row .sc small{font-size:14px;margin-left:2px}
+}

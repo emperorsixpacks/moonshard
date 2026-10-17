@@ -83,10 +83,11 @@ if (wanted('visitor')) {
     await clickMenu(g.page, 'ranks');
     await g.page.waitForFunction(() => window.game.scene.isActive('LeaderboardScene'), null, { timeout: 15_000 });
     check(!(await sheetOpen(g.page)), 'the leaderboard opens, with no gate');
-    await g.page.waitForFunction(() => window.game.scene.getScene('LeaderboardScene').errorText, null, { timeout: 15_000 });
-    const lb = await sceneTexts(g.page, 'LeaderboardScene');
-    check(lb.some((t) => /reach the server/i.test(t)), 'with the API down it says so, in plain words');
-    check(!lb.some((t) => /TypeError|undefined|\[object|Failed to fetch/i.test(t)), 'and shows no raw error text');
+    await g.page.waitForFunction(() => /reach the server/i.test(document.querySelector('#ms-menu .lb')?.innerText ?? ''), null, { timeout: 15_000 });
+    const lb = await g.page.evaluate(() => document.querySelector('#ms-menu .lb').innerText);
+    check(/reach the server/i.test(lb), 'with the API down it says so, in plain words');
+    check(!/TypeError|undefined|\[object|Failed to fetch/i.test(lb), 'and shows no raw error text');
+    check(await g.page.evaluate(() => Boolean(document.querySelector('#ms-menu .lb [data-act="retry"]'))), 'with a way to try again');
     await g.startScene('MenuScene');
 
     await clickMenu(g.page, 'forge');
@@ -177,15 +178,13 @@ if (wanted('rotation')) {
     await g.page.waitForFunction(() => window.game.scale.height === 270, null, { timeout: 15_000 });
     await g.startScene('LeaderboardScene');
     await g.page.waitForFunction(() => window.game.scene.getScene('LeaderboardScene').boardsReady, null, { timeout: 15_000 });
-    await inScene(g.page, 'LeaderboardScene', (scene) => scene.setActiveTab('daily'));
+    await g.page.click('#ms-menu .lb [data-act="tab"][data-tab="daily"]');
     const asked = api.callsTo(/^\/leaderboard/).length;
-    await mark(g.page, 'LeaderboardScene', (scene) => scene.titleText);
     await g.page.setViewportSize(PHONE_UPRIGHT);
-    check(await rebuilt(g.page), 'turned upright: the leaderboard is laid out again');
-    check((await inScene(g.page, 'LeaderboardScene', (scene) => scene.layoutSize.h)) === 440, 'for the tall canvas');
-    const lb = await inScene(g.page, 'LeaderboardScene', (scene) => ({ tab: scene.activeTab, ready: scene.boardsReady }));
-    check(lb.tab === 'daily' && lb.ready, 'it is still on the daily board');
-    check(api.callsTo(/^\/leaderboard/).length === asked, 'the boards were laid out again without being fetched again');
+    await g.page.waitForFunction(() => window.game.scale.height === 440, null, { timeout: 15_000 });
+    const lb = await g.page.evaluate(() => ({ on: document.querySelector('#ms-menu .lb .lb-tab.on')?.dataset.tab, shown: Boolean(document.querySelector('#ms-menu .lb')), ready: window.game.scene.getScene('LeaderboardScene').boardsReady }));
+    check(lb.shown && lb.on === 'daily' && lb.ready, 'turned upright: it is still on the daily board');
+    check(api.callsTo(/^\/leaderboard/).length === asked, 'and the boards were not fetched again');
     check(g.errors.length === 0, `no browser errors ${g.errors.join(' | ')}`);
   } finally { await g.close(); }
 }

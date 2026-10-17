@@ -121,7 +121,7 @@ The owner: the picture was small on a phone and the lower half of the screen was
 - **Unchanged.** Sideways (480x270, full screen, as before), the screens that are not a run (Forge, Ranks, the chapter card keep 480x440 with the pad deck below), keyboard play (no pad, the picture still fills the window). The width is one constant, `PLAY_WIDTH`: 400 shows more of the level ahead, 320 draws the hero bigger still.
 - **Verified:** `test/client/browser/play-stage.mjs` (three phone sizes, a keyboard player in a narrow window, a rotation during a run): the picture fills the width and reaches the bottom, the pad floats over it, the ground is above the pad, and the usual picture is back after the run.
 
-Still on the old look (next passes): the story's HUD bar, dialogue boxes and chapter card, the story and Endless result screens, the Forge and the Leaderboard.
+Still on the old look (next passes): the story's HUD bar, dialogue boxes and chapter card, the story and Endless result screens, and the Forge (the Leaderboard has moved: see the seventh pass).
 
 ## Sixth pass: sign in with an email (Magic) (2026-10)
 
@@ -133,6 +133,15 @@ The owner: players without a wallet app should be able to connect with an email.
 - **Privacy.** The address goes from the player's screen to Magic; Moonshard sees only the wallet address.
 - **Verified:** unit tests for the sign-in module against a stand-in SDK, the wallet manager's email paths, the views and the connect choices; `test/client/browser/email-login.mjs` drives the whole flow in a real browser against the stand-in (no key, bad email, wrong code, right code, sign-in as the Magic wallet, reload, disconnect, forgotten, backing out); `npm run test:build`.
 - **Not verified: a real Magic account.** Needs a key from dashboard.magic.link with this site's origin allowed. Also open: an email wallet starts with **no CELO**, so the first claim or purchase needs gas. GoodDollar's faucet is documented to top up a verified wallet for the daily claim; that has not been checked for an email wallet.
+
+## Seventh pass: the Leaderboard on the new look (2026-10)
+
+The owner showed another game's leaderboard as the feel to aim for: a big title, an All-time / Daily switch, one card per player, the status line and a big Menu button, all on a dark page. The Leaderboard is now a page screen, like the front door, not a Phaser scene full of shapes.
+
+- **Where it lives.** `src/ui/leaderboardView.js` (pure: `leaderboardModel` decides what to show, `leaderboardHtml` draws it; every server or wallet value is escaped or a number), `src/ui/leaderboardScreen.js` (the screen's place on the page: filling the space under the page header, so the header's wallet button stays where it is), and `src/scenes/LeaderboardScene.js`, now a thin shell that loads the boards, feeds the screen and carries out the taps. The wording rules did not change: an amount comes from the server or is left out (`src/ui/leaderboardText.js`).
+- **What is on it.** Title; All-time and Daily; the view switch (Verified or Open, which asks the server for the other view); on Daily the three prizes, with each prize beside its medal; a header row and a card per player (rank, avatar, short address, time, score, medal), the player's own card outlined in gold; the status line (opens the wallet); the first-boss and Shard Harvest line and the Spoils note below the list, so on a short screen they scroll out of the way of the rows; **Menu** and **Play Endless** at the bottom. New: a "Try again" when the boards cannot be loaded, Escape for Menu, and medals drawn by code (`medal`, `medal_silver`, `medal_bronze` in `icons.js`) instead of emoji.
+- **Fitting phones.** Upright it shows four cards on a 664-pixel-tall screen (more on a taller one); a 360-wide phone gets smaller type and tighter columns so an address is never cut off; sideways the title, switch and view link share a row and the status and buttons another (five cards in 390 pixels).
+- **Verified:** `leaderboard-view.test.js` and `leaderboard-text.test.js` (unit); `test/client/browser/leaderboard.mjs` (a verified player, a visitor, no server, a small phone, sideways, turning the phone: order, own row, boards, prizes, view switch, Spoils sheet, leaving, no cut-off address, no sideways scroll, the header's wallet button reachable, no game controls); the menu and prizes checks, which looked inside the old scene, were rewritten for the page.
 
 ## What was verified, and how
 

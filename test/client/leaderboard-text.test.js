@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { positiveNumber, prizeLabel, rewardsPillText, secondsLabel, shortAddress, spoilsPanelDetail } from '../../src/ui/leaderboardText.js';
+import { dailyPrizeAmounts, honorsFor, positiveNumber, rewardsFacts, rewardsLine, secondsLabel, shortAddress, spoilsPanelDetail } from '../../src/ui/leaderboardText.js';
 
 /*
  * What the leaderboard screen says in words, as plain functions of what the server sent. The rule for every amount: it
@@ -22,7 +22,7 @@ test('anything else is "no amount"', () => {
   }
 });
 
-/* ---- the rewards pill ---- */
+/* ---- the rewards line ---- */
 
 const rewards = (over = {}) => ({
   firstBossClaimed: false, firstBossPrizeG: 2400,
@@ -30,32 +30,39 @@ const rewards = (over = {}) => ({
   ...over,
 });
 
-test('the pill shows the bounty and the day\'s Shard Harvest', () => {
-  assert.equal(rewardsPillText(rewards()), '🏆 1st Boss: UNCLAIMED (2400 G$)  |  💎 Harvest: 4 / 100 G$');
-  assert.equal(rewardsPillText(rewards({ firstBossClaimed: true })), '🏆 1st Boss: CLAIMED (+2400 G$)  |  💎 Harvest: 4 / 100 G$');
+test('the line shows the bounty and the day\'s Shard Harvest', () => {
+  assert.deepEqual(rewardsLine(rewards()), { boss: 'First boss: unclaimed (2400 G$)', harvest: 'Harvest today: 4 / 100 G$' });
+  assert.deepEqual(rewardsLine(rewards({ firstBossClaimed: true })), { boss: 'First boss: claimed (+2400 G$)', harvest: 'Harvest today: 4 / 100 G$' });
 });
 
 test('a bounty amount the server did not send is left out, whatever else it sent', () => {
   for (const v of [undefined, null, 0, -5, 'abc', '', NaN, {}, false, true]) {
-    const text = rewardsPillText(rewards({ firstBossPrizeG: v }));
-    assert.match(text, /1st Boss: UNCLAIMED  \|/, `prize ${JSON.stringify(v)}`);
-    assert.doesNotMatch(text, /UNCLAIMED \(/, `prize ${JSON.stringify(v)}`);
+    const { boss } = rewardsLine(rewards({ firstBossPrizeG: v }));
+    assert.equal(boss, 'First boss: unclaimed', `prize ${JSON.stringify(v)}`);
   }
-  assert.match(rewardsPillText(rewards({ firstBossClaimed: true, firstBossPrizeG: null })), /1st Boss: CLAIMED  \|/);
+  assert.equal(rewardsLine(rewards({ firstBossClaimed: true, firstBossPrizeG: null })).boss, 'First boss: claimed');
 });
 
-test('the harvest cap is the server\'s, and when it sent none the pill does not invent one', () => {
-  assert.match(rewardsPillText(rewards({ crystalStatus: { gdEarned: 7, dailyCapGd: 40, isCapped: false } })), /Harvest: 7 \/ 40 G\$/);
+test('the harvest cap is the server\'s, and when it sent none the line does not invent one', () => {
+  assert.equal(rewardsLine(rewards({ crystalStatus: { gdEarned: 7, dailyCapGd: 40, isCapped: false } })).harvest, 'Harvest today: 7 / 40 G$');
   for (const dailyCapGd of [undefined, null, 0, 'abc']) {
-    const text = rewardsPillText(rewards({ crystalStatus: { gdEarned: 7, dailyCapGd, isCapped: false } }));
-    assert.match(text, /Harvest: 7 G\$$/, `cap ${JSON.stringify(dailyCapGd)}`);
-    assert.doesNotMatch(text, /100/);
+    const { harvest } = rewardsLine(rewards({ crystalStatus: { gdEarned: 7, dailyCapGd, isCapped: false } }));
+    assert.equal(harvest, 'Harvest today: 7 G$', `cap ${JSON.stringify(dailyCapGd)}`);
   }
-  assert.match(rewardsPillText(rewards({ crystalStatus: undefined })), /Harvest: 0 G\$$/);
+  assert.equal(rewardsLine(rewards({ crystalStatus: undefined })).harvest, 'Harvest today: 0 G$');
 });
 
 test('a capped harvest says so', () => {
-  assert.match(rewardsPillText(rewards({ crystalStatus: { gdEarned: 100, dailyCapGd: 100, isCapped: true } })), /Harvest: 100 \/ 100 G\$ \(MAX 🔒\)/);
+  assert.equal(rewardsLine(rewards({ crystalStatus: { gdEarned: 100, dailyCapGd: 100, isCapped: true } })).harvest, 'Harvest today: 100 / 100 G$ (full)');
+});
+
+test('with prizes off the line names the boss bounty and no Shard Harvest', () => {
+  const line = rewardsLine({
+    prizesEnabled: false, firstBossClaimed: false, firstBossPrizeG: 2400,
+    crystalStatus: { gdEarned: 0, dailyCapGd: 0, isCapped: false, shards: 12, rateGd: 0 },
+  });
+  assert.deepEqual(line, { boss: 'First boss: unclaimed (2400 G$)', harvest: null });
+  assert.equal(rewardsFacts({ prizesEnabled: false }).harvest, null);
 });
 
 /* ---- the Spoils explanation ---- */
@@ -76,14 +83,24 @@ test('with no prize amounts or no cap it says what it knows and no more', () => 
 
 /* ---- small labels ---- */
 
-test('prize labels: a medal and the amount for the top three, a tree for everyone else', () => {
-  assert.equal(prizeLabel(0, '1000'), '🥇 1000 G$');
-  assert.equal(prizeLabel(1, '600'), '🥈 600 G$');
-  assert.equal(prizeLabel(2, '300'), '🥉 300 G$');
-  assert.equal(prizeLabel(0, null), '🥇');
-  assert.equal(prizeLabel(2, undefined), '🥉');
-  assert.equal(prizeLabel(3, '10'), '🌲');
-  assert.equal(prizeLabel(40, null), '🌲');
+test('honors: a medal for the top three, with the daily prize amount when the server named one; nothing for the rest', () => {
+  assert.deepEqual(honorsFor(0, '1000'), { medal: 'gold', amount: '1000' });
+  assert.deepEqual(honorsFor(1, 600), { medal: 'silver', amount: '600' });
+  assert.deepEqual(honorsFor(2, '300'), { medal: 'bronze', amount: '300' });
+  assert.deepEqual(honorsFor(0, null), { medal: 'gold', amount: null });
+  assert.deepEqual(honorsFor(2, undefined), { medal: 'bronze', amount: null });
+  for (const bad of ['abc', 0, -1, '']) assert.equal(honorsFor(0, bad).amount, null, `amount ${JSON.stringify(bad)}`);
+  assert.equal(honorsFor(3, '10'), null);
+  assert.equal(honorsFor(40, null), null);
+});
+
+test('the three daily prizes: from the config, else from the daily board, else none', () => {
+  assert.deepEqual(dailyPrizeAmounts({ prizesG: ['1000', '600', '300'] }, null), ['1000', '600', '300']);
+  assert.deepEqual(dailyPrizeAmounts(null, { prizesG: [500, 300, 100] }), ['500', '300', '100']);
+  assert.deepEqual(dailyPrizeAmounts({ prizesG: [] }, { prizesG: ['9', '8', '7'] }), ['9', '8', '7'], 'the config had none, the board has');
+  assert.equal(dailyPrizeAmounts({ prizesG: ['1', '2'] }, { prizesG: ['1', 'x', '3'] }), null, 'short, or with an amount that is not one');
+  assert.equal(dailyPrizeAmounts(null, null), null);
+  assert.equal(dailyPrizeAmounts(undefined, {}), null);
 });
 
 test('times and addresses', () => {
@@ -93,12 +110,4 @@ test('times and addresses', () => {
   assert.equal(shortAddress('0x1111111111111111111111111111111111111111'), '0x11…1111');
   assert.equal(shortAddress('abc'), 'abc');
   assert.equal(shortAddress(undefined), '');
-});
-
-test('with prizes off the status pill names the boss bounty and no Shard Harvest', () => {
-  const text = rewardsPillText({
-    prizesEnabled: false, firstBossClaimed: false, firstBossPrizeG: 2400,
-    crystalStatus: { gdEarned: 0, dailyCapGd: 0, isCapped: false, shards: 12, rateGd: 0 },
-  });
-  assert.equal(text, '🏆 1st Boss: UNCLAIMED (2400 G$)');
 });

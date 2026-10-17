@@ -43,12 +43,12 @@ try {
   log('▶ the leaderboard');
   await g.startScene('LeaderboardScene');
   await g.page.waitForFunction(() => window.game.scene.getScene('LeaderboardScene')?.boardsReady, null, { timeout: 20_000 });
-  await inScene(g.page, 'LeaderboardScene', (scene) => scene.setActiveTab('daily'));
-  const texts = (await sceneTexts(g.page, 'LeaderboardScene')).join(' | ');
-  const spoilsButton = await inScene(g.page, 'LeaderboardScene', (scene) => ({ visible: scene.spoilsTxt.visible, tappable: scene.spoilsBtn.input.enabled }));
-  check(!spoilsButton.visible && !spoilsButton.tappable, 'no SPOILS STATUS button, and nothing to tap where it was');
-  check(!/Spoils settle/.test(texts), 'no "Spoils settle" footer');
-  check(!/Harvest/.test(texts), 'the status pill has no Shard Harvest');
+  await g.page.click('#ms-menu .lb [data-act="tab"][data-tab="daily"]');
+  const lbText = await g.page.evaluate(() => document.querySelector('#ms-menu .lb').innerText);
+  check(!(await g.page.evaluate(() => Boolean(document.querySelector('#ms-menu .lb [data-act="spoils"]')))), 'no Spoils status button, and nothing to tap where it was');
+  check(!/Spoils settle/.test(lbText), 'no "Spoils settle" note');
+  check(!/Harvest/.test(lbText), 'the rewards line has no Shard Harvest');
+  check(!/Daily prizes/.test(lbText), 'and the daily board names no prizes');
   check(g.errors.length === 0, `no browser errors ${g.errors.join(' | ')}`);
 } finally { await g.close(); }
 
