@@ -3,6 +3,7 @@ import { formatUnits, hexToString, parseEventLogs, toFunctionSelector } from "vi
 import { GAME } from "../config.js";
 import { HttpError, ah } from "./http.js";
 import { tokenAbi } from "./chain.js";
+import { bestLevel } from "./levels.js";
 
 const TRANSFER_SELECTOR = toFunctionSelector("transfer(address,uint256)"); // 0xa9059cbb
 /** Hex characters of transfer(to, value) after "0x": the selector and two 32-byte words. What follows is the item tag. */
@@ -29,9 +30,10 @@ export function itemOf(input) {
 }
 
 /**
- * What a player owns: every item they paid for whose requirement they own too. A payment for an item whose requirement is
- * missing (only a modified client sends one) is kept, and counts as soon as the requirement is bought: no G$ is lost, and no
- * item is reached by skipping the one before it. Catalog order, which lists a requirement before the items that need it.
+ * What a player owns: every item they paid for whose requirement they own too, and whose level (`minLevel`) they have
+ * reached. A payment for an item whose requirement or level is missing (only a modified client sends one) is kept, and counts
+ * as soon as the requirement is bought or the level reached: no G$ is lost, and no item is reached by skipping the one before
+ * it. Catalog order, which lists a requirement before the items that need it.
  *
  * "They paid for": bought as this player, or bought by one of this player's wallets. A wallet that bought something before
  * it was verified as a second wallet of someone else belongs to that person now (wallets.subject), and so do its purchases.
@@ -42,9 +44,14 @@ export async function ownedItems(ctx, subject) {
     [subject],
   );
   const paid = new Set(rows.map((r) => r.item_id));
+  // The deepest level is looked up only when something paid for asks for one: most players have bought nothing that does.
+  const reached = GAME.SHOP.some((item) => item.minLevel && paid.has(item.id)) ? await bestLevel(ctx, subject) : 0;
   const owned = [];
   for (const item of GAME.SHOP) {
-    if (paid.has(item.id) && (!item.requires || owned.includes(item.requires))) owned.push(item.id);
+    if (!paid.has(item.id)) continue;
+    if (item.requires && !owned.includes(item.requires)) continue;
+    if (item.minLevel && reached < item.minLevel) continue;
+    owned.push(item.id);
   }
   return owned;
 }
@@ -61,7 +68,10 @@ export async function hasBlade(ctx, subject) {
   return blades.some((id) => owned.includes(id));
 }
 
-const publicItem = ({ id, name, kind, price, requires }) => ({ id, name, kind, priceG: formatUnits(price, 18), requires: requires ?? null });
+/** `minLevel` is listed only for the items that have one, so every other item looks as it always did. */
+const publicItem = ({ id, name, kind, price, requires, minLevel }) => ({
+  id, name, kind, priceG: formatUnits(price, 18), requires: requires ?? null, ...(minLevel ? { minLevel } : {}),
+});
 
 export function shopRoutes(ctx) {
   const r = express.Router();

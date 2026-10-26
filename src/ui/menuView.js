@@ -56,7 +56,7 @@ function menuHtml({ chip, play, showChapters }, enter) {
       <button class="lnk chapters" data-act="chapters" type="button"${showChapters ? '' : ' hidden'}>All chapters</button>
       <div class="tiles">
         <button class="tile" data-act="endless" type="button"><span class="ti">${ico('loop', 34)}</span>Endless</button>
-        <button class="tile" data-act="forge" type="button"><span class="ti">${ico('anvil', 34)}</span>Forge</button>
+        <button class="tile" data-act="forge" type="button"><span class="ti">${ico('anvil', 34)}</span>Shop</button>
         <button class="tile" data-act="ranks" type="button"><span class="ti">${ico('trophy', 34)}</span>Ranks</button>
       </div></div></div>`;
 }

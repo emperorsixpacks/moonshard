@@ -72,16 +72,26 @@ export const IDENTITY_CACHE_MAX = 5_000;
  *          is worth 25, so 25 + 50 stays below 85 + 40. Backstab and stomp add 25, a counter 20.
  *     4.0  MAX_COMBO. The multiplier applies to base + bonus and is reached after 15 kills in a row.
  *   kills a second     2
- *     The arena holds at most 4 foes at once (getMaxConcurrentForWave) and the endless spawner refills it once every
- *     2 s, so over any stretch of time no more than 2 foes a second exist to be killed. (The 12 kills a second in
- *     MAX_KILLS_PER_SEC is the looser limit on a bare count, which Story needs: its foes are placed, not spawned.)
+ *     The arena holds at most 4 foes at once (SURVIVAL.LEVELS.MAX_CONCURRENT) and refills only as they die: a replacement
+ *     appears after a 0.35 s warning, a swing takes 0.32 s, and a foe takes more than one. No human sustains more than 2
+ *     kills a second. (The 12 kills a second in MAX_KILLS_PER_SEC is the looser limit on a bare count, which Story needs:
+ *     its foes are placed, not spawned.)
  *   time               + 10 a second (PTS_PER_SECOND)
- *   => 2 x 500 + 10 = 1,010 points a second, sustained. The blanket limit it replaces was 1,500.
+ *   level clears       + 139 a second
+ *     Endless is a ladder of levels (src/engine/levels.js): after the 5 scripted waves each level pays for clearing it, at
+ *     most 100 + 50 x 10 as the base, which stops climbing at the 10th step, and 10 for each of the 79 seconds a clear can
+ *     beat the longest par time (80 s) by: 1,390. A level has at least 20 foes, so at 2 kills a second it takes at least
+ *     10 s, and 1,390 / 10 = 139 a second.
+ *   boss levels        + 34 a second
+ *     Every 5th level has a boss, a kill worth (500 + 40) x 4.0 = 2,160 at the 4.0 combo. The kill rate above already
+ *     allows 500 for any kill, so a boss adds 1,660, once in the at least 5 x 10 = 50 s that 5 levels take: 33.2 a second.
+ *   => 2 x 500 + 10 + 139 + 34 = 1,183 points a second, sustained. The blanket limit it replaces was 1,500.
  *
  * One-off points that are not part of that rate, allowed once per run (SCORE_BURST_PTS):
  *   - the wave-clear bonus of each of the 5 scripted waves: 100 + 50 x wave + 20 x (30 + 10 x wave - 1) at best
  *     (the speed bonus for clearing in 1 s), 5,900 in all;
  *   - the Survival boss (BOSS_GORGOK, 500 points) killed at the 4.0 combo: (500 + 40) x 4 = 2,160.
+ * Those are the first five levels and the first boss. The levels and bosses after them are inside the rate above.
  */
 const BOSS_PTS = 500;
 export const SCORE_MODEL = Object.freeze({
@@ -92,7 +102,19 @@ export const SCORE_MODEL = Object.freeze({
   TIME_PTS_PER_SEC: 10,
   WAVE_BONUS_PTS_MAX: [0, 1, 2, 3, 4].reduce((sum, wave) => sum + 100 + 50 * wave + 20 * (30 + 10 * wave - 1), 0),
   BOSS_KILL_PTS_MAX: (BOSS_PTS + 40) * 4.0,
+  // Endless levels after the scripted waves. Inputs copied from src/config.js SURVIVAL.LEVELS and src/engine/levels.js.
+  LEVEL_MIN_FOES: 20,
+  LEVEL_CLEAR_PTS_MAX: 100 + 50 * 10 + (80 - 1) * 10,
+  BOSS_EVERY: 5,
 });
+
+/** The most a kill is worth: SCORE_MODEL.KILL_*_PTS_MAX at the top combo. */
+const KILL_PTS_MAX = (SCORE_MODEL.KILL_BASE_PTS_MAX + SCORE_MODEL.KILL_BONUS_PTS_MAX) * SCORE_MODEL.COMBO_MAX;
+/** The least time a built level takes: its fewest foes at the most kills a second. */
+const LEVEL_MIN_SECONDS = SCORE_MODEL.LEVEL_MIN_FOES / SCORE_MODEL.KILLS_PER_SEC;
+/** What the level terms add to the sustained rate, a second (see above), rounded up. */
+export const LEVEL_PTS_PER_SEC = Math.ceil(SCORE_MODEL.LEVEL_CLEAR_PTS_MAX / LEVEL_MIN_SECONDS);
+export const BOSS_LEVEL_PTS_PER_SEC = Math.ceil((SCORE_MODEL.BOSS_KILL_PTS_MAX - KILL_PTS_MAX) / (SCORE_MODEL.BOSS_EVERY * LEVEL_MIN_SECONDS));
 
 /** Game-design tunables. Amounts are wei of G$ (18 decimals). */
 export const GAME = {
@@ -125,11 +147,15 @@ export const GAME = {
    *   minute per player.
    */
   START_GAP_MS: { TRIAL: 10_000, STORY: 3_000 },
-  MAX_PTS_PER_SEC: SCORE_MODEL.KILLS_PER_SEC * (SCORE_MODEL.KILL_BASE_PTS_MAX + SCORE_MODEL.KILL_BONUS_PTS_MAX) * SCORE_MODEL.COMBO_MAX
-    + SCORE_MODEL.TIME_PTS_PER_SEC,
+  MAX_PTS_PER_SEC: SCORE_MODEL.KILLS_PER_SEC * KILL_PTS_MAX + SCORE_MODEL.TIME_PTS_PER_SEC + LEVEL_PTS_PER_SEC + BOSS_LEVEL_PTS_PER_SEC,
   SCORE_BURST_PTS: SCORE_MODEL.WAVE_BONUS_PTS_MAX + SCORE_MODEL.BOSS_KILL_PTS_MAX,
   MAX_KILLS_PER_SEC: 12,
   KILLS_SLACK: 5,
+  /**
+   * Endless levels (levels.js). A run reports the level it ended on, 1 to MAX; it cannot be deeper than the kills allow, at
+   * MIN_FOES_PER_LEVEL a level (the hand-built first wave has 15 foes, no level after it has fewer).
+   */
+  LEVELS: { MAX: 1_000, MIN_FOES_PER_LEVEL: 15 },
   MAX_SCORE: 100_000_000,
   MAX_CHECKPOINTS: 400,
   MIN_COVERAGE_RANKED: 0.5,
@@ -157,15 +183,36 @@ export const GAME = {
    * The Moon Shop: what G$ buys. Every purchase is a G$ transfer from the player to the prize vault, so what players spend
    * goes back to the players who top the leaderboard. Open only when VAULT_ADDRESS is set (see shop.js).
    *   blade     the blade a hero fights with. No run starts without it: buying it is the last step before play.
-   *   forge     the fee for forging a stronger blade. Its forest materials are earned in play: G$ alone forges nothing.
+   *   forge     the fee for forging a stronger blade, or a piece of armour. Its forest materials are earned in play: G$ alone
+   *             forges nothing.
    *   cosmetic  looks only. A Celestial blade has exactly the Glaive's power and needs the Glaive first, so it is a new
    *             look for power already earned; skins and the pet change nothing in a fight.
    * `requires`: an item that must be owned first. Listed before the items that require it.
+   * `minLevel`: the Endless level that must have been reached first, in a ranked run (levels.js bestLevel). The blades past
+   *             the Glaive, and every piece of armour past the first tier, ask for one, so they are earned in the arena as well
+   *             as paid for: G$ cannot buy the way past a level.
+   *             Paying early loses nothing: the payment is kept and counts once the level is reached, as with `requires`.
+   *             The prices are the owner's to set; the materials and levels are src/config.js WEAPONS and ARMOUR (an agreement
+   *             test keeps the two in step).
    */
   SHOP: [
     { id: "iron_starter", name: "Rusted Shortsword", kind: "blade", price: G(20) },
     { id: "iron_broadsword", name: "Iron Broadsword", kind: "forge", price: G(30) },
     { id: "forest_glaive", name: "Forest Glaive", kind: "forge", price: G(60) },
+    { id: "moonsteel_blade", name: "Moonsteel Blade", kind: "forge", price: G(100), requires: "forest_glaive", minLevel: 8 },
+    { id: "starforged_edge", name: "Starforged Edge", kind: "forge", price: G(160), requires: "moonsteel_blade", minLevel: 15 },
+    { id: "cinderbrand", name: "Cinderbrand", kind: "forge", price: G(200), requires: "starforged_edge", minLevel: 20 },
+    { id: "voidglass_reaver", name: "Voidglass Reaver", kind: "forge", price: G(240), requires: "cinderbrand", minLevel: 25 },
+    { id: "leather_cap", name: "Leather Cap", kind: "forge", price: G(15) },
+    { id: "chitin_helm", name: "Chitin Helm", kind: "forge", price: G(50), requires: "leather_cap", minLevel: 8 },
+    { id: "wardens_helm", name: "Warden's Helm", kind: "forge", price: G(80), requires: "chitin_helm", minLevel: 15 },
+    { id: "cinder_helm", name: "Cinder Helm", kind: "forge", price: G(100), requires: "wardens_helm", minLevel: 20 },
+    { id: "moonborn_crown", name: "Moonborn Crown", kind: "forge", price: G(120), requires: "cinder_helm", minLevel: 25 },
+    { id: "oak_buckler", name: "Oak Buckler", kind: "forge", price: G(15) },
+    { id: "honeycomb_shield", name: "Honeycomb Shield", kind: "forge", price: G(50), requires: "oak_buckler", minLevel: 8 },
+    { id: "bone_bulwark", name: "Bone Bulwark", kind: "forge", price: G(80), requires: "honeycomb_shield", minLevel: 15 },
+    { id: "obsidian_aegis", name: "Obsidian Aegis", kind: "forge", price: G(100), requires: "bone_bulwark", minLevel: 20 },
+    { id: "lunar_bastion", name: "Lunar Bastion", kind: "forge", price: G(120), requires: "obsidian_aegis", minLevel: 25 },
     { id: "golden_albatross", name: "Golden Solar Blade", kind: "cosmetic", price: G(150), requires: "forest_glaive" },
     { id: "corrupted_void", name: "Corrupted Void Edge", kind: "cosmetic", price: G(150), requires: "forest_glaive" },
     { id: "skin_flame", name: "Crimson Flame Katana", kind: "cosmetic", price: G(100) },

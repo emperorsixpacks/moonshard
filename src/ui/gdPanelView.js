@@ -355,12 +355,20 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null, config = nul
 const gText = (v) => `${formatG(v, 2)} G$`;
 const SKINS = new Set(Object.values(GAME_CONFIG.WEAPONS).filter((w) => w.isSkin).map((w) => w.id));
 const CELESTIAL = new Set(Object.values(GAME_CONFIG.WEAPONS).filter((w) => w.tier === 'Celestial Blade').map((w) => w.id));
+const ARMOUR_IDS = new Set(Object.values(GAME_CONFIG.ARMOUR).map((a) => a.id));
 
 /** "100 G$ each" for a group at one price, "from 80 G$" for a group at several. */
 function groupPrice(items) {
   const prices = [...new Set(items.map((x) => Number(x.priceG)))];
   if (prices.length > 1) return `from ${gText(Math.min(...prices))}`;
   return items.length > 1 ? `${gText(prices[0])} each` : gText(prices[0]);
+}
+
+/** "15 to 120 G$" for pieces at several prices, "100 G$" for one price. */
+function priceRange(items) {
+  const prices = items.map((x) => Number(x.priceG));
+  const [lo, hi] = [Math.min(...prices), Math.max(...prices)];
+  return lo === hi ? gText(lo) : `${formatG(lo, 2)} to ${gText(hi)}`;
 }
 
 function looksLine(looks) {
@@ -419,10 +427,20 @@ export function howHtml(s, config = null, { open = false } = {}) {
     items.push(li('sword_clean', 'On this server your first blade is free, and blades are forged from forest materials alone.'));
   } else {
     if (blade) items.push(li('sword_clean', `Your hero fights with the <b>${esc(blade.name)}</b>: ${gText(blade.priceG)}. No blade, no fight: it is the last step before you play.`));
+    // What is forged: blades, then helms and shields. The last line says why none of it is power for sale.
     const forge = shop.items.filter((x) => x.kind === 'forge');
-    if (forge.length) items.push(li('anvil', `Stronger blades: ${forge.map((x) => `<b>${esc(x.name)}</b> forest materials + ${gText(x.priceG)}`).join(' · ')}. The materials only come from playing, so G$ alone never buys power.`));
+    const blades = forge.filter((x) => !ARMOUR_IDS.has(x.id));
+    const armour = forge.filter((x) => ARMOUR_IDS.has(x.id));
+    const never = 'The materials only come from playing, so G$ alone never buys power.';
+    const deeper = (pieces, what) => (pieces.some((x) => x.minLevel) ? ` ${what} ask for an Endless level too.` : '');
+    if (blades.length) {
+      items.push(li('anvil', `Stronger blades, forged from forest materials and a G$ fee: ${blades.map((x) => `<b>${esc(x.name)}</b> ${gText(x.priceG)}`).join(' · ')}.${deeper(blades, 'The ones past the Glaive')}${armour.length ? '' : ` ${never}`}`));
+    }
+    if (armour.length) {
+      items.push(li('shield_woods', `Helms and shields (${armour.length} pieces) are forged the same way, ${priceRange(armour)} a piece. A helm turns aside blows, a shield what is thrown.${deeper(armour, 'The better tiers')} ${never}`));
+    }
     const looks = shop.items.filter((x) => x.kind === 'cosmetic');
-    if (looks.length) items.push(li('sparkle', `The Moon Shop sells looks only: ${looksLine(looks)}. Nothing here adds power. Find them in the Forge.`));
+    if (looks.length) items.push(li('sparkle', `The Moon Shop sells looks only: ${looksLine(looks)}. Nothing here adds power. Find them in the Shop.`));
   }
   if (prizes) earnLines(s, config).forEach((t) => items.push(li('trophy', t)));
   else items.push(li('trophy', bountyLine(s)));

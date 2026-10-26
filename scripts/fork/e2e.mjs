@@ -155,7 +155,7 @@ try {
   const petConfirm = await api.call('POST', '/shop/confirm', { txHash: petBuy.hash }, token);
   assert.deepEqual(petConfirm.body.owned, [blade.id, pet.id]);
   // a Celestial blade (the Glaive's power) cannot be had for G$ alone before the Glaive itself
-  const celestial = shop.items.find((i) => i.requires);
+  const celestial = shop.items.find((i) => i.kind === 'cosmetic' && i.requires);
   const early = await buyItem({ wallet: clients, vault: shop.vault, item: celestial });
   const earlyConfirm = await api.call('POST', '/shop/confirm', { txHash: early.hash }, token);
   assert.equal(earlyConfirm.body.recorded, true, 'the payment is kept');

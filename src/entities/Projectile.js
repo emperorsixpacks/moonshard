@@ -1,6 +1,17 @@
 import Phaser from 'phaser';
+import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
 import { legibleSize } from '../engine/uiScale.js';
+
+const MOBS = GAME_CONFIG.MOBS;
+/** What a hit costs, by kind; a kind that is not here costs 25. */
+const DAMAGE = {
+  spore: 15, eye_dart: 15, mud_glob: 16, arcane_orb: 30, arcane_meteor: 30,
+  hornet_quill: MOBS.HORNET_GUARD.DAMAGE, magma_glob: MOBS.CINDER_DRAKE.DAMAGE, lunar_crescent: MOBS.ASTRAL_SHADE.DAMAGE,
+};
+
+/** The kinds that fly in a straight line (the rest fall with the world's pull, as they always have). */
+const STRAIGHT = new Set(['hornet_quill', 'lunar_crescent']);
 
 export default class Projectile extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y, type, vx, vy, isDeflectable = false) {
@@ -18,7 +29,7 @@ export default class Projectile extends Phaser.Physics.Arcade.Sprite {
     this.projType = type;
     this.isDeflected = false;
     this.isDeflectable = isDeflectable;
-    this.damage = (type === 'spore' || type === 'eye_dart') ? 15 : (type === 'mud_glob' ? 16 : ((type === 'arcane_orb' || type === 'arcane_meteor') ? 30 : 25));
+    this.damage = DAMAGE[type] ?? 25;
     this.isDead = false;
     this.setDepth(22);
 
@@ -87,12 +98,41 @@ export default class Projectile extends Phaser.Physics.Arcade.Sprite {
       this.setVelocity(vx, vy);
       this.setScale(1.3);
       this.setTint(0x4a7c59);
+    } else if (type === 'hornet_quill') {
+      // a stinger: a short amber streak that flies straight
+      this.body.setAllowGravity(false);
+      this.setVelocity(vx, vy);
+      this.setRotation(Math.atan2(vy, vx));
+      this.setScale(3.2, 1.4);
+      this.setTint(0xfbbf24);
+    } else if (type === 'magma_glob') {
+      // a lob of molten rock: it arcs and falls with the world's pull
+      this.setVelocity(vx, vy);
+      this.setScale(3.2);
+      this.setTint(0xff5522);
+      this.glow = scene.add.circle(x, y, 8, 0xff7733, 0.6).setDepth(21);
+    } else if (type === 'lunar_crescent') {
+      // a pale blade of moonlight that flies straight
+      this.body.setAllowGravity(false);
+      this.setVelocity(vx, vy);
+      this.setScale(4, 2.4);
+      this.setTint(0xe9d5ff);
+      this.glow = scene.add.circle(x, y, 9, 0xc084fc, 0.55).setDepth(21);
     }
 
     // Auto-cull after 5 seconds
     scene.time.delayedCall(5000, () => {
       if (!this.isDead) this.destroyProj();
     });
+  }
+
+  /**
+   * Sets the projectile off, once it is in the scene's projectile group: a body that joins a physics group is given the
+   * group's defaults (the world's pull on it, no speed), so the flight a kind needs is put back here.
+   */
+  launch(vx, vy) {
+    if (STRAIGHT.has(this.projType)) this.body.setAllowGravity(false);
+    this.setVelocity(vx, vy);
   }
 
   update() {

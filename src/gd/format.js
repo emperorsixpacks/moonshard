@@ -34,6 +34,7 @@ const MESSAGES = {
   not_enough_g: "Not enough G$ in your wallet for that yet. Claim today's free G$ first.",
   already_owned: 'You already own that.',
   requires_item: 'Get the item it builds on first.',
+  level_required: 'Reach the level it asks for in Endless first.',
   not_for_sale: 'That is not for sale on this server.',
   shop_closed: 'The Moon Shop is not open on this server.',
   token_mismatch: "The G$ token in the server's answer does not match this app's. Nothing was sent; tell the team.",

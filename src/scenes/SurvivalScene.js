@@ -12,6 +12,11 @@ import DreadBat from '../entities/DreadBat.js';
 import CryptWraith from '../entities/CryptWraith.js';
 import BasaltGolem from '../entities/BasaltGolem.js';
 import VoidStalker from '../entities/VoidStalker.js';
+import Mirelurker from '../entities/Mirelurker.js';
+import HornetGuard from '../entities/HornetGuard.js';
+import SkeletonWarrior from '../entities/SkeletonWarrior.js';
+import CinderDrake from '../entities/CinderDrake.js';
+import AstralShade from '../entities/AstralShade.js';
 import Projectile from '../entities/Projectile.js';
 import BossHealthBar from '../ui/BossHealthBar.js';
 import HeroHealthBar from '../ui/HeroHealthBar.js';
@@ -20,6 +25,10 @@ import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
 import { getTodaySeedString, generateDailySurvivalSpec } from '../engine/PRNG.js';
+import { BEASTS, bladeGoal, levelClearBonus, levelMaterials, levelPlan } from '../engine/levels.js';
+import { baneMul, gearStrip } from '../engine/gear.js';
+import { GRADE_ALPHA_MAX, PLATFORM_TEXTURES, WOODS_LOOK, platformLift, sceneSwap } from '../engine/scenery.js';
+import EndlessWeather from '../engine/EndlessWeather.js';
 import { pauseService } from '../engine/PauseService.js';
 import { gdService } from '../engine/GdService.js';
 import { startIsBlocked } from '../engine/playGate.js';
@@ -37,6 +46,16 @@ import { SHARD_RATE_GD, DAILY_SHARD_CAP_GD } from '../gd/config.js';
 
 // After this long without an answer from the server the result screen says the run is still being submitted.
 const SLOW_SUBMIT_MS = 20_000;
+
+// What builds each foe a level can bring (engine/levels.js BEASTS names the same types); the boss is built in spawnEnemy.
+const BEAST_CLASSES = {
+  boar: Boar, snail: Snail, bee: Bee, mushroom: Mushroom, flying_eye: FlyingEye, goblin: Goblin,
+  bog_lurker: BogLurker, dread_bat: DreadBat, crypt_wraith: CryptWraith, basalt_golem: BasaltGolem, void_stalker: VoidStalker,
+  mirelurker: Mirelurker, hornet_guard: HornetGuard, skeleton_warrior: SkeletonWarrior, cinder_drake: CinderDrake, astral_shade: AstralShade,
+};
+
+/** A beast's name for a banner or an arrow: "HORNET GUARD". */
+const beastName = (type) => (BEASTS[type]?.name ?? String(type).replace(/_/g, ' ')).toUpperCase();
 
 
 export default class SurvivalScene extends Phaser.Scene {
@@ -175,7 +194,7 @@ export default class SurvivalScene extends Phaser.Scene {
     this.physics.add.overlap(this.player, this.projectiles, (player, proj) => {
       if (this.player.isDead || !proj || proj.isDead || proj.isDeflected) return;
       const knockDir = proj.x < this.player.x ? 1 : -1;
-      const damaged = this.player.takeDamage(proj.damage || 15, knockDir);
+      const damaged = this.player.takeDamage(proj.damage || 15, knockDir, 'ranged'); // what a foe threw: the shield's
       if (damaged) {
         this.comboCount = 0;
         this.currentComboMultiplier = 1.0;
@@ -205,8 +224,10 @@ export default class SurvivalScene extends Phaser.Scene {
     // HUD
     this.createSurvivalHUD();
 
-    // Start wave progression (kill-gated with concurrency cap)
-    this.currentWaveIndex = 0;
+    // Start level progression (kill-gated with concurrency cap)
+    this.level = 1;
+    this.plan = null;
+    this.realmKey = null;
     this.wavePendingCount = 0;
     this.waveRemainingFoes = 0;
     this.waveSpawnQueue = [];
@@ -214,13 +235,12 @@ export default class SurvivalScene extends Phaser.Scene {
     this.inFlightSpawns = 0;
     this.pendingWaveSpawns = [];
     this.waveHpMul = 1;
-    this.endlessMode = false;
-    this.endlessWave = 1;
+    this.waveSpeedMul = 1;
     this.waveStartTime = this.activeClock.ms;
     this.waveSpawnTimers = [];
     this.modalButtons = null;
     this.player.body.setCollideWorldBounds(true);
-    this.startWave(this.currentWaveIndex);
+    this.startLevel(1);
   }
 
   createArenaForestBackground() {
@@ -255,11 +275,13 @@ export default class SurvivalScene extends Phaser.Scene {
       { x: 770, scale: 1.0, type: 'pine_golden' },
     ];
 
-    treePositions.forEach(t => {
+    // (kept, so a realm can dress them: applyRealm)
+    this.bgTrees = treePositions.map(t => {
       const tree = this.add.image(t.x, 326, t.type)
         .setOrigin(0.5, 1.0)
         .setScale(t.scale)
         .setDepth(4);
+      tree.woodsKey = t.type;
 
       this.tweens.add({
         targets: tree,
@@ -269,18 +291,30 @@ export default class SurvivalScene extends Phaser.Scene {
         repeat: -1,
         ease: 'Sine.easeInOut'
       });
+      return tree;
     });
 
     // 6. Bushes
-    [100, 260, 420, 580, 720].forEach(bx => {
-      this.add.image(bx, 322, 'bush_green').setOrigin(0.5, 1.0).setDepth(5).setScale(0.8);
-    });
+    this.bgBushes = [100, 260, 420, 580, 720].map(bx => (
+      this.add.image(bx, 322, 'bush_green').setOrigin(0.5, 1.0).setDepth(5).setScale(0.8)
+    ));
 
     // 7. Ambient particles
     this.createArenaForestParticles();
+
+    // 8. What a level's scene (engine/scenery.js) adds: the colour of the hour over the world (under the foes, the hero and the
+    // weather, so they stay clear), the weather in the air, and the curtain that hides one scene turning into the next
+    this.bgGrade = this.add.rectangle(0, 0, w, h, 0x000000, 1).setOrigin(0, 0).setScrollFactor(0).setDepth(14).setAlpha(0).setVisible(false);
+    this.weather = new EndlessWeather(this);
+    this.curtain = this.add.rectangle(0, 0, w, h, 0x070b18, 1).setOrigin(0, 0).setScrollFactor(0).setDepth(160).setAlpha(0);
+    this.events.once('shutdown', () => this.weather.destroy());
+    this.arenaScene = null;
+    this.platformKey = PLATFORM_TEXTURES.woods;
+    this.groundTint = WOODS_LOOK.ground;
+    this.raised = [];
   }
 
-  createArenaForestParticles() {
+  createArenaForestParticles(tint = WOODS_LOOK.mote) {
     this.particles = this.add.particles(0, 0, 'spark', {
       x: { min: 0, max: this.arenaWidth },
       y: { min: 40, max: 320 },
@@ -292,9 +326,94 @@ export default class SurvivalScene extends Phaser.Scene {
       speedY: { min: -8, max: 8 },
       scale: { start: 0.9, end: 0 },
       alpha: { start: 0.6, end: 0 },
-      tint: 0x88ee88,
+      tint,
       blendMode: 'ADD'
     }).setDepth(15);
+  }
+
+  /**
+   * Dress the arena for a level's scene (engine/scenery.js sceneFor): its sky, whether the forest hills show, the trees and
+   * bushes, the platforms, the tint over them and over the earth, the grade over the whole picture, the motes in the air and the
+   * weather. It is all put on at once (startLevel and the tests read the result); the look of it arriving is the curtain's.
+   */
+  applyScene(scene) {
+    const { look } = scene;
+    const change = sceneSwap(this.arenaScene, scene);
+    this.arenaScene = scene;
+
+    if (change.pictures) {
+      this.bgSky.setTexture(look.sky);
+      for (const layer of [this.bgMountains, this.bgFogPines, this.bgMidPines]) layer.setVisible(look.hills);
+      this.bgTrees.forEach((tree, i) => {
+        const own = look.trees === null;
+        tree.setVisible(own || look.trees.length > 0);
+        if (own) tree.setTexture(tree.woodsKey);
+        else if (look.trees.length > 0) tree.setTexture(look.trees[i % look.trees.length]);
+      });
+      this.bgBushes.forEach((bush) => bush.setVisible(look.bush !== null).setTexture(look.bush ?? WOODS_LOOK.bush));
+      this.platformKey = look.platform;
+      this.raised.forEach((platform) => this.drawPlatform(platform));
+    }
+
+    if (change.colours) {
+      const tint = look.tint ?? 0xffffff;
+      this.bgSky.setTint(look.skyTint ?? 0xffffff);
+      for (const layer of [this.bgMountains, this.bgFogPines, this.bgMidPines, ...this.bgTrees, ...this.bgBushes]) layer.setTint(tint);
+      // the earth, what grows on it and the platforms (buildSeededArena makes them from these textures)
+      this.groundTint = look.ground;
+      for (const piece of this.children.list) {
+        if (/^(tile_cliff_|prop_(shroom|flower|fern)|plat_)/.test(piece.texture?.key ?? '')) piece.setTint(look.ground);
+      }
+      this.particles?.destroy();
+      this.createArenaForestParticles(look.mote);
+      this.applyGrade(scene.grade);
+    }
+
+    this.weather.set(scene.weather);
+  }
+
+  /** The colour laid over the world: still, or, for a boss's scene, breathing. */
+  applyGrade({ color, alpha, pulse }) {
+    this.gradeBreath?.stop();
+    this.gradeBreath = null;
+    this.bgGrade.setFillStyle(color, 1).setAlpha(alpha).setVisible(alpha > 0 || pulse > 0);
+    if (pulse > 0) {
+      this.gradeBreath = this.tweens.add({
+        targets: this.bgGrade,
+        alpha: { from: Math.max(0, alpha - pulse), to: Math.min(GRADE_ALPHA_MAX, alpha + pulse) },
+        duration: 1400,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+  }
+
+  /**
+   * Draw a raised platform from the scene's platform picture: 48-wide tiles end to end, or a branch (75 wide) spread so that it
+   * ends where the platform does (the collider is the platform's own width, whatever it is drawn with).
+   */
+  drawPlatform(platform) {
+    platform.pieces.forEach((piece) => piece.destroy());
+    const key = this.platformKey;
+    const { width: tileW, height: tileH } = this.textures.getFrame(key);
+    const count = Math.max(1, Math.round(platform.width / tileW));
+    const each = platform.width / count;
+    platform.pieces = Array.from({ length: count }, (_, i) => (
+      this.add.image(platform.x + i * each, platform.y + platformLift(key), key)
+        .setOrigin(0, 0).setDisplaySize(each, tileH).setDepth(10).setTint(this.groundTint)
+    ));
+  }
+
+  /** Draw the curtain over the arena (not over the HUD): the scene changes behind it. */
+  curtainDown(ms = 480) {
+    this.tweens.killTweensOf(this.curtain);
+    this.tweens.add({ targets: this.curtain, alpha: 0.96, duration: ms, ease: 'Sine.easeIn' });
+  }
+
+  curtainUp(ms = 650) {
+    this.tweens.killTweensOf(this.curtain);
+    this.tweens.add({ targets: this.curtain, alpha: 0, duration: ms, ease: 'Sine.easeOut' });
   }
 
   onViewportResize(w, h) {
@@ -315,9 +434,12 @@ export default class SurvivalScene extends Phaser.Scene {
       this.bgMidPines.setSize(w, Math.max(220, hb - 80));
       this.bgMidPines.tileScaleY = hb > 270 ? Math.max(1, (hb - 80) / 176) : 1;
     }
+    if (this.bgGrade) this.bgGrade.setSize(w, h);
+    if (this.curtain) this.curtain.setSize(w, h);
     if (this.cameras && this.cameras.main) {
       this.cameras.main.setSize(w, h);
     }
+    this.weather?.resize();
   }
 
   buildSeededArena() {
@@ -379,10 +501,10 @@ export default class SurvivalScene extends Phaser.Scene {
           }
         }
       } else {
-        // Elevated wooden timber / ruins platforms
-        for (let i = 0; i < count; i++) {
-          this.add.image(startX + i * 48, topY, 'plat_wood').setOrigin(0, 0).setDepth(depth);
-        }
+        // Raised platforms: timber, until a scene brings another picture (applyScene)
+        const raised = { x: startX, y: topY, width: actualWidth, pieces: [] };
+        this.raised.push(raised);
+        this.drawPlatform(raised);
       }
     });
 
@@ -403,17 +525,8 @@ export default class SurvivalScene extends Phaser.Scene {
     if (this.isGameOver) return null;
     const proj = new Projectile(this, x, y, type, vx, vy, isDeflectable);
     this.projectiles.add(proj);
-    proj.setVelocity(vx, vy);
+    proj.launch(vx, vy);
     return proj;
-  }
-
-  getMaxConcurrentForWave(waveIndex) {
-    if (waveIndex === 0) return 2; // Wave 1: max 2 active enemies
-    if (waveIndex === 1) return 3; // Wave 2: max 3 active enemies
-    if (waveIndex === 2) return 3; // Wave 3: max 3 active enemies
-    if (waveIndex === 3) return 4; // Wave 4: max 4 active enemies
-    if (waveIndex === 4) return 4; // Wave 5: max 4 active enemies (Boss + 3 minions)
-    return 4;
   }
 
   spawnCrates() {
@@ -427,23 +540,21 @@ export default class SurvivalScene extends Phaser.Scene {
     });
   }
 
-  startWave(index) {
+  /** Begin level n of Endless (engine/levels.js): its foes, how tough and how fast they are, how many are in the arena at once. */
+  startLevel(n) {
     if (this.isGameOver) return;
     this.isWaveTransitioning = false;
 
-    const waves = this.spec.waves;
-    if (index >= waves.length) {
-      this.startEndless();
-      return;
-    }
-
-    const wave = waves[index];
-    this.currentWaveIndex = index;
-    this.waveHpMul = this.getWaveHpMul(index);
-    this.waveSpawnQueue = [...wave.spawns];
-    this.waveRemainingFoes = wave.spawns.length;
-    this.wavePendingCount = wave.spawns.length;
-    this.maxConcurrentEnemies = this.getMaxConcurrentForWave(index);
+    const plan = levelPlan(n);
+    this.plan = plan;
+    this.level = plan.level;
+    storage.recordBestLevel(plan.level);
+    this.waveHpMul = plan.hpMul;
+    this.waveSpeedMul = plan.speedMul;
+    this.waveSpawnQueue = [...plan.spawns];
+    this.waveRemainingFoes = plan.foes;
+    this.wavePendingCount = plan.foes;
+    this.maxConcurrentEnemies = plan.maxConcurrent;
     this.pendingSpawns = [];
     this.inFlightSpawns = 0;
     if (this.waveSpawnTimers) {
@@ -460,14 +571,19 @@ export default class SurvivalScene extends Phaser.Scene {
     }
     this.pendingWaveSpawns = [];
     this.waveStartTime = this.activeClock.ms;
-    this.endlessMode = false;
     this.emptyArenaSince = null;
     this.updateWaveHud();
 
-    // Replenish supply crates at each wave so player can find healing!
+    // Every level has a scene of its own (engine/scenery.js): put on at once, and shown from behind the curtain when one is down
+    this.realmKey = plan.realm;
+    this.sceneKey = plan.scene.key;
+    this.applyScene(plan.scene);
+    if (this.curtain.alpha > 0) this.curtainUp();
+
+    // Replenish supply crates at each level so player can find healing!
     this.spawnCrates();
 
-    this.announceWave(wave.title);
+    this.announceLevel(plan);
 
     // Initial spawn check to populate arena up to maxConcurrentEnemies
     this.checkSpawnQueue();
@@ -523,7 +639,7 @@ export default class SurvivalScene extends Phaser.Scene {
   }
 
   syncWaveFoeCounter(activeEnemies) {
-    if (this.endlessMode || this.isWaveTransitioning) return false;
+    if (this.isWaveTransitioning) return false;
 
     this.prunePendingWaveSpawns();
     const living = this.getCountedWaveEnemies(activeEnemies);
@@ -539,7 +655,7 @@ export default class SurvivalScene extends Phaser.Scene {
     }
 
     if (actualRemaining === 0 && !this.isWaveTransitioning) {
-      this.waveCleared();
+      this.levelCleared();
       return true;
     }
 
@@ -636,7 +752,7 @@ export default class SurvivalScene extends Phaser.Scene {
   }
 
   checkSpawnQueue() {
-    if (this.isGameOver || this.endlessMode || this.isWaveTransitioning) return;
+    if (this.isGameOver || this.isWaveTransitioning) return;
 
     this.prunePendingWaveSpawns();
     this.recoverStalePendingWaveSpawns();
@@ -669,7 +785,7 @@ export default class SurvivalScene extends Phaser.Scene {
     }
 
     if (this.waveSpawnQueue.length === 0 && activeCount === 0 && pendingCount === 0) {
-      this.waveCleared();
+      this.levelCleared();
       return;
     }
 
@@ -700,7 +816,7 @@ export default class SurvivalScene extends Phaser.Scene {
       entry.spawnTimer = this.time.delayedCall(staggerDelay + 350, () => {
         this.completePendingWaveSpawn(entry);
         if (this.isGameOver || this.isWaveTransitioning) return;
-        this.spawnEnemy(spawn.type, spawn.x, spawn.y, this.waveHpMul);
+        this.spawnEnemy(spawn.type, spawn.x, spawn.y, this.waveHpMul, { variant: spawn.variant });
         this.syncWaveFoeCounter();
         this.checkSpawnQueue();
       });
@@ -721,7 +837,8 @@ export default class SurvivalScene extends Phaser.Scene {
     return rune;
   }
 
-  waveCleared() {
+  /** Every foe of the level is down: pay the clear bonus and the level's forest materials, then begin the next one. */
+  levelCleared() {
     if (this.isGameOver || this.isWaveTransitioning) return;
     this.isWaveTransitioning = true;
 
@@ -741,90 +858,50 @@ export default class SurvivalScene extends Phaser.Scene {
     this.waveRemainingFoes = 0;
     this.wavePendingCount = 0;
     this.updateWaveHud();
+    this.dismissSummons();
 
-    // Base wave clear bonus
-    const baseBonus = GAME_CONFIG.SURVIVAL.WAVE_CLEAR_BONUS + (this.currentWaveIndex * 50);
-
-    // Speed bonus: finishing the wave faster awards more score!
-    const waveDurationSec = Math.max(1, Math.floor((this.activeClock.ms - this.waveStartTime) / 1000));
-    const targetParSec = 30 + this.currentWaveIndex * 10; // Target time: W1: 30s, W2: 40s, W3: 50s...
-    const speedBonus = waveDurationSec < targetParSec
-      ? (targetParSec - waveDurationSec) * 20
-      : 25; // Minimum speed bonus
-
-    const totalBonus = baseBonus + speedBonus;
-    this.totalScore += totalBonus;
+    // Clear bonus, with a speed bonus for finishing under the level's par time (engine/levels.js)
+    const levelDurationSec = Math.max(1, Math.floor((this.activeClock.ms - this.waveStartTime) / 1000));
+    const clear = levelClearBonus(this.level, levelDurationSec);
+    this.totalScore += clear.total;
     this.txtScore.setText(`SCORE: ${this.totalScore}`);
 
-    const bonusLabel = waveDurationSec < targetParSec
-      ? `SPEED CLEAR! +${totalBonus} PTS ⚡ (${waveDurationSec}s)`
-      : `WAVE CLEAR! +${totalBonus} PTS ✨ (${waveDurationSec}s)`;
+    const bonusLabel = clear.fast
+      ? `SPEED CLEAR! +${clear.total} PTS ⚡ (${levelDurationSec}s)`
+      : `LEVEL CLEAR! +${clear.total} PTS ✨ (${levelDurationSec}s)`;
 
-    this.showScorePopup(this.player ? this.player.x : 400, (this.player ? this.player.y : 200) - 24, totalBonus, bonusLabel);
+    const px = this.player ? this.player.x : 400;
+    const py = this.player ? this.player.y : 200;
+    this.showScorePopup(px, py - 24, clear.total, bonusLabel);
+
+    // The level's forest materials (the Citizen's Blessing adds to them: what the inventory gained is what the popup says)
+    const before = { ...storage.getMaterials() };
+    storage.addMaterials(levelMaterials(this.level));
+    const gained = Object.fromEntries(Object.keys(before).map((k) => [k, storage.getMaterials()[k] - before[k]]));
+    const found = [['bark', '🌲'], ['amber', '🍯'], ['iron', '⚙️']].filter(([k]) => gained[k] > 0).map(([k, icon]) => `+${gained[k]}${icon}`).join(' ');
+    if (found) this.showFloatingText(px, py - 48, found, '#98ff20');
 
     sound.playCoin();
     confetti({ particleCount: 40, spread: 70, origin: { y: 0.6 } });
-    this.announceWave(`✨ WAVE ${this.currentWaveIndex + 1} CLEARED! +${totalBonus} PTS (${waveDurationSec}s) ✨`);
+    this.announceWave(`✨ LEVEL ${this.level} CLEARED! +${clear.total} PTS (${levelDurationSec}s) ✨`);
 
+    // The next level's scene goes on under a dip of the curtain: down over the last 650 ms (all the way down well before the swap,
+    // so a slow frame cannot show the scene changing under a curtain half drawn), up as the level begins
+    const next = sceneSwap(this.arenaScene, levelPlan(this.level + 1).scene);
+    if (next.pictures || next.colours) this.time.delayedCall(850, () => { if (!this.isGameOver) this.curtainDown(); });
     this.time.delayedCall(1500, () => {
       if (this.isGameOver) return;
-      this.startWave(this.currentWaveIndex + 1);
+      this.startLevel(this.level + 1);
     });
   }
 
-  startEndless() {
-    if (this.isGameOver) return;
-
-    this.endlessMode = true;
-    this.waveRemainingFoes = 0;
-    this.wavePendingCount = 0;
-    this.endlessWave = 1;
-    this.maxConcurrentEnemies = 4;
-    this.inFlightSpawns = 0;
-    this.waveHpMul = GAME_CONFIG.SURVIVAL.ENDLESS_HP_MUL_BASE;
-    this.updateWaveHud();
-
-    this.announceWave('SURVIVAL RUSH!');
-
-    // Endless mode periodic spawner: checks every 2 seconds if arena has open slots up to maxConcurrentEnemies
-    this.endlessTimer = this.time.addEvent({
-      delay: 2000,
-      loop: true,
-      callback: () => {
-        if (this.isGameOver) return;
-        const activeCount = this.enemies.getChildren().filter(e => e && e.active && e.state !== 'DEAD' && !e._killHandled).length;
-        const openSlots = this.maxConcurrentEnemies - (activeCount + this.inFlightSpawns);
-        if (openSlots <= 0) return;
-
-        for (let i = 0; i < openSlots; i++) {
-          const types = ['boar', 'snail', 'bee', 'mushroom', 'flying_eye', 'goblin'];
-          if ((this.currentWaveIndex || 0) >= 2) types.push('bog_lurker');
-          if ((this.currentWaveIndex || 0) >= 3) types.push('dread_bat');
-          if ((this.currentWaveIndex || 0) >= 4) types.push('crypt_wraith');
-          if ((this.currentWaveIndex || 0) >= 5) types.push('basalt_golem');
-          if ((this.currentWaveIndex || 0) >= 6) types.push('void_stalker');
-
-          const chosen = Phaser.Utils.Array.GetRandom(types);
-          const spawnX = Math.random() < 0.5 ? 80 : 760;
-          let spawnY = 280;
-          if (chosen === 'bee' || chosen === 'flying_eye' || chosen === 'dread_bat' || chosen === 'crypt_wraith') spawnY = Phaser.Math.Between(80, 140);
-          else if (chosen === 'mushroom' || chosen === 'goblin' || chosen === 'void_stalker') spawnY = Math.random() < 0.5 ? 150 : 210;
-
-          this.inFlightSpawns++;
-          this.showSpawnTelegraph(spawnX, spawnY);
-          const t = this.time.delayedCall(450, () => {
-            if (this.isGameOver) return;
-            this.inFlightSpawns = Math.max(0, this.inFlightSpawns - 1);
-            this.spawnEnemy(chosen, spawnX, spawnY, this.waveHpMul);
-          });
-          this.waveSpawnTimers.push(t);
-        }
-      }
+  /** What a boss called to help (`countsTowardWave` false) does not outlast the level: it fades with the last foe that counts. */
+  dismissSummons() {
+    this.getLivingWaveEnemies().filter(e => e.countsTowardWave === false).forEach(e => {
+      const puff = this.add.circle(e.x, e.y, 14, 0x88ee88, 0.75).setDepth(20);
+      this.tweens.add({ targets: puff, scale: 1.6, alpha: 0, duration: 350, onComplete: () => puff.destroy() });
+      e.destroy();
     });
-  }
-
-  getWaveHpMul(index) {
-    return 1 + index * GAME_CONFIG.SURVIVAL.HP_SCALE_PER_WAVE;
   }
 
   showScorePopup(x, y, pts, label = '') {
@@ -888,9 +965,7 @@ export default class SurvivalScene extends Phaser.Scene {
     const fullLabel = [label, comboTag].filter(Boolean).join(' ');
     this.showScorePopup(popupX, popupY, ptsEarned, fullLabel);
 
-    if (!this.endlessMode) {
-      this.checkSpawnQueue();
-    }
+    this.checkSpawnQueue();
 
     // Shard drop (2 G$ each, paid after UTC midnight) - rare drops!
     if (this.prizesOn && enemy) {
@@ -939,47 +1014,29 @@ export default class SurvivalScene extends Phaser.Scene {
 
   updateWaveHud() {
     if (this.txtWave) {
-      const label = this.endlessMode
-        ? `RUSH ${this.endlessWave || 1}`
-        : `WAVE ${this.currentWaveIndex + 1}/${this.spec.waves.length}`;
-      this.txtWave.setText(label);
+      this.txtWave.setText(`LEVEL ${this.level}`);
     }
     if (this.txtFoes) {
       const count = this.waveRemainingFoes !== undefined ? this.waveRemainingFoes : this.wavePendingCount;
-      this.txtFoes.setText(this.endlessMode ? 'FOES: ∞' : `FOES: ${count}`);
+      this.txtFoes.setText(`FOES: ${count}`);
     }
   }
 
   spawnEnemy(type, x, y, hpMul = 1, options = {}) {
     let enemy;
-    if (type === 'boar') {
-      enemy = new Boar(this, x, y);
-    } else if (type === 'snail') {
-      enemy = new Snail(this, x, y);
-    } else if (type === 'bee') {
-      enemy = new Bee(this, x, y);
-    } else if (type === 'mushroom') {
-      enemy = new Mushroom(this, x, y);
-    } else if (type === 'flying_eye') {
-      enemy = new FlyingEye(this, x, y);
-    } else if (type === 'goblin') {
-      enemy = new Goblin(this, x, y);
-    } else if (type === 'bog_lurker') {
-      enemy = new BogLurker(this, x, y);
-    } else if (type === 'dread_bat') {
-      enemy = new DreadBat(this, x, y);
-    } else if (type === 'crypt_wraith') {
-      enemy = new CryptWraith(this, x, y);
-    } else if (type === 'basalt_golem') {
-      enemy = new BasaltGolem(this, x, y);
-    } else if (type === 'void_stalker') {
-      enemy = new VoidStalker(this, x, y);
+    const Beast = BEAST_CLASSES[type];
+    if (Beast) {
+      enemy = new Beast(this, x, y);
     } else if (type === 'boss_gorgok') {
-      if (!this.bossBar) {
-        this.bossBar = new BossHealthBar(this, GAME_CONFIG.MOBS.BOSS_GORGOK.NAME, GAME_CONFIG.MOBS.BOSS_GORGOK.HP);
-        this.bossBar.y = 44;
+      enemy = new BossGorgok(this, x, y);
+      // each realm's last level is Gorgok in another coat, with its own name and its own call for help
+      const { variant } = options;
+      if (variant) {
+        enemy.bossName = variant.name;
+        enemy.summonType = variant.summon;
+        enemy.baseTint = variant.tint;
+        if (variant.tint !== null) enemy.setTint(variant.tint);
       }
-      enemy = new BossGorgok(this, x, y, this.bossBar);
     }
 
     if (enemy) {
@@ -989,12 +1046,15 @@ export default class SurvivalScene extends Phaser.Scene {
         enemy.hp = Math.max(1, Math.round(enemy.hp * hpMul));
         enemy.maxHp = enemy.hp;
       }
-      // Progressive wave speed boost (each wave enemies move slightly faster)
-      const speedBoost = 1 + (this.currentWaveIndex || 0) * 0.05;
-      if (enemy.walkSpeed) enemy.walkSpeed *= speedBoost;
+      // Progressive speed boost (each level walkers move slightly faster, up to a cap)
+      if (enemy.walkSpeed) enemy.walkSpeed *= this.waveSpeedMul;
+      if (type === 'boss_gorgok') this.attachBossBar(enemy);
 
       if (enemy.body) enemy.body.setCollideWorldBounds(true);
+      // a body that joins the group is given the group's defaults, gravity included: a flyer is put back in the air
+      const floats = Boolean(enemy.body) && !enemy.body.allowGravity;
       this.enemies.add(enemy);
+      if (floats) enemy.body.setAllowGravity(false);
 
       // Spawn puff
       const spawnPuff = this.add.circle(x, y, 14, 0x88ee88, 0.75).setDepth(20);
@@ -1011,8 +1071,48 @@ export default class SurvivalScene extends Phaser.Scene {
     return null;
   }
 
+  /** A boss's health bar, made once the boss has its level's health and named for it (the bar of the boss before is gone). */
+  attachBossBar(boss) {
+    this.bossBar?.destroy();
+    this.bossBar = new BossHealthBar(this, boss.bossName, boss.maxHp);
+    this.bossBar.y = 44;
+    boss.healthBar = this.bossBar;
+  }
+
   spawnMob(type, x, y) {
     return this.spawnEnemy(type, x, y, this.waveHpMul || 1, { countsTowardWave: false });
+  }
+
+  /**
+   * The banner that opens a level: a new realm if it brings one, the level's number and name, its boss, and the beasts the
+   * player has not met yet. It stays a moment so it can be read, then fades (and a banner still up is gone before the
+   * next one is drawn over it).
+   */
+  announceLevel(plan) {
+    if (this.levelBanner) {
+      this.tweens.killTweensOf(this.levelBanner);
+      this.levelBanner.forEach(t => t.destroy());
+    }
+    const w = this.cameras.main.width;
+    const top = Math.round(this.cameras.main.height * 0.3);
+    const lines = [];
+    if (plan.newRealm) lines.push({ text: `ENTERING ${plan.realmName.toUpperCase()}`, size: '7px', color: '#9be7ff' });
+    lines.push({ text: `LEVEL ${plan.level}`, size: '10px', color: '#f6c026' });
+    lines.push({ text: plan.name.toUpperCase(), size: '7px', color: '#ffffff' });
+    lines.push({ text: plan.scene.name.toUpperCase(), size: '6px', color: '#a8c4ff' });
+    if (plan.boss) lines.push({ text: `BOSS: ${plan.boss.name}`, size: '7px', color: '#ff6b6b' });
+    if (plan.introduces.length > 0) lines.push({ text: `NEW: ${plan.introduces.map(beastName).join(', ')}`, size: '7px', color: '#98ff20' });
+
+    let y = top;
+    const texts = lines.map(({ text, size, color }) => {
+      const t = this.add.text(w / 2, y, text, { fontFamily: 'Press Start 2P', fontSize: size, color, stroke: '#000', strokeThickness: 3 })
+        .setOrigin(0.5).setScrollFactor(0).setDepth(250);
+      y += parseFloat(size) + 8;
+      return t;
+    });
+    this.levelBanner = texts;
+    this.tweens.add({ targets: texts, scale: { from: 1.3, to: 1 }, duration: 260, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: texts, alpha: 0, delay: 1700, duration: 900, onComplete: () => texts.forEach(t => t.destroy()) });
   }
 
   announceWave(title) {
@@ -1075,8 +1175,12 @@ export default class SurvivalScene extends Phaser.Scene {
     this.heroHealthBar = new HeroHealthBar(this, hud.health.x, hud.health.y, this.player ? this.player.maxHealth : GAME_CONFIG.PLAYER.MAX_HEALTH, hud.healthBar);
 
     // Wave progress
-    this.txtWave = label(wave, 'WAVE 1/5', '#f6c026');
+    this.txtWave = label(wave, 'LEVEL 1', '#f6c026');
     this.txtFoes = value(foes, 'FOES: 0', '#d0f0c0');
+
+    // The armour worn (engine/gear.js), under the bar at the left: the page's wallet and timer buttons are at the right
+    this.txtGear = this.add.text(hud.left, hud.barH + 9, gearStrip(this.player?.armour), { ...hud.fonts.value, color: '#cfe3ff', stroke: '#000000', strokeThickness: 2 })
+      .setOrigin(0, 0.5).setScrollFactor(0).setDepth(201);
 
     this.offscreenArrow = this.add.text(w / 2, hud.barH + 8, '▲ ENEMY ABOVE ▲', {
       fontFamily: 'Press Start 2P',
@@ -1128,7 +1232,10 @@ export default class SurvivalScene extends Phaser.Scene {
       if (this.player.flipX && enemyCenterX > this.player.x) return;
     }
 
-    const dmg = this.player.getAttackDamage();
+    // A blade forged for a realm hits that realm's beasts harder (engine/gear.js)
+    const bane = baneMul(this.player.weaponConfig, enemy.mobType, this.plan?.realm);
+    const dmg = Math.round(this.player.getAttackDamage() * bane);
+    if (bane > 1) this.showBaneCue(enemy, bane);
     const isUpward = this.player.attackType === 'upward';
     const res = enemy.takeDamage(dmg, this.player.x, isUpward);
 
@@ -1137,6 +1244,13 @@ export default class SurvivalScene extends Phaser.Scene {
       const bonus = res.isBackstab ? 25 : (res.isCounter ? 20 : 0);
       this.addKill(enemy.mobType, res.pts, bonus, enemy.x, enemy.y - 12, label, enemy);
     }
+  }
+
+  /** A blade's bane lands: say so, but not on every swing at a pack (it would write over itself). */
+  showBaneCue(enemy, bane) {
+    if (this.time.now - (this.lastBaneCue ?? -Infinity) < 1500) return;
+    this.lastBaneCue = this.time.now;
+    this.showFloatingText(enemy.x, enemy.y - 34, `BANE +${Math.round((bane - 1) * 100)}%`, '#ffd34d');
   }
 
   handlePlayerHurt(enemy) {
@@ -1255,6 +1369,7 @@ export default class SurvivalScene extends Phaser.Scene {
   handleGameOver() {
     if (this.isGameOver) return;
     this.isGameOver = true;
+    if (this.curtain?.alpha > 0) this.curtainUp(150);
     sound.stopBGM();
     sound.playGameOver();
     pauseService.hideButtons();
@@ -1275,6 +1390,7 @@ export default class SurvivalScene extends Phaser.Scene {
       // What is submitted, and what the result screen describes: a shard picked up after this point is not part of the run.
       shards: this.sessionCrystalsCollected || 0,
       score: this.totalScore,
+      level: this.level,
       timestamp: Date.now()
     };
 
@@ -1325,6 +1441,7 @@ export default class SurvivalScene extends Phaser.Scene {
       kills: this.killCount.total,
       shards: this.sessionCrystalsCollected || 0,
       durationMs: Math.round(this.activeClock.ms),
+      level: this.level,
     });
   }
 
@@ -1349,6 +1466,7 @@ export default class SurvivalScene extends Phaser.Scene {
           kills: runData.kills,
           shards: runData.shards,
           durationMs: runData.durationMs,
+          level: runData.level,
         });
       } finally {
         clearTimeout(slowTimer);
@@ -1365,6 +1483,9 @@ export default class SurvivalScene extends Phaser.Scene {
       }
       this.describeProof(proof);
       this.recordTrial(runData, proof);
+      if ((result.bestLevel ?? 0) > (gdService.getStatus().bestLevel ?? 0)) {
+        gdService.refreshAll().then(() => this.refreshGameOverModal(proof)).catch(() => {}); // the Forge and the goal line read it
+      }
     } catch (err) {
       // finish() does not reject; this is a bug on our side. The player still gets an honest, final screen.
       console.warn('[survival] could not settle the run', err?.message);
@@ -1419,12 +1540,34 @@ export default class SurvivalScene extends Phaser.Scene {
     } catch (err) {
       console.warn('[survival] could not describe the Shard Harvest', err?.message); // the rest of the screen still matters
     }
+    // the beasts of the deeper realms, and the bosses, count together after the six of the forest
+    const forest = ['boar', 'snail', 'bee', 'mushroom', 'flying_eye', 'goblin'];
+    const others = this.killCount.total - forest.reduce((sum, type) => sum + (this.killCount[type] || 0), 0);
     return [
       `Time Survived: ${this.secondsSurvived}s (+${this.secondsSurvived * GAME_CONFIG.SURVIVAL.PTS_PER_SECOND} pts)`,
-      `Kills: 🐗${this.killCount.boar || 0} 🐌${this.killCount.snail || 0} 🐝${this.killCount.bee || 0} 🍄${this.killCount.mushroom || 0} 👁️${this.killCount.flying_eye || 0} 👺${this.killCount.goblin || 0}`,
+      `Kills: 🐗${this.killCount.boar || 0} 🐌${this.killCount.snail || 0} 🐝${this.killCount.bee || 0} 🍄${this.killCount.mushroom || 0} 👁️${this.killCount.flying_eye || 0} 👺${this.killCount.goblin || 0}${others > 0 ? ` 👹${others}` : ''}`,
       crystalLine,
+      this.bladeGoalLine(proof),
       `${proof.label}`
     ].filter((line) => line !== '').join('\n');
+  }
+
+  /**
+   * The blade the levels lead to next, while the player is on the way to one (engine/levels.js bladeGoal): how deep it asks them
+   * to go, or that it is ready at the Forge. Nothing until the server has answered for the run, and nothing when there is no blade to go for.
+   */
+  bladeGoalLine(proof) {
+    if (proof.result === undefined) return '';
+    try {
+      const st = gdService.getStatus();
+      const best = Math.max(st.bestLevel ?? 0, proof.result.bestLevel ?? 0);
+      const goal = bladeGoal({ reached: best, owned: st.owned ?? [] });
+      if (!goal) return '';
+      return goal.unlocked ? `⚔️ ${goal.name} is ready to forge` : `⚔️ ${goal.name}: reach level ${goal.minLevel} (best ${best})`;
+    } catch (err) {
+      console.warn('[survival] could not describe the next blade', err?.message);
+      return '';
+    }
   }
 
   /** Redraw the result text when the server's answer arrives. Does nothing if that screen is gone or a newer run replaced it. */
@@ -1449,25 +1592,32 @@ export default class SurvivalScene extends Phaser.Scene {
       .setInteractive();
 
     // Modal Card Frame
-    const box = this.add.rectangle(w / 2, h / 2, 400, 206, 0x121c12, 0.98)
+    const box = this.add.rectangle(w / 2, h / 2, 400, 226, 0x121c12, 0.98)
       .setStrokeStyle(2, 0xe9b213)
       .setScrollFactor(0)
       .setDepth(500);
 
-    const title = this.add.text(w / 2, h / 2 - 76, 'ENDLESS RUN LOCKED IN', {
+    const title = this.add.text(w / 2, h / 2 - 96, 'ENDLESS RUN LOCKED IN', {
       fontFamily: 'Press Start 2P',
       fontSize: '10px',
       color: '#f6c026'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
 
-    const scoreDisplay = this.add.text(w / 2, h / 2 - 54, `FINAL SCORE: ${this.totalScore}`, {
+    const realm = this.plan?.realmName ? ` · ${this.plan.realmName.toUpperCase()}` : '';
+    this.add.text(w / 2, h / 2 - 78, `LEVEL ${this.level}${realm}`, {
+      fontFamily: 'Press Start 2P',
+      fontSize: '7px',
+      color: '#9be7ff'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
+
+    const scoreDisplay = this.add.text(w / 2, h / 2 - 58, `FINAL SCORE: ${this.totalScore}`, {
       fontFamily: 'Press Start 2P',
       fontSize: '12px',
       color: '#ffffff'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(501);
 
     // Kept so the result line can be redrawn when the server's answer arrives (see refreshGameOverModal).
-    this.gameOverDetails = this.add.text(w / 2, h / 2 - 14, this.gameOverDetailsText(proof), {
+    this.gameOverDetails = this.add.text(w / 2, h / 2 - 8, this.gameOverDetailsText(proof), {
       fontFamily: 'Press Start 2P',
       fontSize: '5.5px',
       color: '#a0c4a0',
@@ -1556,7 +1706,7 @@ export default class SurvivalScene extends Phaser.Scene {
       return { rect, txt };
     };
 
-    const btnY = h / 2 + 65;
+    const btnY = h / 2 + 85;
     // RETRY
     const retryBtn = createBtn(w / 2 - 124, btnY, 108, 26, 0x163816, 0x4ade80, '#4ade80', 'RETRY', goRetry);
     // LEADERBOARD
@@ -1656,7 +1806,7 @@ export default class SurvivalScene extends Phaser.Scene {
     });
 
     if (offscreenEnemy && this.offscreenArrow) {
-      const mobName = offscreenEnemy.mobType.toUpperCase();
+      const mobName = beastName(offscreenEnemy.mobType);
       const isLeft = offscreenEnemy.x < cam.worldView.x;
       const isRight = offscreenEnemy.x > cam.worldView.right;
       const isAbove = offscreenEnemy.y < cam.worldView.y + 32;

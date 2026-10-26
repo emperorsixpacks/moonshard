@@ -16,7 +16,9 @@ export const SHOP = {
   enabled: true,
   token: '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A',
   vault: VAULT,
-  items: GAME.SHOP.map(({ id, name, kind, price, requires }) => ({ id, name, kind, priceG: formatUnits(price, 18), requires: requires ?? null })),
+  items: GAME.SHOP.map(({ id, name, kind, price, requires, minLevel }) => ({
+    id, name, kind, priceG: formatUnits(price, 18), requires: requires ?? null, ...(minLevel ? { minLevel } : {}),
+  })),
 };
 
 /** Script that puts a signed-in session in localStorage before the app starts (`bootGame({ init: sessionInit() })`). */
@@ -35,7 +37,7 @@ const RANKED = { ok: true, isNewBest: true, rankedOk: true, bossCleared: false, 
  * `api.runs` the server's view of each run. Per-test behaviour: `api.latencyMs`, and `api.handlers[name]` (start,
  * checkpoints, submit) replaced by `async ({ call, run }) => ({ status, body, delayMs, hang })`.
  */
-export async function installApi(page, { verified = true, rewardG = '2400', firstBossClaimed = false, owned = ['iron_starter'], shop = SHOP, prizes = true, boards = {}, referrals = {} } = {}) {
+export async function installApi(page, { verified = true, rewardG = '2400', firstBossClaimed = false, owned = ['iron_starter'], bestLevel = 0, shop = SHOP, prizes = true, boards = {}, referrals = {} } = {}) {
   const api = {
     calls: [],
     verified,
@@ -44,6 +46,9 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
     // the Moon Shop: what GET /shop answers, and what the player owns (a player who plays has bought the blade)
     shop,
     owned: [...owned],
+    // the deepest Endless level of the player's ranked runs (server/src/levels.js): it opens the blades that ask for one, and
+    // a submitted Endless run that went deeper raises it
+    bestLevel,
     // what the server says about the first-boss bounty: flip `canClaim` to false (and `rewardG` to null) for an app that
     // GoodDollar has not approved yet
     engagement: { configured: true, canClaim: true, reason: null, rewardG },
@@ -61,7 +66,10 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
       checkpoints: async () => ({ body: { ok: true, accepted: 1, duplicates: 0 } }),
       submit: async ({ run, call }) => {
         const bossCleared = call.body?.bossCleared === true;
-        return { body: { ...RANKED, bossCleared, rankedOk: true, rank: run.mode === 'TRIAL' ? RANKED.rank : null } };
+        const trial = run.mode === 'TRIAL';
+        const level = trial ? (call.body?.level ?? null) : null;
+        if (level) api.bestLevel = Math.max(api.bestLevel, level);
+        return { body: { ...RANKED, bossCleared, rankedOk: true, rank: trial ? RANKED.rank : null, level, bestLevel: trial ? api.bestLevel : null } };
       },
     },
     callsTo: (re) => api.calls.filter((c) => re.test(c.path)),
@@ -101,6 +109,7 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
         firstBossPrizeG: api.engagement.rewardG === null ? null : Number(api.engagement.rewardG), // the player's share, as the real server reports it
         blessing: false,
         owned: [...api.owned],
+        bestLevel: api.bestLevel,
         prizesEnabled: api.prizes,
       });
     }

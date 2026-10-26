@@ -293,7 +293,7 @@ export default class StoryScene extends Phaser.Scene {
       if (this.inDialogue || proj.isDead || proj.isDeflected || player.isDead) return;
       proj.explode();
       const knockDir = proj.x < player.x ? 1 : -1;
-      const damaged = player.takeDamage(proj.damage || 15, knockDir);
+      const damaged = player.takeDamage(proj.damage || 15, knockDir, 'ranged'); // what a foe threw: the shield's
       if (damaged) {
         this.comboCount = 0;
         this.updateHearts();

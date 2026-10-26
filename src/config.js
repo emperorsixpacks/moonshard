@@ -202,7 +202,60 @@ export const GAME_CONFIG = {
       damageMul: 1.5,
       rangeMul: 1.35,
       effect: 'leaf_glaive',
-      cost: { bark: 15, iron: 8, amber: 10 }
+      cost: { bark: 15, iron: 8, amber: 10 },
+      bane: { realm: 'woods', mul: 1.3 }
+    },
+    // Past the Glaive a blade needs a level reached in Endless (`minLevel`, the server's best-level count), forest materials earned
+    // there, and a G$ fee (server/config.js GAME.SHOP). Foes get tougher level by level (SURVIVAL.LEVELS); these keep pace. Each of
+    // them, and the Glaive for the woods, is forged for one realm: against the beasts that live there (engine/levels.js BEASTS
+    // `home`) it hits `bane.mul` times harder still.
+    MOONSTEEL_BLADE: {
+      id: 'moonsteel_blade',
+      name: 'Moonsteel Blade',
+      tier: 'Tier 3 (Crafted)',
+      damageMul: 1.8,
+      rangeMul: 1.45,
+      effect: 'moon_shimmer',
+      cost: { bark: 20, iron: 12, amber: 12 },
+      requires: 'forest_glaive',
+      minLevel: 8,
+      bane: { realm: 'hive', mul: 1.3 }
+    },
+    STARFORGED_EDGE: {
+      id: 'starforged_edge',
+      name: 'Starforged Edge',
+      tier: 'Tier 4 (Crafted)',
+      damageMul: 2.2,
+      rangeMul: 1.55,
+      effect: 'star_embers',
+      cost: { bark: 30, iron: 18, amber: 18 },
+      requires: 'moonsteel_blade',
+      minLevel: 15,
+      bane: { realm: 'ruins', mul: 1.3 }
+    },
+    CINDERBRAND: {
+      id: 'cinderbrand',
+      name: 'Cinderbrand',
+      tier: 'Tier 5 (Crafted)',
+      damageMul: 2.45,
+      rangeMul: 1.6,
+      effect: 'cinder_embers',
+      cost: { bark: 35, iron: 22, amber: 22 },
+      requires: 'starforged_edge',
+      minLevel: 20,
+      bane: { realm: 'caldera', mul: 1.3 }
+    },
+    VOIDGLASS_REAVER: {
+      id: 'voidglass_reaver',
+      name: 'Voidglass Reaver',
+      tier: 'Tier 6 (Crafted)',
+      damageMul: 2.7,
+      rangeMul: 1.65,
+      effect: 'void_shards',
+      cost: { bark: 40, iron: 26, amber: 26 },
+      requires: 'cinderbrand',
+      minLevel: 25,
+      bane: { realm: 'spire', mul: 1.3 }
     },
     GOLDEN_ALBATROSS: {
       id: 'golden_albatross',
@@ -210,6 +263,7 @@ export const GAME_CONFIG = {
       tier: 'Celestial Blade',
       damageMul: 1.5, // Fair Non-P2W: identical combat power
       rangeMul: 1.35,
+      bane: { realm: 'woods', mul: 1.3 }, // the Glaive's, so a look never trades power for style
       effect: 'golden_spark',
       cost: { amber: 8, iron: 6 },
       cosmeticDescription: 'Forged from radiant solar amber. Golden sword trails & sparkling embers.'
@@ -220,6 +274,7 @@ export const GAME_CONFIG = {
       tier: 'Celestial Blade',
       damageMul: 1.5, // Fair Non-P2W: identical combat power
       rangeMul: 1.35,
+      bane: { realm: 'woods', mul: 1.3 },
       effect: 'void_smoke',
       cost: { amber: 10, iron: 8 },
       cosmeticDescription: 'Infused with ancient twilight essence. Deep obsidian blade with purple shadow trails.'
@@ -265,6 +320,57 @@ export const GAME_CONFIG = {
       slashAccent: 0xa8ffb2,
       cost: { bark: 12, amber: 6, iron: 2 },
       cosmeticDescription: 'Infused with ancient forest flora. Glowing emerald slash arc & floating blossom petals.'
+    }
+  },
+
+  /*
+   * Armour, two slots. Every piece is forged the way the blades past the Glaive are: forest materials earned in play, a G$ fee
+   * (server/config.js GAME.SHOP) and, from the second tier of each slot, an Endless level reached (`minLevel`): G$ alone buys no
+   * piece. A helmet turns aside blows from foes that come at the hero (`contact`); a shield turns aside what they throw (`ranged`:
+   * spores, spit, stingers, magma, bombs, moonlight). `cut` is the share of that damage taken off (0.14 is 14%); a hit still costs
+   * at least 1. Each tier is the realm's own, and asks for the level its blade does. The materials, fees and cuts are placeholders
+   * the owner has not confirmed, and no person has played them.
+   */
+  ARMOUR: {
+    LEATHER_CAP: {
+      id: 'leather_cap', name: 'Leather Cap', slot: 'helm', realm: 'woods', tier: 'Tier 1', cut: 0.08,
+      cost: { bark: 8, amber: 0, iron: 3 }
+    },
+    CHITIN_HELM: {
+      id: 'chitin_helm', name: 'Chitin Helm', slot: 'helm', realm: 'hive', tier: 'Tier 2', cut: 0.14,
+      cost: { bark: 12, amber: 6, iron: 6 }, requires: 'leather_cap', minLevel: 8
+    },
+    WARDENS_HELM: {
+      id: 'wardens_helm', name: "Warden's Helm", slot: 'helm', realm: 'ruins', tier: 'Tier 3', cut: 0.2,
+      cost: { bark: 18, amber: 10, iron: 10 }, requires: 'chitin_helm', minLevel: 15
+    },
+    CINDER_HELM: {
+      id: 'cinder_helm', name: 'Cinder Helm', slot: 'helm', realm: 'caldera', tier: 'Tier 4', cut: 0.26,
+      cost: { bark: 24, amber: 14, iron: 14 }, requires: 'wardens_helm', minLevel: 20
+    },
+    MOONBORN_CROWN: {
+      id: 'moonborn_crown', name: 'Moonborn Crown', slot: 'helm', realm: 'spire', tier: 'Tier 5', cut: 0.32,
+      cost: { bark: 30, amber: 18, iron: 18 }, requires: 'cinder_helm', minLevel: 25
+    },
+    OAK_BUCKLER: {
+      id: 'oak_buckler', name: 'Oak Buckler', slot: 'shield', realm: 'woods', tier: 'Tier 1', cut: 0.12,
+      cost: { bark: 10, amber: 2, iron: 2 }
+    },
+    HONEYCOMB_SHIELD: {
+      id: 'honeycomb_shield', name: 'Honeycomb Shield', slot: 'shield', realm: 'hive', tier: 'Tier 2', cut: 0.22,
+      cost: { bark: 12, amber: 8, iron: 4 }, requires: 'oak_buckler', minLevel: 8
+    },
+    BONE_BULWARK: {
+      id: 'bone_bulwark', name: 'Bone Bulwark', slot: 'shield', realm: 'ruins', tier: 'Tier 3', cut: 0.32,
+      cost: { bark: 18, amber: 10, iron: 10 }, requires: 'honeycomb_shield', minLevel: 15
+    },
+    OBSIDIAN_AEGIS: {
+      id: 'obsidian_aegis', name: 'Obsidian Aegis', slot: 'shield', realm: 'caldera', tier: 'Tier 4', cut: 0.42,
+      cost: { bark: 24, amber: 14, iron: 14 }, requires: 'bone_bulwark', minLevel: 20
+    },
+    LUNAR_BASTION: {
+      id: 'lunar_bastion', name: 'Lunar Bastion', slot: 'shield', realm: 'spire', tier: 'Tier 5', cut: 0.52,
+      cost: { bark: 30, amber: 18, iron: 18 }, requires: 'obsidian_aegis', minLevel: 25
     }
   },
 
@@ -327,8 +433,35 @@ export const GAME_CONFIG = {
     WAVE_FAILSAFE_SECONDS: 45,
     WAVE_CLEAR_BONUS: 100,
     HP_SCALE_PER_WAVE: 0.3,
-    ENDLESS_HP_MUL_BASE: 2.4,
-    ENDLESS_HP_ADD: 0.4,
+    // Endless is a ladder of numbered levels (engine/levels.js). The first five are the hand-built waves (engine/PRNG.js), which
+    // keep HP_SCALE_PER_WAVE and WAVE_CLEAR_BONUS above; every level after them is built from these. server/config.js
+    // SCORE_MODEL copies the numbers its score ceiling needs, and server/test/runs.plausibility.test.js fails if these outgrow it.
+    LEVELS: {
+      SCRIPTED: 5,
+      BOSS_EVERY: 5,
+      SCRIPTED_CONCURRENT: [2, 3, 3, 4, 4], // foes in the arena at once in each hand-built wave
+      MAX_CONCURRENT: 4, // and in every level after them; the arena never holds more (the score ceiling counts on it)
+      HP_STEP: 0.1, // foe HP grows this much a level after the scripted ones, up to HP_CAP times the base
+      HP_CAP: 6,
+      SPEED_STEP: 0.05, // walkers move this much faster a level (the hand-built waves always did), up to SPEED_CAP times as fast
+      SPEED_CAP: 1.4,
+      FOES_BASE: 20, // foes in the first built level (the sixth); one more every FOES_EVERY levels, up to FOES_CAP
+      FOES_EVERY: 2,
+      FOES_CAP: 34,
+      // Clearing a level pays WAVE_CLEAR_BONUS + CLEAR_STEP a level (up to CLEAR_STEPS_MAX steps), plus a speed bonus for beating the
+      // level's par time: the scripted waves' par is 30 s + 10 s a wave, a built level's is PAR_SEC_PER_FOE a foe up to PAR_CAP_SEC.
+      CLEAR_STEP: 50,
+      CLEAR_STEPS_MAX: 10,
+      SCRIPTED_PAR_SEC: 30,
+      SCRIPTED_PAR_STEP_SEC: 10,
+      SCRIPTED_SPEED_PTS_PER_SEC: 20,
+      ELITE_SHARE_PER_LAP: 0.2, // coming round to a realm again, this much more of its foes are the tough beasts of the deeper realms...
+      ELITE_SHARE_MAX: 0.3, // ...up to this share
+      PAR_SEC_PER_FOE: 2.4,
+      PAR_CAP_SEC: 80,
+      SPEED_PTS_PER_SEC: 10,
+      MIN_SPEED_BONUS: 25, // paid when the par time was missed
+    },
   }
 };
 

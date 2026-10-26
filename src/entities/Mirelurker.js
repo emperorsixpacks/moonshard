@@ -3,7 +3,6 @@ import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
 import { juice } from '../engine/JuiceEffects.js';
 import EnemyHealthBar from '../ui/EnemyHealthBar.js';
-import Projectile from './Projectile.js';
 
 export default class Mirelurker extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y) {
@@ -134,23 +133,14 @@ export default class Mirelurker extends Phaser.Physics.Arcade.Sprite {
     const dir = player.x < this.x ? -1 : 1;
     this.setFlipX(dir > 0);
 
-    const mud = new Projectile(
-      this.scene,
+    this.scene.spawnProjectile(
+      'mud_glob',
       this.x + dir * 14,
       this.y - 4,
-      'mud_glob',
       dir * (GAME_CONFIG.MOBS.MIRELURKER.SPIT_SPEED || 170),
       -40,
-      GAME_CONFIG.MOBS.MIRELURKER.DAMAGE || 18,
-      'enemy',
-      0.8
+      true
     );
-    mud.body.setAllowGravity(true);
-    mud.body.setGravityY(250);
-
-    if (this.scene.projectiles) {
-      this.scene.projectiles.add(mud);
-    }
     sound.playWallSlide();
   }
 

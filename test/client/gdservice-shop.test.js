@@ -46,6 +46,8 @@ test('a purchase that cannot be right is refused before the wallet is asked for 
     ['an item not in the catalog', {}, 'excalibur', 'not_for_sale'],
     ['an item already owned', { owned: ['iron_starter'] }, 'iron_starter', 'already_owned'],
     ['an item whose requirement is missing', { owned: ['iron_starter'] }, 'golden_albatross', 'requires_item'],
+    ['a blade that asks for a level the player has not reached', { owned: ['iron_starter', 'forest_glaive'], bestLevel: 7 }, 'moonsteel_blade', 'level_required'],
+    ['a blade whose level is reached but whose requirement is not', { owned: ['iron_starter'], bestLevel: 30 }, 'moonsteel_blade', 'requires_item'],
     ['the shop is closed on this server', { shop: { enabled: false, token: SHOP.token, vault: null, items: [] } }, 'iron_starter', 'not_for_sale'],
     ['a server that names another token', { shop: { ...SHOP, token: '0x0000000000000000000000000000000000000bad' } }, 'iron_starter', 'token_mismatch'],
   ];
@@ -58,6 +60,28 @@ test('a purchase that cannot be right is refused before the wallet is asked for 
     assert.equal(r.error, error, label);
     assert.equal(sent, 0, `${label}: nothing sent`);
   }
+});
+
+test('the deepest level reached is in the status once connected, and a blade that asks for it is bought once it is reached', async (t) => {
+  const server = serverStub({ owned: ['iron_starter', 'forest_glaive'], bestLevel: 7 });
+  const { gd } = await startService(t, { wallet: walletStub(), server });
+  assert.equal(gd.getStatus().bestLevel, null, 'nothing is known before connecting');
+  await gd.connect();
+  assert.equal(gd.getStatus().bestLevel, 7);
+
+  const sent = [];
+  gd.loaders = stubLoaders({ shop: { buyItem: async (args) => { sent.push(args.item.id); args.onHash(H1); return { hash: H1 }; } } });
+  const early = await gd.buy('moonsteel_blade');
+  assert.deepEqual([early.ok, early.error, early.message], [false, 'level_required', 'Reach level 8 in Endless first.']);
+  assert.deepEqual(sent, [], 'refused before the wallet was asked');
+
+  server.bestLevel = 8; // a run reached it, and the status was refreshed
+  server.buys = 'moonsteel_blade';
+  await gd.refreshAll();
+  assert.equal(gd.getStatus().bestLevel, 8);
+  const ok = await gd.buy('moonsteel_blade');
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+  assert.deepEqual(sent, ['moonsteel_blade']);
 });
 
 test('not enough G$: refused with a message that points at the daily claim', async (t) => {
@@ -106,6 +130,35 @@ test('what the server says the player owns is what the game unlocks on this devi
   assert.equal(storage.isWeaponUnlocked('iron_starter'), false);
   assert.equal(storage.data.satchelUnlocked, false);
   assert.equal(storage.getEquippedWeapon(), 'iron_starter', 'nothing else can stay equipped');
+});
+
+test('what the server says the player owns also decides the armour the hero wears', async (t) => {
+  await connected(t, serverStub({ owned: ['iron_starter', 'leather_cap', 'oak_buckler'] }));
+  assert.equal(storage.isArmourUnlocked('leather_cap'), true);
+  assert.equal(storage.isArmourUnlocked('oak_buckler'), true);
+  assert.equal(storage.isArmourUnlocked('chitin_helm'), false);
+  assert.deepEqual(storage.getEquippedArmour(), { helm: 'leather_cap', shield: 'oak_buckler' }, 'a bare slot is filled with what was bought');
+
+  // another account on the same device: nothing of the first one's armour stays
+  await connected(t, serverStub({ owned: [] }));
+  assert.equal(storage.isArmourUnlocked('leather_cap'), false);
+  assert.deepEqual(storage.getEquippedArmour(), { helm: null, shield: null });
+});
+
+test('buying a helm: G$ into the vault, and once it is confirmed the hero may wear it', async (t) => {
+  const server = serverStub({ owned: [], buys: 'leather_cap' });
+  const { gd } = await connected(t, server);
+  const sent = [];
+  gd.loaders = stubLoaders({ shop: { buyItem: async (args) => { sent.push(args); args.onHash(H1); return { hash: H1 }; } } });
+  assert.equal(storage.isArmourUnlocked('leather_cap'), false);
+  const r = await gd.buy('leather_cap');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].item.id, 'leather_cap');
+  assert.equal(sent[0].vault, VAULT);
+  assert.deepEqual(gd.getStatus().owned, ['leather_cap']);
+  assert.equal(storage.isArmourUnlocked('leather_cap'), true);
+  assert.equal(storage.getEquippedArmour().helm, 'leather_cap', 'an empty helm slot takes it at once');
 });
 
 test('with the shop closed, the first blade is free and the device keeps its own unlocks (the forge works with materials alone)', async (t) => {

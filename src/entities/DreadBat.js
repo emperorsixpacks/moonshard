@@ -55,9 +55,10 @@ export default class DreadBat extends Phaser.Physics.Arcade.Sprite {
       const dy = this.hoverBaseY - this.y;
       if (Math.abs(dy) < 8) {
         this.state = 'HOVER';
+        this.setVelocityY(0);
         this.play('dread_bat_idle_anim', true);
       } else {
-        this.setVelocityY(dy < 0 ? 90 : -90);
+        this.setVelocityY(dy < 0 ? -90 : 90);
         this.setVelocityX(this.patrolDir * 40);
         this.setFlipX(this.patrolDir > 0);
       }

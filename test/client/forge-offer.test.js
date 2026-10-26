@@ -14,9 +14,13 @@ const SHOP = {
     { id: 'iron_starter', name: 'Rusted Shortsword', kind: 'blade', priceG: '20', requires: null },
     { id: 'iron_broadsword', name: 'Iron Broadsword', kind: 'forge', priceG: '30', requires: null },
     { id: 'forest_glaive', name: 'Forest Glaive', kind: 'forge', priceG: '60', requires: null },
+    { id: 'moonsteel_blade', name: 'Moonsteel Blade', kind: 'forge', priceG: '100', requires: 'forest_glaive', minLevel: 8 },
     { id: 'golden_albatross', name: 'Golden Solar Blade', kind: 'cosmetic', priceG: '150', requires: 'forest_glaive' },
     { id: 'skin_flame', name: 'Crimson Flame Katana', kind: 'cosmetic', priceG: '100', requires: null },
     { id: 'satchel_pet', name: 'Moon Sprite', kind: 'cosmetic', priceG: '80', requires: null },
+    { id: 'leather_cap', name: 'Leather Cap', kind: 'forge', priceG: '15', requires: null },
+    { id: 'chitin_helm', name: 'Chitin Helm', kind: 'forge', priceG: '50', requires: 'leather_cap', minLevel: 8 },
+    { id: 'oak_buckler', name: 'Oak Buckler', kind: 'forge', priceG: '15', requires: null },
   ],
 };
 const CLOSED = { enabled: false, token: SHOP.token, vault: null, items: [] };
@@ -52,6 +56,57 @@ test('a Celestial blade waits for the Glaive it builds on', () => {
   const golden = item({ id: 'golden_albatross', cost: { amber: 8, iron: 6 } });
   assert.deepEqual(forgeOffer(golden, status()), { label: 'NEEDS\nFOREST GLAIVE', action: 'locked' });
   assert.equal(forgeOffer(golden, status({ owned: ['iron_starter', 'forest_glaive'] })).action, 'buy');
+});
+
+test('a blade past the Glaive waits for the Glaive, then for the Endless level it asks for, then it is forged like any other', () => {
+  const moonsteel = item({ id: 'moonsteel_blade', cost: { bark: 20, iron: 12, amber: 12 } });
+  const glaive = ['iron_starter', 'forest_glaive'];
+  assert.deepEqual(forgeOffer(moonsteel, status()), { label: 'NEEDS\nFOREST GLAIVE', action: 'locked' });
+  // the Glaive is owned but the player has not been deep enough
+  for (const bestLevel of [undefined, null, 0, 7]) {
+    assert.deepEqual(forgeOffer(moonsteel, status({ owned: glaive, bestLevel })), { label: 'REACH\nLEVEL 8', action: 'locked' });
+  }
+  assert.deepEqual(forgeOffer(moonsteel, status({ owned: glaive, bestLevel: 8 })), { label: 'FORGE + 100 G$\n20B/12A/12I', action: 'forge', priceG: '100' });
+  assert.equal(forgeOffer(moonsteel, status({ owned: glaive, bestLevel: 30 })).action, 'forge');
+  assert.equal(forgeOffer({ ...moonsteel, hasMaterials: false }, status({ owned: glaive, bestLevel: 8 })).action, 'short');
+  // buying is still for verified humans, once the level is reached
+  assert.equal(forgeOffer(moonsteel, status({ owned: glaive, bestLevel: 8, verified: false, status: 'unverified' })).action, 'wallet');
+});
+
+test('a helm or a shield is forged like a blade: the fee and the materials, and the better ones wait for the one below and a level', () => {
+  const cap = item({ id: 'leather_cap', cost: { bark: 8, amber: 0, iron: 3 } });
+  const chitin = item({ id: 'chitin_helm', cost: { bark: 12, amber: 6, iron: 6 } });
+  assert.deepEqual(forgeOffer(cap, status()), { label: 'FORGE + 15 G$\n8B/3I', action: 'forge', priceG: '15' });
+  assert.equal(forgeOffer({ ...cap, hasMaterials: false }, status()).action, 'short', 'G$ alone buys no armour');
+  assert.deepEqual(forgeOffer(chitin, status()), { label: 'NEEDS\nLEATHER CAP', action: 'locked' });
+  const capped = ['iron_starter', 'leather_cap'];
+  for (const bestLevel of [undefined, 0, 7]) {
+    assert.deepEqual(forgeOffer(chitin, status({ owned: capped, bestLevel })), { label: 'REACH\nLEVEL 8', action: 'locked' });
+  }
+  assert.deepEqual(forgeOffer(chitin, status({ owned: capped, bestLevel: 8 })), { label: 'FORGE + 50 G$\n12B/6A/6I', action: 'forge', priceG: '50' });
+  assert.deepEqual(forgeOffer({ ...cap, unlocked: true }, status()), { label: 'EQUIP', action: 'equip' });
+  assert.deepEqual(forgeOffer({ ...cap, unlocked: true, equipped: true }, status()), { label: 'EQUIPPED', action: 'none' });
+  assert.deepEqual(forgeOffer(item({ id: 'oak_buckler', cost: { bark: 10, amber: 2, iron: 2 } }), status()), { label: 'FORGE + 15 G$\n10B/2A/2I', action: 'forge', priceG: '15' });
+});
+
+test('a payment on its way is shown for a blade that asks for a level too, and one that is owned is equipped', () => {
+  const moonsteel = item({ id: 'moonsteel_blade', cost: { bark: 20, iron: 12, amber: 12 } });
+  const paying = status({ owned: ['iron_starter'], awaiting: { ubi: null, bounty: null, spoils: {}, shop: { moonsteel_blade: `0x${'cd'.repeat(32)}` } } });
+  assert.deepEqual(forgeOffer(moonsteel, paying), { label: 'PAYING…', action: 'wait' });
+  assert.deepEqual(forgeOffer({ ...moonsteel, unlocked: true }, status()), { label: 'EQUIP', action: 'equip' });
+});
+
+test('with no shop a blade that asks for a level is crafted once this device has seen the level', () => {
+  const closed = status({ shop: CLOSED });
+  const moonsteel = item({ id: 'moonsteel_blade', cost: { bark: 20, iron: 12, amber: 12 }, minLevel: 8 });
+  assert.deepEqual(forgeOffer({ ...moonsteel, levelReached: 7 }, closed), { label: 'REACH\nLEVEL 8', action: 'locked' });
+  assert.deepEqual(forgeOffer(moonsteel, closed), { label: 'REACH\nLEVEL 8', action: 'locked' });
+  assert.deepEqual(forgeOffer({ ...moonsteel, levelReached: 8 }, closed), { label: 'CRAFT\n(20B/12A/12I)', action: 'craft' });
+  assert.equal(forgeOffer({ ...moonsteel, levelReached: 8, hasMaterials: false }, closed).action, 'short');
+  // the server's level is not read for an item it does not sell: the device's own is
+  assert.equal(forgeOffer(moonsteel, status({ shop: CLOSED, bestLevel: 99 })).action, 'locked');
+  // and an item without a level is crafted as it always was
+  assert.equal(forgeOffer(item(), status({ shop: CLOSED })).action, 'craft');
 });
 
 test('what is owned is equipped, or put on and off for the pet', () => {

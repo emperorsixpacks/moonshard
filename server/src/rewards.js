@@ -5,6 +5,7 @@ import { ah } from "./http.js";
 import { dayKey } from "./time.js";
 import { engagementRewardG, hasEngagementClaim, pendingBossRun } from "./engagement.js";
 import { ownedItems } from "./shop.js";
+import { bestLevel } from "./levels.js";
 
 export function rewardsRoutes(ctx) {
   const r = express.Router();
@@ -36,6 +37,7 @@ export function rewardsRoutes(ctx) {
       blessing: blessing.rows.length > 0,
       pendingBossRunId: await pendingBossRun(ctx, p.subject),
       owned: await ownedItems(ctx, p.subject), // Moon Shop items (shop.js)
+      bestLevel: await bestLevel(ctx, p.subject), // the deepest Endless level reached in a ranked run (levels.js); opens the blades that ask for one
     });
   }));
 

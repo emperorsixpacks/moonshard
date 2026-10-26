@@ -3,7 +3,6 @@ import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
 import { juice } from '../engine/JuiceEffects.js';
 import EnemyHealthBar from '../ui/EnemyHealthBar.js';
-import Projectile from './Projectile.js';
 
 export default class HornetGuard extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y) {
@@ -59,6 +58,8 @@ export default class HornetGuard extends Phaser.Physics.Arcade.Sprite {
     if (this.state === 'STUNNED') {
       if (now > this.stateTimer) {
         this.state = 'HOVER';
+        this.body.setAllowGravity(false);
+        this.setVelocityY(0);
         this.play('bee_fly_anim', true);
       }
       return;
@@ -125,21 +126,14 @@ export default class HornetGuard extends Phaser.Physics.Arcade.Sprite {
     [-1, 1].forEach((offset, idx) => {
       this.scene.time.delayedCall(idx * 120, () => {
         if (this.state === 'DEAD' || !this.active) return;
-        const q = new Projectile(
-          this.scene,
+        this.scene.spawnProjectile(
+          'hornet_quill',
           this.x + dirX * 12,
           this.y + 8,
-          'hornet_quill',
           dirX * (GAME_CONFIG.MOBS.HORNET_GUARD.STINGER_SPEED || 190),
           60 + offset * 30,
-          GAME_CONFIG.MOBS.HORNET_GUARD.DAMAGE || 18,
-          'enemy',
-          0.8
+          true
         );
-        q.body.setAllowGravity(false);
-        if (this.scene.projectiles) {
-          this.scene.projectiles.add(q);
-        }
       });
     });
   }
