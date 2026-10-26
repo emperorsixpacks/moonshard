@@ -34,6 +34,7 @@ const MESSAGES = {
   not_enough_g: "Not enough G$ in your wallet for that yet. Claim today's free G$ first.",
   already_owned: 'You already own that.',
   requires_item: 'Get the item it builds on first.',
+  level_required: 'Reach the level it asks for in Endless first.',
   not_for_sale: 'That is not for sale on this server.',
   shop_closed: 'The Moon Shop is not open on this server.',
   token_mismatch: "The G$ token in the server's answer does not match this app's. Nothing was sent; tell the team.",
@@ -54,6 +55,12 @@ export function formatG(value, maxDecimals = 0) {
   if (!Number.isFinite(n)) return '0';
   return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: maxDecimals });
 }
+
+/**
+ * G$ in a wallet, rounded down to the cent: a balance shown as "20" must be able to pay 20. The factor lifts a balance that sits a
+ * hair under its cent in binary (0.29 times 100 is 28.999999999999996) back onto it, a tenth of a billionth of a cent at most.
+ */
+export const walletG = (g) => formatG(Math.floor(Number(g) * 100 * (1 + 1e-12)) / 100, 2);
 
 export function formatCountdown(ms) {
   if (!(ms > 0)) return 'now';

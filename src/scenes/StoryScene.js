@@ -293,7 +293,7 @@ export default class StoryScene extends Phaser.Scene {
       if (this.inDialogue || proj.isDead || proj.isDeflected || player.isDead) return;
       proj.explode();
       const knockDir = proj.x < player.x ? 1 : -1;
-      const damaged = player.takeDamage(proj.damage || 15, knockDir);
+      const damaged = player.takeDamage(proj.damage || 15, knockDir, 'ranged'); // what a foe threw: the shield's
       if (damaged) {
         this.comboCount = 0;
         this.updateHearts();
@@ -2688,8 +2688,8 @@ export default class StoryScene extends Phaser.Scene {
         sound.playSlash(2);
         this.cameras.main.shake(180, 0.02);
 
-        // Visual charge impact cue
-        const impactText = this.add.text(this.player.x, this.player.y - 20, `💥 CHARGE HIT! -${enemyDmg}`, {
+        // Visual charge impact cue (the hero's own damage number says what the hit cost once the armour had its share)
+        const impactText = this.add.text(this.player.x, this.player.y - 20, '💥 CHARGE HIT!', {
           fontFamily: 'Press Start 2P',
           fontSize: '7px',
           color: '#ff2222',
@@ -2729,7 +2729,7 @@ export default class StoryScene extends Phaser.Scene {
 
     // 1. Lava Geyser eruption column hit
     if (hazard && hazard.isLavaGeyser) {
-      const damaged = player.takeDamage(28, player.flipX ? 1 : -1);
+      const damaged = player.takeDamage(28, player.flipX ? 1 : -1, 'hazard'); // not a foe's blow or shot: no armour turns it aside
       if (damaged) {
         this.updateHearts();
         sound.playHit();
@@ -2774,7 +2774,7 @@ export default class StoryScene extends Phaser.Scene {
     }
 
     // 3. Other hazards (water, honeycomb, spikes, astral chasm)
-    const damaged = player.takeDamage(35, player.flipX ? 1 : -1);
+    const damaged = player.takeDamage(35, player.flipX ? 1 : -1, 'hazard');
     if (damaged) {
       this.updateHearts();
       const label = (hazard && hazard.hazardLabel) ? `${hazard.hazardLabel} -35` : 'CHASM HAZARD! -35';
@@ -3702,7 +3702,7 @@ export default class StoryScene extends Phaser.Scene {
 
     // Fall out of world check
     if (this.player && this.player.y > this.levelHeight + 30 && !this.player.isDead) {
-      const damaged = this.player.takeDamage(35, 0);
+      const damaged = this.player.takeDamage(35, 0, 'hazard');
       this.updateHearts();
       if (this.player.isDead) {
         this.handlePlayerGameOver();

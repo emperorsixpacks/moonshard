@@ -7,6 +7,10 @@ import { freePort, waitForMoonshard } from '../../../scripts/fork/ports.mjs';
 
 const ROOT = new URL('../../../', import.meta.url).pathname;
 
+// The dev servers still running: one exit handler stops them all (a handler per boot trips Node's listener limit in a long script).
+const servers = new Set();
+process.on('exit', () => servers.forEach((server) => server.kill()));
+
 /**
  * Boot the dev server and a browser page. Returns { page, web, errors, close, startScene, scene }.
  *  - `api`: false (default) leaves the API unreachable (port 9), like a first visit; true serves /api from the page
@@ -23,8 +27,8 @@ export async function bootGame({ api = false, clock = false, viewport = { width:
   if (api) delete env.VITE_API_URL;
   else env.VITE_API_URL = 'http://127.0.0.1:9';
   const vite = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { cwd: ROOT, env, stdio: 'ignore' });
-  const close = async () => { await browser?.close().catch(() => {}); vite.kill(); };
-  process.on('exit', () => vite.kill());
+  servers.add(vite);
+  const close = async () => { await browser?.close().catch(() => {}); vite.kill(); servers.delete(vite); };
   let browser;
   try {
     await waitForMoonshard(web);

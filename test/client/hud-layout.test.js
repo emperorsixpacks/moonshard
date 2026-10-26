@@ -15,7 +15,7 @@ const STORY = {
   materials: '🌲25 🍯15 ⚙️10',
   harvest: '💎 +100 G$',
 };
-const SURVIVAL = { mode: 'ENDLESS MODE', score: 'SCORE: 1234567', wave: 'WAVE 5/5', foes: 'FOES: 15', harvest: '💎 100 G$ (MAX 🔒)' };
+const SURVIVAL = { mode: 'ENDLESS MODE', score: 'SCORE: 1234567', wave: 'LEVEL 100', foes: 'FOES: 34', harvest: '💎 100 G$ (MAX 🔒)' };
 
 const overlap = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 
@@ -67,7 +67,7 @@ for (const [name, unit] of Object.entries(SCREENS)) {
   test(`${name}: the endless HUD content does not collide`, () => {
     const hud = layoutHud({ unit, width: 480, variant: 'survival' });
     assertNoCollisions(rectsFor(hud, SURVIVAL), name);
-    assertNoCollisions(rectsFor(hud, { ...SURVIVAL, harvest: '💎 +0 G$', score: 'SCORE: 0', foes: 'FOES: ∞' }), `${name} (short)`);
+    assertNoCollisions(rectsFor(hud, { ...SURVIVAL, wave: 'LEVEL 1', harvest: '💎 +0 G$', score: 'SCORE: 0', foes: 'FOES: 0' }), `${name} (short)`);
   });
 }
 
@@ -97,6 +97,6 @@ for (const width of [360, 400]) {
   test(`a ${width}-wide upright run: the endless HUD content does not collide and stays on screen`, () => {
     const hud = layoutHud({ unit, width, variant: 'survival' });
     assertNoCollisions(rectsFor(hud, SURVIVAL), `${width}`, width);
-    assertNoCollisions(rectsFor(hud, { ...SURVIVAL, harvest: '💎 +0 G$', score: 'SCORE: 0', foes: 'FOES: ∞' }), `${width} (short)`, width);
+    assertNoCollisions(rectsFor(hud, { ...SURVIVAL, wave: 'LEVEL 1', harvest: '💎 +0 G$', score: 'SCORE: 0', foes: 'FOES: 0' }), `${width} (short)`, width);
   });
 }

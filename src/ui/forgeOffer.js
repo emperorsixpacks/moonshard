@@ -18,10 +18,17 @@ function ownedOffer({ pet, equipped }) {
   return equipped ? { label: 'EQUIPPED', action: 'none' } : { label: 'EQUIP', action: 'equip' };
 }
 
+/** The blade that asks for a level shows it, until the player has been that deep in Endless. */
+const levelLocked = (minLevel) => ({ label: `REACH\nLEVEL ${minLevel}`, action: 'locked' });
+
 /**
- * @param {{ id: string, cost?: object, unlocked: boolean, equipped: boolean, hasMaterials: boolean, pet?: boolean }} item
+ * @param {{ id: string, cost?: object, unlocked: boolean, equipped: boolean, hasMaterials: boolean, pet?: boolean,
+ *   minLevel?: number, levelReached?: number, needs?: string }} item
  *   `unlocked`: on this device (with the shop open, that is what the server says the player owns); `hasMaterials`: the
- *   device holds `cost`.
+ *   device holds `cost`; `minLevel` and `levelReached`: the Endless level a blade asks for and the deepest this device
+ *   has seen, and `needs`: the name of the piece it requires that this device does not have yet, all three read only for
+ *   an item the shop does not sell (the shop lists its own `requires` and `minLevel`, and the server knows what the player
+ *   owns and how deep they went: status.owned, status.bestLevel). Crafted from materials alone, the tiers still go in order.
  * @param {object} status gdService.getStatus()
  * @returns {{ label: string, action: string, priceG?: string }} `action` is what pressing the button does:
  *   equip / toggle (the pet) / none (equipped already) / buy / forge (materials and the fee) / craft (materials only) /
@@ -35,6 +42,8 @@ export function forgeOffer(item, status) {
   const sold = shop.enabled ? shop.items.find((x) => x.id === item.id) : null;
   if (!sold) {
     if (!item.cost) return { label: 'LOCKED', action: 'locked' };
+    if (item.needs) return { label: `NEEDS\n${String(item.needs).toUpperCase()}`, action: 'locked' };
+    if (item.minLevel && (item.levelReached ?? 0) < item.minLevel) return levelLocked(item.minLevel);
     return { label: `CRAFT\n(${materialsLabel(item.cost)})`, action: item.hasMaterials ? 'craft' : 'short' };
   }
   if (status.awaiting?.shop?.[item.id]) return { label: 'PAYING…', action: 'wait' };
@@ -42,6 +51,7 @@ export function forgeOffer(item, status) {
     const need = shop.items.find((x) => x.id === sold.requires)?.name ?? sold.requires;
     return { label: `NEEDS\n${String(need).toUpperCase()}`, action: 'locked' };
   }
+  if (sold.minLevel && (status.bestLevel ?? 0) < sold.minLevel) return levelLocked(sold.minLevel);
 
   const { priceG } = sold;
   const price = `${formatG(priceG, 2)} G$`;

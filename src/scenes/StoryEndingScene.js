@@ -135,7 +135,7 @@ export default class StoryEndingScene extends Phaser.Scene {
       this.scene.start('MenuScene');
     }, L.btn);
 
-    this.createButton(w / 2, btnY, '⚒️ VISIT FORGE', () => {
+    this.createButton(w / 2, btnY, '⚒️ VISIT SHOP', () => {
       this.scene.start('ForgeScene');
     }, L.btn);
 

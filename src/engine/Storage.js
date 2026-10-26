@@ -11,6 +11,9 @@ const DEFAULT_STATE = {
   },
   equippedWeapon: 'iron_starter',
   unlockedWeapons: ['iron_starter'],
+  unlockedArmour: [], // ids of GAME_CONFIG.ARMOUR
+  equippedHelm: null,
+  equippedShield: null,
   satchelUnlocked: false,
   tutorialDone: false,
   prologueSeen: false,
@@ -25,12 +28,16 @@ const DEFAULT_STATE = {
   },
   dailyRecords: {}, // keyed by date string
   highScore: 0,
+  bestLevel: 0, // the deepest Endless level this device has seen
   walletAccount: null,
   settings: {
     soundMuted: false,
     musicMuted: false,
   },
 };
+
+const armourOf = (id) => Object.values(GAME_CONFIG.ARMOUR).find((piece) => piece.id === id) ?? null;
+const SLOT_KEY = { helm: 'equippedHelm', shield: 'equippedShield' };
 
 class StorageManager {
   constructor() {
@@ -117,6 +124,49 @@ class StorageManager {
     return this.data.unlockedWeapons.includes(weaponId);
   }
 
+  /** The pieces of armour this device can wear (GAME_CONFIG.ARMOUR ids): bought in the shop, or forged where there is none. */
+  isArmourUnlocked(armourId) {
+    return (this.data.unlockedArmour ?? []).includes(armourId);
+  }
+
+  unlockArmour(armourId) {
+    if (!armourOf(armourId) || this.isArmourUnlocked(armourId)) return;
+    this.data.unlockedArmour = [...(this.data.unlockedArmour ?? []), armourId];
+    this.save();
+  }
+
+  /** What the hero wears: the id in each slot, or null for a bare slot. */
+  getEquippedArmour() {
+    return { helm: this.data.equippedHelm ?? null, shield: this.data.equippedShield ?? null };
+  }
+
+  equipArmour(armourId) {
+    const piece = armourOf(armourId);
+    if (!piece || !this.isArmourUnlocked(armourId)) return false;
+    this.data[SLOT_KEY[piece.slot]] = armourId;
+    this.save();
+    return true;
+  }
+
+  unequipArmour(slot) {
+    if (!SLOT_KEY[slot]) return false;
+    this.data[SLOT_KEY[slot]] = null;
+    this.save();
+    return true;
+  }
+
+  /** Put on the best piece owned in every slot that is bare, and take off what is no longer owned. */
+  tidyArmour() {
+    const owned = this.data.unlockedArmour ?? [];
+    for (const [slot, key] of Object.entries(SLOT_KEY)) {
+      if (this.data[key] && !owned.includes(this.data[key])) this.data[key] = null;
+      if (!this.data[key]) {
+        const best = Object.values(GAME_CONFIG.ARMOUR).filter((a) => a.slot === slot && owned.includes(a.id)).sort((a, b) => b.cut - a.cut)[0];
+        if (best) this.data[key] = best.id;
+      }
+    }
+  }
+
   unlockSatchel() {
     this.data.satchelUnlocked = true;
     this.data.companionEquipped = true;
@@ -154,6 +204,12 @@ class StorageManager {
       ...weapons.filter((id) => sold.has(id) && has.has(id)),
     ];
     if (!this.data.unlockedWeapons.includes(this.data.equippedWeapon)) this.data.equippedWeapon = GAME_CONFIG.WEAPONS.STARTER.id;
+    const armour = Object.values(GAME_CONFIG.ARMOUR).map((a) => a.id);
+    this.data.unlockedArmour = [
+      ...(this.data.unlockedArmour ?? []).filter((id) => !sold.has(id)),
+      ...armour.filter((id) => sold.has(id) && has.has(id)),
+    ];
+    this.tidyArmour();
     if (sold.has('satchel_pet')) {
       const pet = has.has('satchel_pet');
       if (pet && !this.data.satchelUnlocked) this.data.companionEquipped = true;
@@ -235,6 +291,17 @@ class StorageManager {
   addScore(score) {
     if (!score || score <= 0) return;
     this.data.highScore = Math.max(this.data.highScore || 0, (this.data.highScore || 0) + score);
+    this.save();
+  }
+
+  getBestLevel() {
+    return this.data.bestLevel || 0;
+  }
+
+  /** The deepest Endless level this device has seen. It opens a blade only where there is no Moon Shop (the server counts otherwise). */
+  recordBestLevel(level) {
+    if (!Number.isInteger(level) || level <= this.getBestLevel()) return;
+    this.data.bestLevel = level;
     this.save();
   }
 

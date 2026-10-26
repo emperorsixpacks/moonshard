@@ -5,6 +5,7 @@ import { ah } from "./http.js";
 import { dayKey } from "./time.js";
 import { engagementRewardG, hasEngagementClaim, pendingBossRun } from "./engagement.js";
 import { ownedItems } from "./shop.js";
+import { bestLevel } from "./levels.js";
 
 export function rewardsRoutes(ctx) {
   const r = express.Router();
@@ -18,6 +19,7 @@ export function rewardsRoutes(ctx) {
     const shards = shardRow.rows[0]?.shards ?? 0;
     const blessing = await ctx.db.query("SELECT 1 FROM blessings WHERE subject = $1 AND day = $2", [p.subject, day]);
     const bounty = await engagementRewardG(ctx); // what the player receives, same value as /engagement/status rewardG
+    const best = await bestLevel(ctx, p.subject); // the deepest Endless level reached in a ranked run (levels.js); opens what asks for one
     res.json({
       wallet: p.wallet,
       dateSeed: day,
@@ -35,7 +37,8 @@ export function rewardsRoutes(ctx) {
       },
       blessing: blessing.rows.length > 0,
       pendingBossRunId: await pendingBossRun(ctx, p.subject),
-      owned: await ownedItems(ctx, p.subject), // Moon Shop items (shop.js)
+      owned: await ownedItems(ctx, p.subject, { best }), // Moon Shop items (shop.js)
+      bestLevel: best,
     });
   }));
 

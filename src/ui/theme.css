@@ -309,6 +309,17 @@
 #ms-ui .foot .btn-ghost{width:auto;min-height:44px;padding:0 4px;font-size:20px}
 #ms-ui .sheet-b b{font-weight:400}
 
+/* ---- invite friends: the player's link, and how far each friend has got ---- */
+#ms-ui .invite-link{padding:12px 14px;background:var(--ink);box-shadow:var(--bx),var(--sunk);font:400 22px/1.25 var(--font-ui);color:var(--gold-hi);overflow-wrap:anywhere;-webkit-user-select:text;user-select:text}
+#ms-ui .invite-link .q{display:inline-block}
+#ms-ui .stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+#ms-ui .stats3>div{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px 9px;background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .stats3 b{font:400 34px/1 var(--font-ui);font-variant-numeric:tabular-nums}
+#ms-ui .stats3 small{font:400 19px/1 var(--font-ui);color:var(--mist)}
+#ms-ui .fr-st{display:inline-flex;align-items:center;gap:6px;flex:none;font:400 21px/1 var(--font-ui);color:var(--mist)}
+#ms-ui .fr-st.verified{color:var(--bone)}
+#ms-ui .fr-st.playing{color:var(--gold-hi)}
+
 /* ---- the loading screen: the moon forms out of pixels as the game loads ---- */
 #ms-ui .ms-loader{position:absolute;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:radial-gradient(ellipse at 50% 38%,#1c2a55 0,var(--ink) 64%);pointer-events:auto;transition:opacity .4s ease-out}
 #ms-ui .ms-loader.out{opacity:0;pointer-events:none}
@@ -491,4 +502,105 @@
   #ms-ui .lb-row .tm{font-size:17px}
   #ms-ui .lb-row .sc{font-size:20px}
   #ms-ui .lb-row .sc small{font-size:14px;margin-left:2px}
+}
+
+/* ===== The shop (src/ui/shopView.js): a page under the page header, one card per blade, piece of armour or look ===== */
+#ms-ui .sh{
+  position:absolute;left:0;right:0;bottom:0;top:0;display:flex;flex-direction:column;pointer-events:auto;
+  background:var(--dither),linear-gradient(#0B1224,#070B16);
+}
+#ms-ui .sh-head,#ms-ui .sh-scroll,#ms-ui .sh-foot{width:min(100%,640px);margin-left:auto;margin-right:auto}
+#ms-ui .sh-head{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 16px 4px}
+#ms-ui .sh-title{flex:1;margin:0;font:400 44px/1 var(--font-ui);color:var(--gold);text-shadow:3px 3px 0 var(--gold-edge)}
+/* the forest materials, in the head so the costs on the cards can be read against them while the list scrolls */
+#ms-ui .sh-mats{flex:none;list-style:none;margin:0;padding:0;display:flex;gap:6px}
+#ms-ui .sh-mats li{display:flex;align-items:center;gap:4px;height:42px;padding:0 8px 0 6px;background:var(--ink);box-shadow:var(--sunk);font:400 23px/1 var(--font-ui);color:var(--bone);font-variant-numeric:tabular-nums}
+#ms-ui .sh-mats b{font-weight:400}
+/* the page header shows the G$ balance above a portrait screen, so the purse is for the screens without it */
+#ms-ui .sh-purse{display:none;align-items:center;gap:7px;height:42px;padding:0 13px 0 10px;background:var(--ink);box-shadow:var(--sunk);font:400 24px/1 var(--font-ui);color:var(--gold-hi);font-variant-numeric:tabular-nums}
+#ms-ui .sh-purse b{font-weight:400}
+#ms-ui .sh-purse small{font:400 18px/1 var(--font-ui);color:var(--mist)}
+#ms-ui .sh-tabs{flex-basis:100%;display:grid;grid-template-columns:repeat(3,1fr);background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .sh-tab{display:flex;align-items:center;justify-content:center;text-align:center;min-height:50px;font:400 25px/1 var(--font-ui);color:var(--mist)}
+#ms-ui .sh-tab.on{background:var(--panel);color:var(--gold-hi);box-shadow:var(--raise)}
+#ms-ui .sh-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:8px 16px 12px}
+#ms-ui .sh-notice{display:block;width:100%;margin:0 0 10px;padding:10px 12px;text-align:center;background:var(--ink);box-shadow:var(--sunk);font:400 20px/1.25 var(--font-ui);color:var(--mist)}
+#ms-ui .sh-notice.warn{color:#F2B25C}
+#ms-ui button.sh-notice{text-decoration:underline;text-decoration-style:dotted;text-underline-offset:4px;text-decoration-color:var(--mist-dim)}
+/* what the hero carries: the hero beside three rows (blade, helm, shield) */
+#ms-ui .sh-kit{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px 10px;margin:0 0 12px;padding:10px 12px;background:var(--slate);box-shadow:inset 0 2px 0 rgba(255,255,255,.07),0 3px 0 0 var(--ink-deep)}
+#ms-ui .sh-hero{--k:1;width:calc(96px*var(--k));height:calc(80px*var(--k));background:url(/assets/character/idle.png) 0 0/calc(384px*var(--k)) calc(80px*var(--k));image-rendering:pixelated;animation:ms-idle .9s steps(4) infinite}
+#ms-ui .sh-slots{list-style:none;margin:0;padding:0;display:grid;gap:7px;min-width:0}
+#ms-ui .sh-slots li{display:flex;align-items:center;gap:9px;min-width:0}
+#ms-ui .sh-ghost{display:grid;place-items:center;opacity:.28}
+#ms-ui .sh-sl{min-width:0}
+#ms-ui .sh-sl b{display:block;font:400 21px/1.05 var(--font-ui);color:var(--bone);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ms-ui .sh-sl small{display:block;margin-top:1px;font:400 17px/1.1 var(--font-ui);color:var(--mist)}
+#ms-ui .sh-note{margin:14px 2px 6px;font:400 19px/1.3 var(--font-ui);color:var(--mist-dim);text-align:center}
+#ms-ui .sh-sec{margin-bottom:10px}
+#ms-ui .sh-sec-h{display:flex;align-items:center;gap:8px;margin:14px 0 2px;font:400 28px/1 var(--font-ui);color:var(--gold-hi)}
+#ms-ui .sh-sec-sub{margin:0 0 8px;font:400 19px/1.25 var(--font-ui);color:var(--mist)}
+#ms-ui .sh-cards{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+#ms-ui .sh-card{display:grid;grid-template-columns:52px minmax(0,1fr);align-content:start;gap:6px 12px;padding:12px;background:var(--slate);box-shadow:inset 0 2px 0 rgba(255,255,255,.07),0 3px 0 0 var(--ink-deep)}
+#ms-ui .sh-card.equipped{background:#2A2740;outline:3px solid var(--gold);outline-offset:-3px}
+#ms-ui .sh-card.locked .sh-art{opacity:.55}
+#ms-ui .sh-card.locked h3{color:var(--mist)}
+#ms-ui .sh-card>.sh-cn,#ms-ui .sh-card>.sh-costs,#ms-ui .sh-card>.sh-btn{grid-column:1/-1}
+#ms-ui .sh-art{width:52px;height:52px;display:grid;place-items:center;background:var(--ink);box-shadow:var(--sunk)}
+#ms-ui .sh-img{width:44px;height:44px;image-rendering:pixelated;object-fit:contain}
+#ms-ui .sh-ct{min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px}
+#ms-ui .sh-ct h3{margin:0;font:400 25px/1.05 var(--font-ui);color:var(--bone)}
+#ms-ui .sh-tag{padding:2px 7px;background:var(--ink);font:400 16px/1.1 var(--font-ui);color:var(--mist);text-transform:uppercase;letter-spacing:.5px}
+#ms-ui .sh-cs{flex-basis:100%;margin:0;font:400 19px/1.15 var(--font-ui);color:var(--mist)}
+#ms-ui .sh-cn{margin:0;font:400 19px/1.25 var(--font-ui);color:var(--mist)}
+#ms-ui .sh-cn.bane,#ms-ui .sh-cn.armour{color:#A8C4FF}
+#ms-ui .sh-costs{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:5px}
+#ms-ui .sh-cost{display:flex;align-items:center;gap:4px;padding:4px 7px 4px 5px;background:var(--ink);box-shadow:var(--sunk);font:400 20px/1 var(--font-ui);color:var(--bone);font-variant-numeric:tabular-nums}
+#ms-ui .sh-cost b{font-weight:400}
+#ms-ui .sh-cost small{font:400 15px/1 var(--font-ui);color:var(--mist)}
+#ms-ui .sh-cost.g{color:var(--gold-hi)}
+#ms-ui .sh-cost.lack{color:var(--ember);box-shadow:var(--sunk),inset 0 0 0 2px #7C3A44}
+#ms-ui .sh-cost.lack small{color:#C98089}
+/* the button of a card: gold for a G$ price, plain for what costs nothing (or only materials), quiet when it is what is worn or cannot be pressed */
+#ms-ui .sh-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:52px;margin:0;padding:0 14px;font:400 23px/1 var(--font-ui)}
+#ms-ui .sh-btn.short{filter:saturate(.45) brightness(.82)}
+#ms-ui .sh-btn.on,#ms-ui .sh-btn.off{background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .sh-btn.on{color:var(--mint)}
+#ms-ui .sh-btn.on:disabled{opacity:1}
+#ms-ui .sh-btn.off{color:var(--mist)}
+#ms-ui .sh-foot{flex:none;padding:6px 16px max(14px,env(safe-area-inset-bottom));box-shadow:0 -12px 14px -8px rgba(7,11,22,.95)}
+#ms-ui .sh-bar{display:grid;grid-template-columns:1fr 1.5fr;gap:14px}
+#ms-ui .sh-bar .btn,#ms-ui .sh-bar .btn-2{margin:0}
+@container ms (orientation:landscape){
+  /* a short, wide screen (a phone on its side, a desktop): the title, the tabs and the purse share a row, the cards go two across */
+  #ms-ui .sh-head,#ms-ui .sh-scroll,#ms-ui .sh-foot{width:min(100%,880px)}
+  #ms-ui .sh-head{flex-wrap:nowrap;gap:12px;padding:6px 16px 2px}
+  #ms-ui .sh-title{flex:none;font-size:32px;text-shadow:2px 2px 0 var(--gold-edge)}
+  #ms-ui .sh-tabs{order:2;flex:1 1 0}
+  #ms-ui .sh-tab{min-height:38px;font-size:21px}
+  #ms-ui .sh-mats{order:3}
+  #ms-ui .sh-mats li{height:38px;font-size:21px}
+  #ms-ui .sh-purse{order:4;display:flex;height:38px;font-size:21px}
+  #ms-ui .sh-scroll{padding-top:6px}
+  #ms-ui .sh-kit{grid-template-columns:auto minmax(0,1fr);padding:8px 12px}
+  #ms-ui .sh-hero{--k:.75}
+  #ms-ui .sh-slots{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  #ms-ui .sh-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #ms-ui .sh-foot{padding:4px 16px 8px}
+  #ms-ui .sh-bar{width:min(100%,460px);margin:0 auto;gap:10px}
+  #ms-ui .sh-bar .btn,#ms-ui .sh-bar .btn-2{min-height:44px;font-size:20px}
+}
+/* Menu and Play Endless run along the bottom of the Shop: a toast (a purchase, a refusal) rides above that bar, not over it */
+@container ms (orientation:landscape){ #ms-ui:has(.sh) .ms-toast-container{bottom:64px} }
+@container ms (max-width:380px){
+  /* a narrow phone: tighter margins and smaller type, so a name and its price are never cut off */
+  #ms-ui .sh-head,#ms-ui .sh-scroll,#ms-ui .sh-foot{padding-left:12px;padding-right:12px}
+  #ms-ui .sh-title{font-size:40px}
+  #ms-ui .sh-tab{font-size:23px}
+  #ms-ui .sh-mats{gap:4px}
+  #ms-ui .sh-mats li{padding:0 6px 0 4px;font-size:22px}
+  #ms-ui .sh-hero{--k:.85}
+  #ms-ui .sh-card{padding:10px;gap:6px 10px}
+  #ms-ui .sh-ct h3{font-size:23px}
+  #ms-ui .sh-btn{font-size:21px;padding:0 8px}
 }

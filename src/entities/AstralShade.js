@@ -3,7 +3,6 @@ import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
 import { juice } from '../engine/JuiceEffects.js';
 import EnemyHealthBar from '../ui/EnemyHealthBar.js';
-import Projectile from './Projectile.js';
 
 export default class AstralShade extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y) {
@@ -90,21 +89,14 @@ export default class AstralShade extends Phaser.Physics.Arcade.Sprite {
     this.scene.time.delayedCall(300, () => {
       if (this.state === 'DEAD' || !this.active || this.state === 'STUNNED') return;
       sound.playSlash(2);
-      const crescent = new Projectile(
-        this.scene,
+      this.scene.spawnProjectile(
+        'lunar_crescent',
         this.x + dirX * 16,
         this.y - 2,
-        'lunar_crescent',
         dirX * (GAME_CONFIG.MOBS.ASTRAL_SHADE.CRESCENT_SPEED || 180),
         0,
-        GAME_CONFIG.MOBS.ASTRAL_SHADE.DAMAGE || 22,
-        'enemy',
-        0.8
+        true
       );
-      crescent.body.setAllowGravity(false);
-      if (this.scene.projectiles) {
-        this.scene.projectiles.add(crescent);
-      }
     });
 
     this.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
@@ -170,7 +162,9 @@ export default class AstralShade extends Phaser.Physics.Arcade.Sprite {
   performShadowWarp() {
     sound.playWallSlide();
     const warpDir = this.flipX ? -1 : 1;
-    this.x += warpDir * 60;
+    // the blink ends at the arena's edge: past the wall the hero could never reach this foe again, and the level could not end
+    const { x: left, right } = this.scene.physics.world.bounds;
+    this.x = Phaser.Math.Clamp(this.x + warpDir * 60, left + this.body.halfWidth, right - this.body.halfWidth);
     this.state = 'PHASE_DRIFT';
     this.setAlpha(0.48);
     this.play('nightborne_run_anim', true);

@@ -6,6 +6,7 @@ import { openSheet } from './sheet.js';
 import { rememberGate } from '../engine/gateMemory.js';
 import { fetchConfig } from '../gd/leaderboard.js';
 import { openEmailSheet } from './emailSheet.js';
+import { openReferralSheet } from './referralSheet.js';
 
 /**
  * The wallet and the way into the game, drawn as one sheet over the screen (src/ui/sheet.js). What it says is decided by
@@ -95,8 +96,23 @@ export class GdPanel {
     });
   }
 
+  /**
+   * The invite sheet, for a signed-in player (anyone else is shown the wallet, which is where they sign in). `back`: it was
+   * opened from the wallet, so closing it brings the wallet back; from the menu's settings it just closes.
+   */
+  openInvite({ back = false } = {}) {
+    this.mount();
+    if (!gdService.getStatus().connected) {
+      this.open();
+      showToast('Sign in to get your invite link.', { type: 'info' });
+      return;
+    }
+    openReferralSheet(this.host, { onBack: back ? () => this.open() : null });
+  }
+
   async onAction(act, el) {
     if (act === 'email') { this.openEmail(); return; }
+    if (act === 'invite') { this.openInvite({ back: true }); return; }
     if (act === 'play') {
       const request = this.gate;
       this.close();

@@ -15,6 +15,7 @@ import { engagementRoutes } from "./engagement.js";
 import { rewardsRoutes } from "./rewards.js";
 import { statsRoutes } from "./stats.js";
 import { shopRoutes } from "./shop.js";
+import { referralRoutes } from "./referrals.js";
 
 const perIpLimiter = (windowMs, limit) =>
   rateLimit({
@@ -110,6 +111,7 @@ export function createApp({ db, chain, config, now = Date.now, env = process.env
   api.use(rewardsRoutes(ctx));
   api.use(statsRoutes(ctx));
   api.use(shopRoutes(ctx));
+  api.use(referralRoutes(ctx));
   // ROUTES: later tasks mount their routers here.
   app.use("/api", api);
 

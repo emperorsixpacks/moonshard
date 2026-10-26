@@ -199,8 +199,10 @@ export class RunTracker {
    *   { ticketed: true, alreadySubmitted: true }       the server already holds this run (a retry whose first answer was lost)
    *   { ticketed: true, error, status, reason }        the submit failed
    * plus `checkpointFailed: true` when the closing checkpoint could not be delivered.
+   * `level`: the Endless level the run ended on. It goes with the submit when it is a whole number from 1, and the answer
+   * then says the player's best level (`bestLevel`), which is what the blades that ask for a level wait on.
    */
-  finish({ score, kills, shards, durationMs, bossCleared = false } = {}) {
+  finish({ score, kills, shards, durationMs, bossCleared = false, level } = {}) {
     if (this.finishing) return this.finishing;
     const run = this.run;
     if (!run) {
@@ -225,7 +227,7 @@ export class RunTracker {
     const claimed = Number.isFinite(durationMs) && durationMs >= 1 ? Math.round(durationMs) : sinceStart;
     const closing = { t: this._stamp(run, finishedAt), ...totals };
 
-    const settlement = this._settle(run, { totals, closing, durationMs: Math.min(claimed, sinceStart), bossCleared })
+    const settlement = this._settle(run, { totals, closing, durationMs: Math.min(claimed, sinceStart), bossCleared, level: toCount(level) })
       // _settle handles every API failure itself; anything that still gets here is a bug of ours, not the network's.
       .catch((err) => ({ ticketed: true, error: err?.message || 'submit_failed', reason: 'server_error' }));
     this.finishing = settlement;
@@ -285,7 +287,7 @@ export class RunTracker {
     });
   }
 
-  async _settle(run, { totals, closing, durationMs, bossCleared }) {
+  async _settle(run, { totals, closing, durationMs, bossCleared, level }) {
     try {
       // The server handles one checkpoint post per run at a time and wants strictly increasing times, so a periodic post
       // still in flight goes first.
@@ -300,7 +302,7 @@ export class RunTracker {
         sent = await this._post(run, batch);
       }
 
-      const body = { ticket: run.ticket, ...totals, durationMs, bossCleared };
+      const body = { ticket: run.ticket, ...totals, durationMs, bossCleared, ...(level > 0 ? { level } : {}) };
       const outcome = await this._submit(run, body);
       const extras = {
         coverage: Math.round((run.ackedT / durationMs) * 1000) / 1000,

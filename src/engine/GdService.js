@@ -9,6 +9,7 @@ import { detectHost, hostLanguage } from '../gd/host.js';
 import { setBlessed } from '../gd/blessing.js';
 import { pending } from '../gd/pending.js';
 import { runs } from '../gd/runs.js';
+import { claimStashedReferral } from '../gd/referral.js';
 import { explainError, shortAddress } from '../gd/format.js';
 import { storage } from './Storage.js';
 
@@ -90,11 +91,12 @@ class GdServiceManager {
       if (getToken() === token) {
         this.s.needsReconnect = !restored;
         try {
-          await this.fetchIdentity(true, { token });
+          const me = await this.fetchIdentity(true, { token });
+          if (me) this.claimReferral(token); // null: another sign-in took over meanwhile, and the code is for it to claim
           if (getToken() === token) await this.refreshAll();
         } catch (err) {
           if (err?.status === 401) this.authLost(token);
-          else this.s.offline = true;
+          else if (getToken() === token) this.s.offline = true; // what failed for a session that was replaced says nothing of the new one
         }
       }
     }
@@ -188,6 +190,8 @@ class GdServiceManager {
       // whether this server pays prizes (the daily top 3 and the Shard Harvest); null until it has said
       prizes: this.s.config ? this.s.config.prizesEnabled !== false : null,
       owned: connected ? (this.s.rewards?.owned ?? null) : null,
+      // the deepest Endless level reached in a ranked run (the server's count): the blades past the Glaive wait on it
+      bestLevel: connected ? (this.s.rewards?.bestLevel ?? null) : null,
       balance: connected ? this.s.balance : null,
       stale: Object.fromEntries(FIELDS.map((f) => [f, connected && this.meta[f].fail > this.meta[f].ok])),
       pendingCount: this.pending.size(),
@@ -478,10 +482,16 @@ class GdServiceManager {
       const res = await signIn({ wallet, host: this.host });
       this.resetData(); // a new sign-in never inherits another account's data
       this.applyIdentity(res);
+      this.claimReferral(res.token);
       this.s.needsReconnect = false;
       await this.refreshAll();
       return { address: res.address };
     });
+  }
+
+  /** A friend who came in through an invite link tells the server who sent them, once. In the background: it never holds up or fails a sign-in. */
+  claimReferral(token) {
+    claimStashedReferral({ token }).catch(() => {});
   }
 
   disconnect() {
@@ -604,6 +614,10 @@ class GdServiceManager {
       const owned = this.s.rewards?.owned ?? [];
       if (owned.includes(itemId)) throw new Error('already_owned');
       if (item.requires && !owned.includes(item.requires)) throw new Error('requires_item');
+      // a blade that asks for a level is refused until the server has counted it: paying early is safe but pointless
+      if (item.minLevel && (this.s.rewards?.bestLevel ?? 0) < item.minLevel) {
+        throw Object.assign(new Error('level_required'), { reason: `Reach level ${item.minLevel} in Endless first.` });
+      }
       // G$ is paid on the token this build knows, into the vault it may pin: a server answer pointing elsewhere is refused.
       if (String(shop.token).toLowerCase() !== GD.token.toLowerCase()) throw new Error('token_mismatch');
       if (GD.vault && String(shop.vault).toLowerCase() !== GD.vault.toLowerCase()) throw new Error('vault_mismatch');

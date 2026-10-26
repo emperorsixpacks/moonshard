@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { GAME, SCORE_MODEL } from "../config.js";
+import { BOSS_LEVEL_PTS_PER_SEC, GAME, LEVEL_PTS_PER_SEC, SCORE_MODEL } from "../config.js";
+import { levelCeiling } from "../src/levels.js";
 import { makeHarness, playTrial } from "./helpers.js";
 
 // Run plausibility: what makes a run count as ranked, credit Shards, or clear a boss.
@@ -333,9 +334,16 @@ test("a boss kill with its wave bonus right before the run ends is not mistaken 
 // (d) the score ceiling is derived from the game tables
 // ---------------------------------------------------------------------------------------------------------------
 
-test("the ceiling: 2 kills a second x (85 + 40) points x 4.0 combo + 10 points a second = 1,010", () => {
-  assert.equal(GAME.MAX_PTS_PER_SEC, 1_010);
+test("the ceiling: 2 kills a second x (85 + 40) points x 4.0 combo + 10 points a second + the levels' share = 1,183", () => {
+  // kills and time: 2 x 500 + 10
   assert.equal(SCORE_MODEL.KILLS_PER_SEC * (SCORE_MODEL.KILL_BASE_PTS_MAX + SCORE_MODEL.KILL_BONUS_PTS_MAX) * SCORE_MODEL.COMBO_MAX + SCORE_MODEL.TIME_PTS_PER_SEC, 1_010);
+  // Endless levels after the scripted waves: at most 1,390 for a clear, in at least 20 foes / 2 a second = 10 s; and a boss
+  // (2,160 where the rate allows 500) in the at least 5 x 10 s that five levels take
+  assert.equal(SCORE_MODEL.LEVEL_CLEAR_PTS_MAX, 1_390);
+  assert.equal(LEVEL_PTS_PER_SEC, 139);
+  assert.equal(BOSS_LEVEL_PTS_PER_SEC, 34);
+  assert.equal(GAME.MAX_PTS_PER_SEC, 1_010 + 139 + 34);
+  assert.equal(GAME.MAX_PTS_PER_SEC, 1_183);
   assert.ok(GAME.MAX_PTS_PER_SEC < 1_500, "tighter than the blanket 1,500 it replaces");
   // one-off points that are not part of the sustained rate: five waves' clear bonuses (5,900) and a boss kill at x4.0 (2,160)
   assert.equal(GAME.SCORE_BURST_PTS, 5_900 + 2_160);
@@ -355,7 +363,7 @@ test("PoC 2: a series at ~1,450 points a second is refused at its first checkpoi
   } finally { await h.close(); }
 });
 
-test("the ceiling is exact: 1,010 points a second over a checkpoint's whole run passes, one point more does not", async () => {
+test("the ceiling is exact: 1,183 points a second over a checkpoint's whole run passes, one point more does not", async () => {
   const h = await makeHarness();
   try {
     const a = await h.newPlayer();
@@ -363,11 +371,11 @@ test("the ceiling is exact: 1,010 points a second over a checkpoint's whole run 
     const runA = (await start(h, a)).body;
     const runB = (await start(h, b)).body;
     h.clock.advance(60_000);
-    assert.equal((await post(h, a, runA, [pt(10_000, 10_100, 20)])).status, 200);
-    assert.deepEqual((await post(h, b, runB, [pt(10_000, 10_101, 20)])).body.reason, ["cp_score_total"]);
-    const ok = await submit(h, a, runA, { score: 60_600, kills: 100, shards: 0, durationMs: 60_000 });
+    assert.equal((await post(h, a, runA, [pt(10_000, 11_830, 20)])).status, 200);
+    assert.deepEqual((await post(h, b, runB, [pt(10_000, 11_831, 20)])).body.reason, ["cp_score_total"]);
+    const ok = await submit(h, a, runA, { score: 70_980, kills: 100, shards: 0, durationMs: 60_000 });
     assert.equal(ok.status, 200, JSON.stringify(ok.body));
-    const over = await submit(h, b, runB, { score: 60_601, kills: 100, shards: 0, durationMs: 60_000 });
+    const over = await submit(h, b, runB, { score: 70_981, kills: 100, shards: 0, durationMs: 60_000 });
     assert.deepEqual([over.status, over.body.error], [400, "invalid_score_rate"]);
   } finally { await h.close(); }
 });
@@ -383,7 +391,7 @@ test("a burst inside the allowance is accepted; a jump beyond rate x time + burs
     await post(h, a, runA, [pt(60_000, 12_000, 90)]);
     await post(h, b, runB, [pt(60_000, 12_000, 90)]);
     assert.equal((await post(h, a, runA, [pt(62_000, 12_000 + 2_000 + 8_060, 92)])).status, 200, "rate x 2 s + the burst allowance");
-    const jump = await post(h, b, runB, [pt(62_000, 12_000 + 2_020 + 8_060 + 1, 92)]);
+    const jump = await post(h, b, runB, [pt(62_000, 12_000 + 2_366 + 8_060 + 1, 92)]);
     assert.deepEqual(jump.body.reason, ["cp_score_rate"]);
   } finally { await h.close(); }
 });
@@ -416,8 +424,8 @@ test("the allowances are not re-usable at every checkpoint: kills and points are
     // Each step is inside the per-interval rule (12 kills a second x 2 s + 5 = 29), but two of them are 58 kills in 4 s
     const kills = await post(h, a, runA, [pt(2_000, 0, 29), pt(4_000, 0, 58)]);
     assert.deepEqual([kills.status, kills.body.accepted, kills.body.reason], [422, 1, ["cp_kill_rate"]]);
-    // Likewise points: 2,020 in the first 2 s is exactly the rate, then rate x 2 s + the whole burst allowance again
-    const points = await post(h, b, runB, [pt(2_000, 2_020), pt(4_000, 2_020 + 2_020 + 8_060)]);
+    // Likewise points: 2,366 in the first 2 s is exactly the rate, then rate x 2 s + the whole burst allowance again
+    const points = await post(h, b, runB, [pt(2_000, 2_366), pt(4_000, 2_366 + 2_366 + 8_060)]);
     assert.deepEqual([points.status, points.body.accepted, points.body.reason], [422, 1, ["cp_score_total"]]);
   } finally { await h.close(); }
 });
@@ -450,4 +458,84 @@ test("the score ceiling still covers the client's game tables", { skip: hasClien
 
   const fromTables = Math.ceil(SCORE_MODEL.KILLS_PER_SEC * (best + SCORE_MODEL.KILL_BONUS_PTS_MAX) * s.MAX_COMBO + s.PTS_PER_SECOND);
   assert.ok(GAME.MAX_PTS_PER_SEC >= fromTables, `the tables now allow ${fromTables} points a second, the server ${GAME.MAX_PTS_PER_SEC}`);
+});
+
+const clientLevels = new URL("../../src/engine/levels.js", import.meta.url);
+
+test("the level terms of the ceiling still cover the client's ladder of levels", { skip: hasClient ? false : "the client source (src/config.js) is not next to the server" }, async () => {
+  const { GAME_CONFIG } = await import(clientConfig.href);
+  const levels = await import(clientLevels.href);
+  const s = GAME_CONFIG.SURVIVAL;
+  const LV = s.LEVELS;
+  const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+  const built = range(LV.SCRIPTED + 1, 3_000); // far deeper than anyone plays: every level the caps have settled for
+
+  // the fewest foes a built level has, and the dearest clear: the two inputs of the levels' share of the rate
+  const minFoes = Math.min(...built.map(levels.foesIn));
+  const dearest = Math.max(...built.map(levels.levelClearBonusMax));
+  assert.ok(SCORE_MODEL.LEVEL_MIN_FOES <= minFoes, `a built level has ${minFoes} foes, the model counts on ${SCORE_MODEL.LEVEL_MIN_FOES}`);
+  assert.ok(SCORE_MODEL.LEVEL_CLEAR_PTS_MAX >= dearest, `a built level pays up to ${dearest}, the model allows ${SCORE_MODEL.LEVEL_CLEAR_PTS_MAX}`);
+  assert.ok(SCORE_MODEL.BOSS_EVERY <= LV.BOSS_EVERY, `a boss every ${LV.BOSS_EVERY} levels, the model allows for one every ${SCORE_MODEL.BOSS_EVERY}`);
+  assert.deepEqual(range(1, 3_000).filter(levels.isBossLevel).slice(0, 3), [5, 10, 15]);
+  assert.ok(Math.max(LV.MAX_CONCURRENT, ...LV.SCRIPTED_CONCURRENT) <= 4, "the arena holds at most 4 foes at once, which the kill rate leans on");
+
+  // the first five levels are the one-off allowance: their clears add up to what it was computed with
+  const scripted = range(1, LV.SCRIPTED).reduce((sum, n) => sum + levels.levelClearBonusMax(n), 0);
+  assert.equal(scripted, SCORE_MODEL.WAVE_BONUS_PTS_MAX, "the five hand-built waves' clear bonuses");
+  assert.ok(SCORE_MODEL.WAVE_BONUS_PTS_MAX <= GAME.SCORE_BURST_PTS);
+
+  // the level check of runs.js: no level, hand-built ones included, has fewer foes than it divides the kills by
+  const fewest = Math.min(...range(1, 3_000).map(levels.foesIn));
+  assert.ok(GAME.LEVELS.MIN_FOES_PER_LEVEL <= fewest, `the fewest foes in any level is ${fewest}, the server divides by ${GAME.LEVELS.MIN_FOES_PER_LEVEL}`);
+  for (const n of range(1, 400)) {
+    // a player who is in level n has killed every foe of the levels before it: the most levels the server allows for that many kills
+    const needed = levels.cumulativeFoes(n - 1);
+    const allowed = levelCeiling(needed);
+    assert.ok(allowed >= n, `a run that killed all ${needed} foes before level ${n} is inside the server's level ceiling (${allowed})`);
+    // and still inside it when those kills came as fast as the model allows (SCORE_MODEL.KILLS_PER_SEC): an honest run is never flagged for its time
+    const fastest = needed / SCORE_MODEL.KILLS_PER_SEC;
+    assert.ok(levelCeiling(needed, fastest) >= n, `...and when it took ${fastest} s, a kill every ${1 / SCORE_MODEL.KILLS_PER_SEC} s`);
+  }
+
+  // the whole rate again, from the client's own tables
+  const regular = Object.entries(GAME_CONFIG.MOBS).filter(([name]) => !name.startsWith("BOSS_"));
+  const best = Math.max(...regular.map(([, mob]) => mob.PTS));
+  const killMax = (best + SCORE_MODEL.KILL_BONUS_PTS_MAX) * s.MAX_COMBO;
+  const minSeconds = minFoes / SCORE_MODEL.KILLS_PER_SEC;
+  const bossKill = (GAME_CONFIG.MOBS.BOSS_GORGOK.PTS + SCORE_MODEL.KILL_BONUS_PTS_MAX) * s.MAX_COMBO;
+  const fromTables = Math.ceil(SCORE_MODEL.KILLS_PER_SEC * killMax + s.PTS_PER_SECOND + Math.ceil(dearest / minSeconds) + Math.ceil((bossKill - killMax) / (LV.BOSS_EVERY * minSeconds)));
+  assert.ok(GAME.MAX_PTS_PER_SEC >= fromTables, `the tables now allow ${fromTables} points a second, the server ${GAME.MAX_PTS_PER_SEC}`);
+});
+
+test("the shop's gated blades and armour are the client's: same ids, order, prerequisites and levels", { skip: hasClient ? false : "the client source (src/config.js) is not next to the server" }, async () => {
+  const { GAME_CONFIG } = await import(clientConfig.href);
+  const { BLADE_TIERS } = await import(clientLevels.href);
+  const armour = Object.values(GAME_CONFIG.ARMOUR);
+  const armourIds = new Set(armour.map((a) => a.id));
+  const gated = GAME.SHOP.filter((item) => item.minLevel);
+  const blades = gated.filter((i) => !armourIds.has(i.id));
+  assert.deepEqual(blades.map((i) => [i.id, i.name, i.requires, i.minLevel]), BLADE_TIERS.map((t) => [t.id, t.name, t.requires, t.minLevel]));
+  assert.ok(gated.every((i) => i.kind === "forge"), "forged, not cosmetic: they add power");
+  // each is listed after the item it requires, and forging one costs a fee that rises with it
+  const ids = GAME.SHOP.map((i) => i.id);
+  for (const item of gated) assert.ok(ids.indexOf(item.requires) < ids.indexOf(item.id), `${item.requires} is listed before ${item.id}`);
+  assert.deepEqual(blades.map((i) => i.price), [...blades.map((i) => i.price)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+  // and the client has a weapon of that id for each blade, stronger than the Glaive
+  for (const item of blades) {
+    const weapon = Object.values(GAME_CONFIG.WEAPONS).find((w) => w.id === item.id);
+    assert.ok(weapon && weapon.damageMul > GAME_CONFIG.WEAPONS.FOREST_GLAIVE.damageMul, item.id);
+  }
+  // the armour: every piece the client wears is sold, as the same kind of item, in the same chain and at the same levels
+  assert.equal(GAME.SHOP.filter((i) => armourIds.has(i.id)).length, armour.length, "every piece is in the shop, once");
+  for (const piece of armour) {
+    const item = GAME.SHOP.find((i) => i.id === piece.id);
+    assert.ok(item, `${piece.id} is sold`);
+    assert.deepEqual([item.name, item.kind, item.requires ?? null, item.minLevel ?? null], [piece.name, "forge", piece.requires ?? null, piece.minLevel ?? null], piece.id);
+  }
+  // each slot's fees rise with its tiers, and the first piece of a slot has no level to reach
+  for (const slot of ["helm", "shield"]) {
+    const chain = armour.filter((a) => a.slot === slot).map((a) => GAME.SHOP.find((i) => i.id === a.id));
+    assert.deepEqual(chain.map((i) => i.price), [...chain.map((i) => i.price)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)), `${slot} fees rise`);
+    assert.equal(chain[0].minLevel, undefined, `the first ${slot} asks for no level`);
+  }
 });

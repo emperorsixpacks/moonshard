@@ -449,3 +449,33 @@ test('the intro lines mention the email only when it is offered', () => {
 test('the email button waits while the wallet is busy', () => {
   assert.match(gated({ ...anonymous, wallets: [], emailAvailable: true, busy: 'connect' }), /data-act="email"[^>]*disabled/);
 });
+
+/* ---- Invite friends: anyone signed in can invite, and it sits where the player looks (under the balance), not at the bottom ---- */
+
+test('a signed-in player is offered Invite friends, whatever their verification', () => {
+  for (const over of [
+    {},
+    { status: 'unverified', verified: false, ubi: null, bounty: null, spoils: [], balance: null },
+    { status: 'expired', verified: false, ubi: null, bounty: null, spoils: [] },
+    { status: 'unknown', verified: false, offline: true, ubi: null, bounty: null, spoils: [] },
+  ]) {
+    assert.match(html(over), /data-act="invite"[^>]*>.*?Invite friends/, `offered when ${over.status ?? 'verified'}`);
+  }
+});
+
+test('Invite friends comes before the daily claim, so it is in sight without scrolling', () => {
+  const h = html();
+  assert.ok(h.indexOf('data-act="invite"') < h.indexOf('data-act="ubi"'), 'above the claim');
+  assert.ok(h.indexOf('data-act="invite"') < h.indexOf('class="how"'), 'and the reference card');
+});
+
+test('nobody who has not signed in is offered it, and neither is the way in (which keeps the player on its one step)', () => {
+  assert.doesNotMatch(html({ connected: false, status: 'anonymous', verified: false, ubi: null, bounty: null, spoils: [] }), /data-act="invite"/);
+  const gate = renderPanelHtml(status(), 0, { gate: { label: 'STORY MODE' } });
+  assert.doesNotMatch(gate, /data-act="invite"/);
+});
+
+test('it can be pressed while a payment is waiting, but not while the wallet is busy', () => {
+  assert.match(html({ pendingCount: 1 }), /data-act="invite">/, 'a waiting payment does not stop it');
+  assert.match(html({ busy: 'ubi' }), /data-act="invite" disabled>/);
+});

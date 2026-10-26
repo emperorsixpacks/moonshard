@@ -2,6 +2,7 @@ import express from "express";
 import { formatUnits } from "viem";
 import { ah } from "./http.js";
 import { DAY_MS, dayKey } from "./time.js";
+import { referralTotals } from "./referrals.js";
 
 const CACHE_MS = 60_000;
 
@@ -19,8 +20,11 @@ const CACHE_MS = 60_000;
  *     spoilsPaidG          recorded only from Claimed events of the vault in a confirmed receipt.
  *     shopPurchases / shopSpentG   Moon Shop purchases, recorded only from the G$ token's Transfer event into the vault
  *                          in a confirmed receipt (shop.js).
+ *     referralsVerified    people (each once) invited through a player's link whom the identity contract vouched for the
+ *                          last time they signed in (wallets.verified). referrers: how many different people invited them.
  *   Self-reported (free wallets count: anyone can make a wallet and sign in without verifying)
  *     walletsConnected     every wallet that ever signed in.
+ *     referralsInvited     wallets that signed in through an invite link, verified or not.
  *     runsToday            finished runs today, verified or not.
  *     activeToday          distinct players who STARTED a run today (finished or not), verified or not.
  *     series[].runs / .active   finished runs and distinct players per day, verified or not.
@@ -48,6 +52,7 @@ async function compute(ctx) {
   const issued = await one("SELECT COALESCE(sum(amount::numeric), 0)::text AS t FROM spoils");
   const paid = await one("SELECT COALESCE(sum(amount::numeric), 0)::text AS t FROM spoil_claims");
   const shop = await one("SELECT count(*)::int AS n, COALESCE(sum(amount::numeric), 0)::text AS t FROM purchases");
+  const referrals = await referralTotals(ctx);
   const runRows = await q(
     "SELECT day, count(*)::int AS runs, count(DISTINCT subject)::int AS active FROM runs WHERE day >= $1 AND status = 'submitted' GROUP BY day",
     [days[0]],
@@ -67,6 +72,9 @@ async function compute(ctx) {
     spoilsPaidG: formatUnits(BigInt(paid.t.split(".")[0]), 18),
     shopPurchases: shop.n,
     shopSpentG: formatUnits(BigInt(shop.t.split(".")[0]), 18),
+    referralsInvited: referrals.invited,
+    referralsVerified: referrals.verified,
+    referrers: referrals.referrers,
     series: days.map((day) => ({
       day,
       runs: runRows.find((r) => r.day === day)?.runs ?? 0,
