@@ -322,6 +322,9 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null, config = nul
     } else {
       next = purseHtml(s);
     }
+    // anyone signed in can invite, whatever their own status: a friend counts once they are verified. It sits under the balance, in
+    // sight, as a second choice beside the day's gold claim.
+    next += button('invite', `${ico('share', 22)}<span>Invite friends</span>`, { disabled: busy, kind: 'plain', cls: 'gd-wallet' });
     out.push(col(who.join('')), col(next));
 
     if (status === 'verified') {

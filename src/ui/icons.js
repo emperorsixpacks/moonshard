@@ -150,6 +150,15 @@ IC.medal = medal('o', 'g', 'G');
 IC.medal_silver = medal('D', 'S', 's');
 IC.medal_bronze = medal('B', 'b', 'r');
 IC.mail = canvas().rect(2, 4, 12, 1, '#').rect(2, 12, 12, 1, '#').rect(2, 4, 1, 9, '#').rect(13, 4, 1, 9, '#').line(2, 4, 7, 9, '#').line(13, 4, 8, 9, '#').rows();
+IC.share = canvas().line(4, 8, 12, 4, '#', 2).line(4, 8, 12, 12, '#', 2).disc(4, 8, 2.6, '#').disc(12, 3.5, 2.6, '#').disc(12, 12.5, 2.6, '#').rows(); // invite: three nodes joined
+IC.copy = (() => { // two sheets: the front one covers the back
+  const c = canvas();
+  const box = (x, y, n) => c.rect(x, y, n, 1, '#').rect(x, y + n - 1, n, 1, '#').rect(x, y, 1, n, '#').rect(x + n - 1, y, 1, n, '#');
+  box(2, 2, 8);
+  c.rect(6, 6, 8, 8, '.');
+  box(6, 6, 8);
+  return c.rows();
+})();
 IC.lock = canvas().rect(3, 7, 10, 7, '#').ring(7.5, 6.5, 3.8, 1.8, '#', 180, 360).px(7, 10, '.').px(8, 10, '.').px(7, 11, '.').px(8, 11, '.').rows();
 
 /** An icon as inline SVG, `px` pixels on its longest side. */

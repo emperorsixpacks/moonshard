@@ -9,6 +9,7 @@ import { detectHost, hostLanguage } from '../gd/host.js';
 import { setBlessed } from '../gd/blessing.js';
 import { pending } from '../gd/pending.js';
 import { runs } from '../gd/runs.js';
+import { claimStashedReferral } from '../gd/referral.js';
 import { explainError, shortAddress } from '../gd/format.js';
 import { storage } from './Storage.js';
 
@@ -91,6 +92,7 @@ class GdServiceManager {
         this.s.needsReconnect = !restored;
         try {
           await this.fetchIdentity(true, { token });
+          this.claimReferral(token);
           if (getToken() === token) await this.refreshAll();
         } catch (err) {
           if (err?.status === 401) this.authLost(token);
@@ -478,10 +480,16 @@ class GdServiceManager {
       const res = await signIn({ wallet, host: this.host });
       this.resetData(); // a new sign-in never inherits another account's data
       this.applyIdentity(res);
+      this.claimReferral(res.token);
       this.s.needsReconnect = false;
       await this.refreshAll();
       return { address: res.address };
     });
+  }
+
+  /** A friend who came in through an invite link tells the server who sent them, once. In the background: it never holds up or fails a sign-in. */
+  claimReferral(token) {
+    claimStashedReferral({ token }).catch(() => {});
   }
 
   disconnect() {

@@ -26,10 +26,11 @@ Planned next increment: G$ streaming (Streaming SDK) as daily-prize sponsorship,
 
 ## Growth plan and the metrics we will report
 
-`/stats.html` separates what the chain confirms (verified humans ever, verified players today, in-game UBI claims, bounties claimed, Spoils paid, G$ spent in the Moon Shop) from what the game only reports (runs, wallets, players who started a run: a free wallet counts there). The game works with any EIP-1193 browser wallet and offers WalletConnect on phones without an injected wallet.
+`/stats.html` separates what the chain confirms (verified humans ever, verified players today, in-game UBI claims, bounties claimed, Spoils paid, G$ spent in the Moon Shop, verified friends brought by invites) from what the game only reports (runs, wallets, players who started a run, wallets that joined through an invite: a free wallet counts there). The game works with any EIP-1193 browser wallet and offers WalletConnect on phones without an injected wallet.
 
 - Season targets: **OWNER TO SET** (for example verified humans reached and daily claims made through the game).
 - Distribution: **OWNER TO SET** (GoodDollar community channels, community challenge days, shareable run results).
+- Invite links: every signed-in player has a personal link (`https://playmoonshard.xyz/?ref=CODE`) to copy or share. A friend who is new to Moonshard and passes GoodDollar's face scan counts once for the inviter (one human, one slot, so extra wallets add nothing), and the public stats report the verified friends brought this way. Tracking only: no payout is promised for invites.
 
 ## Security
 

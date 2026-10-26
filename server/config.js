@@ -173,6 +173,12 @@ export const GAME = {
     { id: "skin_verdant", name: "Verdant Jade Rapier", kind: "cosmetic", price: G(100) },
     { id: "satchel_pet", name: "Moon Sprite", kind: "cosmetic", price: G(80) },
   ],
+  /**
+   * Referrals (referrals.js). A friend is recorded as invited only while they are new: first seen by this server within
+   * NEW_PLAYER_DAYS, with no blade bought and no run started, so a link cannot claim someone who is already playing.
+   * A referrer's list shows their latest RECENT_LIMIT friends; the counts above it cover all of them.
+   */
+  REFERRALS: { NEW_PLAYER_DAYS: 7, RECENT_LIMIT: 50 },
 };
 
 export const config = {

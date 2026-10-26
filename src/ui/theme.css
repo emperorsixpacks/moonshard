@@ -309,6 +309,17 @@
 #ms-ui .foot .btn-ghost{width:auto;min-height:44px;padding:0 4px;font-size:20px}
 #ms-ui .sheet-b b{font-weight:400}
 
+/* ---- invite friends: the player's link, and how far each friend has got ---- */
+#ms-ui .invite-link{padding:12px 14px;background:var(--ink);box-shadow:var(--bx),var(--sunk);font:400 22px/1.25 var(--font-ui);color:var(--gold-hi);overflow-wrap:anywhere;-webkit-user-select:text;user-select:text}
+#ms-ui .invite-link .q{display:inline-block}
+#ms-ui .stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+#ms-ui .stats3>div{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px 9px;background:var(--ink);box-shadow:var(--bx),var(--sunk)}
+#ms-ui .stats3 b{font:400 34px/1 var(--font-ui);font-variant-numeric:tabular-nums}
+#ms-ui .stats3 small{font:400 19px/1 var(--font-ui);color:var(--mist)}
+#ms-ui .fr-st{display:inline-flex;align-items:center;gap:6px;flex:none;font:400 21px/1 var(--font-ui);color:var(--mist)}
+#ms-ui .fr-st.verified{color:var(--bone)}
+#ms-ui .fr-st.playing{color:var(--gold-hi)}
+
 /* ---- the loading screen: the moon forms out of pixels as the game loads ---- */
 #ms-ui .ms-loader{position:absolute;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:radial-gradient(ellipse at 50% 38%,#1c2a55 0,var(--ink) 64%);pointer-events:auto;transition:opacity .4s ease-out}
 #ms-ui .ms-loader.out{opacity:0;pointer-events:none}

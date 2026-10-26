@@ -67,6 +67,7 @@ function settingsBody({ soundOn, musicOn }) {
   return `<div class="rows">
     <div class="row"><span class="r-ico${soundOn ? '' : ' off'}">${ico(soundOn ? 'spk_on' : 'spk_off', 26)}</span><b>Sound effects</b>${sw('sound', soundOn, 'Sound effects')}</div>
     <div class="row"><span class="r-ico${musicOn ? '' : ' off'}">${ico(musicOn ? 'note_on' : 'note_off', 24)}</span><b>Music</b>${sw('music', musicOn, 'Music')}</div>
+    <button class="row" data-act="invite" type="button"><span class="r-ico">${ico('share', 24)}</span><b>Invite friends</b>${ico('chev', 16, 'rot')}</button>
     <button class="row" data-act="replay" type="button"><b>Replay tutorial</b>${ico('chev', 16, 'rot')}</button>
     <a class="row" href="/stats.html" target="_blank" rel="noopener"><b>Public stats</b>${ico('chev', 16, 'rot')}</a></div>`;
 }
@@ -79,7 +80,7 @@ function chaptersBody(rows) {
 
 /**
  * @param {{world: HTMLElement, ui: HTMLElement, sheets: HTMLElement, stage: HTMLElement}} host the elements inside #ms-ui
- * @param {{play(): void, endless(): void, forge(): void, ranks(): void, wallet(): void, chapters(): void, chapter(n: number): void, replay(): void}} actions
+ * @param {{play(): void, endless(): void, forge(): void, ranks(): void, wallet(): void, invite(): void, chapters(): void, chapter(n: number): void, replay(): void}} actions
  * @param {{soundOn(): boolean, musicOn(): boolean, toggleSound(): void, toggleMusic(): void}} audio
  * @param {{companion?: boolean}} [options]
  */
@@ -125,6 +126,7 @@ export function createMenu(host, actions, audio, { companion = false } = {}) {
           if (act === 'sound') { audio.toggleSound(); drawSettings(); }
           else if (act === 'music') { audio.toggleMusic(); drawSettings(); }
           else if (act === 'replay') { sheet.close(); actions.replay(); }
+          else if (act === 'invite') { sheet.close(); actions.invite(); }
         },
       });
     },

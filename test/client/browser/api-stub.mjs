@@ -35,7 +35,7 @@ const RANKED = { ok: true, isNewBest: true, rankedOk: true, bossCleared: false, 
  * `api.runs` the server's view of each run. Per-test behaviour: `api.latencyMs`, and `api.handlers[name]` (start,
  * checkpoints, submit) replaced by `async ({ call, run }) => ({ status, body, delayMs, hang })`.
  */
-export async function installApi(page, { verified = true, rewardG = '2400', firstBossClaimed = false, owned = ['iron_starter'], shop = SHOP, prizes = true, boards = {} } = {}) {
+export async function installApi(page, { verified = true, rewardG = '2400', firstBossClaimed = false, owned = ['iron_starter'], shop = SHOP, prizes = true, boards = {}, referrals = {} } = {}) {
   const api = {
     calls: [],
     verified,
@@ -49,6 +49,11 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
     engagement: { configured: true, canClaim: true, reason: null, rewardG },
     // the leaderboard's rows, per board (`daily`, `alltime`), as the server sends them: { rank, wallet, score, durationMs }
     boards: { daily: [], alltime: [], ...boards },
+    // referrals (server/src/referrals.js): what GET /referrals/me answers (or fails with, when `referralsStatus` is 500), and
+    // what POST /referrals/claim answers
+    referrals: { code: 'K7M2QX9A', joined: 0, verified: 0, playing: 0, friends: [], ...referrals },
+    referralsStatus: 200,
+    claim: { status: 200, body: { ok: true } },
     latencyMs: 0,
     runs: new Map(), // runId -> { runId, mode, chapter, status: 'open' | 'void' | 'submitted', submit }
     handlers: {
@@ -100,6 +105,8 @@ export async function installApi(page, { verified = true, rewardG = '2400', firs
       });
     }
     if (path === '/shop') return json(200, api.shop);
+    if (path === '/referrals/me') return json(api.referralsStatus, api.referralsStatus < 400 ? api.referrals : { error: 'internal_error' });
+    if (method === 'POST' && path === '/referrals/claim') return json(api.claim.status, api.claim.body);
     if (path === '/engagement/status') {
       const e = api.engagement;
       return json(200, { configured: e.configured, claimedHere: false, canClaim: e.canClaim, reason: e.reason, pendingRunId: null, rewardG: e.rewardG });

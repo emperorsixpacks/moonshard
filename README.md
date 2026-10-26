@@ -14,9 +14,10 @@ A pixel action-platformer built with **Phaser 4**, where **GoodDollar (G$) on Ce
 | Where G$ goes | Every payment goes into the prize vault, which pays the prizes once they are switched on. A payment names its item in its own calldata (`moonshard:<item>`, readable on any explorer); the server unlocks an item only once the token's Transfer event shows the vault was paid | `MoonshardVault` (this repo) |
 | Prizes (off for now) | Top-3 verified daily runs and the Shard Harvest, paid in G$ from the capped vault as vouchers each player redeems. Built and tested; off until the game has players: `PRIZES_ENABLED=true` turns them on, with G$ in the vault. While off, no Shards drop and nothing in the game mentions prizes | `MoonshardVault` |
 | How G$ works | A card at the bottom of the wallet, closed until the player opens it (nothing opens it by itself): what G$ is, claim, spend, win back, where it goes, with the server's amounts. The wallet chip on the menu shows your balance, with a dot when today's claim is waiting | n/a |
+| Invite friends | A personal link (`https://playmoonshard.xyz/?ref=CODE`) in the wallet and in Settings, to copy or share. A friend who signs in through it, and is new to Moonshard, is recorded once; the inviter sees how far each friend got: joined, verified, playing (they own the blade). Each real person counts once, and an inviter's own second wallet is not a friend. Tracking only: nothing is paid for invites yet | Identity contract (a friend is verified once it vouches for them) |
 | One human, one slot | Rewards, caps and boards key on the whitelisted root, so linked wallets share one slot | Identity contract |
 | Anti-cheat | Server-issued run tickets, checkpoints, the server's clock, score ceilings derived from the game's own tables, a 30 s minimum before a run counts, paced run starts, rate limits | n/a |
-| Public metrics | `/stats.html`: what the chain confirms (verified humans, in-game UBI claims, bounties, Spoils paid, G$ spent in the Moon Shop) kept apart from what the game only reports (runs, wallets) | n/a |
+| Public metrics | `/stats.html`: what the chain confirms (verified humans, in-game UBI claims, bounties, Spoils paid, G$ spent in the Moon Shop, verified friends brought by invites) kept apart from what the game only reports (runs, wallets, wallets that joined through an invite) | n/a |
 
 **The way in.** Before the story or Endless mode starts, the player connects a wallet, proves they are a verified human, and buys their blade with G$; the game shows these steps as a gate, one step at a time (with today's free claim offered first when the wallet is short of the price), and starts the mode they asked for once they are through. The tutorial needs none of it, so a new player can try the game first: the menu's big button leads there until it has been done. The menu, forge, leaderboard and public stats are open to everyone. The gate is the experience of the rule; the server independently only ranks and pays verified humans, and starts no run for a player without a paid blade. A server with no vault configured has no shop: the first blade is free there and blades are forged from materials alone.
 
@@ -75,7 +76,7 @@ Tests:
 
 ## Configuration
 
-Web (`.env.example`): `VITE_API_URL`, `VITE_CELO_RPC_URL`, `VITE_GD_ENV`, `VITE_VAULT_ADDRESS` (pins the vault the app will redeem against), `VITE_REOWN_PROJECT_ID` (WalletConnect: needed for phones without a browser wallet, since a wallet is required to play), `VITE_MAGIC_PUBLISHABLE_KEY` (email sign-in; allow the site's origin in the Magic dashboard).
+Web (`.env.example`): `VITE_API_URL`, `VITE_CELO_RPC_URL`, `VITE_GD_ENV`, `VITE_VAULT_ADDRESS` (pins the vault the app will redeem against), `VITE_REOWN_PROJECT_ID` (WalletConnect: needed for phones without a browser wallet, since a wallet is required to play), `VITE_MAGIC_PUBLISHABLE_KEY` (email sign-in; allow the site's origin in the Magic dashboard), `VITE_PUBLIC_URL` (the address invite links point at, `https://playmoonshard.xyz`; unset, a link uses the page the player is on).
 
 Server (`server/.env.example`): `PORT`, `JWT_SECRET`, `CORS_ORIGINS`, `TRUST_PROXY` (number of proxies in front of the API, default 1), `DATABASE_URL` (empty = in-memory), `CELO_RPC_URL`, `CHAIN_ID`, `VAULT_ADDRESS`, `VOUCHER_SIGNER_KEY`, `APP_SIGNER_KEY`. Prize sizes, caps, anti-cheat limits and the Moon Shop's items and prices live in `server/config.js` (`GAME`); the shop is open only when `VAULT_ADDRESS` is set, since that is where every payment goes. `PRIZES_ENABLED` (off unless `true`) switches the daily prizes and the Shard Harvest on.
 
@@ -83,7 +84,7 @@ Server (`server/.env.example`): `PORT`, `JWT_SECRET`, `CORS_ORIGINS`, `TRUST_PRO
 
 ```
 src/            Phaser client (scenes, entities, engine, ui) + src/gd/ (GoodDollar layer)
-server/         Express API: auth, run tickets, leaderboard, Spoils, Moon Shop, Engagement attestation, stats
+server/         Express API: auth, run tickets, leaderboard, Spoils, Moon Shop, referrals, Engagement attestation, stats
 contracts/      Foundry project: MoonshardVault, and the scripts that deploy it and register the Engagement app (settings in contracts/.env)
 scripts/        asset audit, Celo-fork end-to-end and browser runs, the local test launcher
 docs/           design spec, implementation plan, execution notes (deviations, evidence, limitations), attributions, deploy notes, application brief, screenshots

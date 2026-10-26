@@ -14,7 +14,7 @@ const day = (i) => `2026-10-0${i + 1}`;
 const STATS = {
   verifiedPlayers: 12, walletsConnected: 40, runsToday: 7, activeToday: 5, verifiedActiveToday: 3,
   ubiClaimsTotal: 9, ubiClaimsToday: 2, engagementClaims: 1, spoilsIssuedG: '1100', spoilsPaidG: '1000',
-  shopPurchases: 4, shopSpentG: '270',
+  shopPurchases: 4, shopSpentG: '270', referralsInvited: 6, referralsVerified: 3, referrers: 2,
   series: Array.from({ length: 7 }, (_, i) => ({ day: day(i), runs: i, active: i, ubiClaims: i % 3 })),
   updatedAt: '2026-10-07T12:00:00.000Z',
 };
@@ -47,6 +47,8 @@ try {
   }
   check(reported.get('RUNS TODAY') === '7' && reported.get('WALLETS CONNECTED') === '40', 'the numbers are the server\'s');
   check(chain.get('G$ SPENT IN THE MOON SHOP') === '270' && chain.get('MOON SHOP PURCHASES') === '4', 'what players spent in the Moon Shop is shown, from the chain');
+  check(chain.get('VERIFIED FRIENDS BROUGHT BY INVITES') === '3' && chain.get('PLAYERS WHO BROUGHT A VERIFIED FRIEND') === '2', 'the friends invites brought who the identity contract vouches for are among the confirmed numbers');
+  check(reported.get('WALLETS THAT JOINED VIA AN INVITE') === '6' && !chain.has('WALLETS THAT JOINED VIA AN INVITE'), 'wallets that joined through an invite (verified or not) are reported, not confirmed');
   const legend = await g.page.evaluate(() => document.querySelector('.legend').textContent);
   check(/Runs \(any wallet\)/.test(legend) && /Players \(any wallet\)/.test(legend) && /UBI claims \(on-chain\)/.test(legend), 'the chart says which series are from any wallet');
 
