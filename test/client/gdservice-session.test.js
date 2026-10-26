@@ -135,6 +135,22 @@ test('a late identity answer for the old token does not overwrite the account th
   assert.equal(s.needsReconnect, false);
 });
 
+test('an identity request of the old session that fails after a new sign-in does not leave the new session offline', async (t) => {
+  const old = deferred();
+  const server = serverStub({ verified: true, nextToken: 'NEW', tokenOk: (tok) => tok === 'NEW' });
+  server.handlers['/me/refresh'] = ({ token }) => (token === 'OLD' ? old.promise : undefined);
+  const { gd } = await startService(t, {
+    wallet: walletStub(), server, session: { token: 'OLD', address: ADDR, host: 'browser' }, awaitReady: false,
+  });
+
+  assert.equal((await gd.connect()).ok, true);
+  old.reject(new TypeError('Failed to fetch')); // the network failed for a request that belonged to the old session
+  await gd.ready;
+
+  assert.equal(gd.getStatus().offline, false, 'nothing is wrong with the session in use');
+  assert.equal(gd.getStatus().connected, true);
+});
+
 /* ---- refreshes: newest wins, failures keep the last good data (M1) ---- */
 
 test('an older refresh that resolves late cannot overwrite what a newer one already showed', async (t) => {

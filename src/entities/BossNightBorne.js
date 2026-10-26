@@ -252,7 +252,7 @@ export default class BossNightBorne extends Phaser.Physics.Arcade.Sprite {
     const waveHit = this.scene.physics.add.overlap(this.scene.player, wave, () => {
       if (this.scene.player && !this.scene.player.isDead) {
         const kDir = wave.x < this.scene.player.x ? 1 : -1;
-        this.scene.player.takeDamage(22, kDir);
+        this.scene.player.takeDamage(22, kDir, 'ranged'); // a wave sent out: the shield's to turn aside
         this.scene.cameras.main.shake(120, 0.015);
         sound.playHit();
         trailTimer.destroy();
@@ -420,7 +420,7 @@ export default class BossNightBorne extends Phaser.Physics.Arcade.Sprite {
     const collider = this.scene.physics.add.overlap(this.scene.player, dart, () => {
       if (this.scene.player && !this.scene.player.isDead) {
         const kDir = dart.x < this.scene.player.x ? 1 : -1;
-        this.scene.player.takeDamage(16, kDir);
+        this.scene.player.takeDamage(16, kDir, 'ranged'); // a dart thrown: the shield's to turn aside
         this.scene.cameras.main.shake(100, 0.012);
         trailTimer.destroy();
         collider.destroy();

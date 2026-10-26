@@ -10,6 +10,8 @@ export const GD = {
   magicKey: env.VITE_MAGIC_PUBLISHABLE_KEY || '',
   // Optional pin: when set, the app refuses to redeem from, or pay into, any other vault address than this one.
   vault: env.VITE_VAULT_ADDRESS || '',
+  // Optional: the address invite links point at (https://playmoonshard.xyz), when it should not be the page the player is on.
+  publicUrl: env.VITE_PUBLIC_URL || '',
   // The G$ token on Celo. Moon Shop payments are made on this token only, whatever a server answer says.
   token: '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A',
 };

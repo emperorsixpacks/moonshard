@@ -15,6 +15,9 @@ export default class BossGorgok extends Phaser.Physics.Arcade.Sprite {
     this.overheadBar = new EnemyHealthBar(scene, this, 48, 5, 12);
     this.mobType = 'boss_gorgok';
     this.bossName = GAME_CONFIG.MOBS.BOSS_GORGOK.NAME;
+    // Endless gives each realm's last level its own Gorgok: another coat (`baseTint`, null for his own) and another call for help
+    this.baseTint = null;
+    this.summonType = 'boar';
 
     // Scale up to colossus size (1.8x)
     this.setScale(1.8);
@@ -220,11 +223,11 @@ export default class BossGorgok extends Phaser.Physics.Arcade.Sprite {
       onComplete: () => roarText.destroy()
     });
 
-    // Summon 2 wild boars to flank player
+    // Summon 2 minions (wild boars, unless the boss calls something else) to flank player
     if (!this.summonedMinions && typeof this.scene.spawnMob === 'function') {
       this.summonedMinions = true;
-      this.scene.spawnMob('boar', this.x - 120, this.y);
-      this.scene.spawnMob('boar', this.x + 120, this.y);
+      this.scene.spawnMob(this.summonType, this.x - 120, this.y);
+      this.scene.spawnMob(this.summonType, this.x + 120, this.y);
     }
   }
 
@@ -293,6 +296,8 @@ export default class BossGorgok extends Phaser.Physics.Arcade.Sprite {
       this.scene.time.delayedCall(140, () => {
         if (this.isEnraged) {
           this.setTint(0xff7777);
+        } else if (this.baseTint !== null) {
+          this.setTint(this.baseTint);
         } else {
           this.clearTint();
         }

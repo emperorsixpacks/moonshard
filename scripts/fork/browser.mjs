@@ -75,19 +75,12 @@ const startScene = async (key, data) => {
 };
 const gameReady = () => page.waitForFunction(() => window.game?.scene?.isActive('MenuScene'), null, { timeout: 60_000 });
 const panelHas = (text) => page.waitForFunction((t) => document.querySelector('#ms-sheets .sheet')?.innerText.includes(t), text, { timeout: 60_000 });
-const forgeTexts = () => page.evaluate(() => window.game.scene.getScene('ForgeScene').contentContainer.list.filter((o) => o.type === 'Text').map((o) => o.text));
-/** A real click on the Forge button whose label starts with `label` (the first one, top to bottom). */
-async function clickForge(label) {
-  const at = await page.evaluate((text) => {
-    const scene = window.game.scene.getScene('ForgeScene');
-    const t = scene.contentContainer.list.find((o) => o.type === 'Text' && o.text.startsWith(text));
-    const b = scene.contentContainer.list.find((o) => o.type === 'Rectangle' && o.input && Math.abs(o.x - t.x) < 1 && Math.abs(o.y - t.y) < 1).getBounds();
-    const r = window.game.canvas.getBoundingClientRect();
-    const k = r.width / window.game.scale.width;
-    return { x: r.left + (b.x + b.width / 2) * k, y: r.top + (b.y + b.height / 2) * k };
-  }, label);
-  await page.mouse.click(at.x, at.y);
-}
+/** What the button of a Shop card says (the card of item `id`), or null. */
+const shopButton = (id) => page.evaluate((i) => document.querySelector(`#ms-menu .sh-card[data-id="${i}"] .sh-btn`)?.innerText.trim() ?? null, id);
+const shopTab = async (tab) => {
+  await page.click(`#ms-menu .sh [data-act="tab"][data-tab="${tab}"]`);
+  await page.waitForSelector(`#ms-menu .sh .sh-tab.on[data-tab="${tab}"]`);
+};
 
 try {
   await page.goto(web);
@@ -190,25 +183,25 @@ try {
   await shot('panel-bounty-claimed');
   await closeSheet();
 
-  console.log('▶ the Forge: a look bought with G$, and a blade forged from materials plus a G$ fee');
+  console.log('▶ the Shop: a look bought with G$, and a blade forged from materials plus a G$ fee');
   await startScene('ForgeScene');
-  await page.evaluate(() => window.game.scene.getScene('ForgeScene').tabSkins.emit('pointerdown'));
+  await page.waitForSelector('#ms-menu .sh .sh-card');
+  await shopTab('looks');
   await page.waitForTimeout(500);
   await shot('forge-skins-prices');
-  await clickForge('BUY');
-  await page.waitForFunction(() => window.game.scene.getScene('ForgeScene').contentContainer.list.some((o) => o.type === 'Text' && o.text === 'EQUIPPED'), null, { timeout: 120_000 });
+  assert.equal(await shopButton('skin_flame'), 'Buy · 100 G$', 'a skin is a G$ price on its button');
+  await page.click('#ms-menu .sh-card[data-id="skin_flame"] .sh-btn'); // a real click: the payment goes to the wallet on the fork
+  await page.waitForFunction(() => document.querySelector('#ms-menu .sh-card[data-id="skin_flame"] .sh-btn')?.innerText.trim() === 'Equipped', null, { timeout: 120_000 });
   await shot('forge-skin-bought');
-  await page.evaluate(() => window.game.scene.getScene('ForgeScene').tabFree.emit('pointerdown'));
+  await shopTab('blades');
   await page.waitForTimeout(500);
-  await clickForge('FORGE + 30 G$');
-  await page.waitForFunction(() => {
-    const list = window.game.scene.getScene('ForgeScene').contentContainer.list;
-    const at = (name) => list.find((o) => o.type === 'Text' && o.text === name);
-    const equipped = list.find((o) => o.type === 'Text' && o.text === 'EQUIPPED');
-    return equipped && Math.abs(equipped.y - at('Iron Broadsword').y) < 30;
-  }, null, { timeout: 120_000 });
+  assert.equal(await shopButton('iron_broadsword'), 'Forge · 30 G$', 'the Broadsword is materials and a 30 G$ fee');
+  await page.click('#ms-menu .sh-card[data-id="iron_broadsword"] .sh-btn');
+  await page.waitForFunction(() => document.querySelector('#ms-menu .sh-card[data-id="iron_broadsword"] .sh-btn')?.innerText.trim() === 'Equipped', null, { timeout: 120_000 });
   await shot('forge-broadsword');
-  assert.ok((await forgeTexts()).includes('FORGE + 60 G$\n15B/10A/8I'), 'the Glaive still needs its materials and fee');
+  assert.equal(await shopButton('forest_glaive'), 'Forge · 60 G$', 'the Glaive still needs its materials and fee');
+  const glaive = await page.$$eval('#ms-menu .sh-card[data-id="forest_glaive"] .sh-cost', (els) => els.map((e) => e.innerText.replace(/\s+/g, ' ').trim()));
+  assert.deepEqual(glaive, ['15 Bark', '10 Amber', '8 Iron'], 'and its materials are on its card');
   await startScene('MenuScene');
 
   console.log('▶ Spoils: next UTC day settles the trial, the player redeems the voucher on-chain');

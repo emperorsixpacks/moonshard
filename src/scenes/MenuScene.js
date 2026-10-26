@@ -38,6 +38,7 @@ export default class MenuScene extends Phaser.Scene {
         forge: () => this.leaveFor('ForgeScene'),
         ranks: () => this.leaveFor('LeaderboardScene'),
         wallet: () => window.__gdPanel?.open(),
+        invite: () => window.__gdPanel?.openInvite(),
         // the chapter list is part of the story, which is for verified humans: ask the gate first
         chapters: () => requirePlay('STORY MODE', () => {
           if (this.scene.isActive()) this.view.openChapters(chapterRows((n) => storage.isChapterUnlocked(n)));

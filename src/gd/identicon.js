@@ -34,7 +34,3 @@ export function identiconSvg(address) {
     .join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 5" shape-rendering="crispEdges"><rect width="5" height="5" fill="${bg}"/>${cells}</svg>`;
 }
-
-export async function identiconDataUrl(address) {
-  return `data:image/svg+xml;utf8,${encodeURIComponent(identiconSvg(address))}`;
-}

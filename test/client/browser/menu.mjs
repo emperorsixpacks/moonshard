@@ -1,8 +1,8 @@
 // The menu in a real browser, with real clicks:
 //   a visitor can try the tutorial at once (no wallet); any other way into play stops at the verified-human gate BEFORE the
-//     screen fades out; the places that are not play (the forge, the leaderboard, settings) stay open to everyone
+//     screen fades out; the places that are not play (the shop, the leaderboard, settings) stay open to everyone
 //   a verified human is never stopped, and the big button says where they are in the story
-//   the forge keeps its tab and the leaderboard keeps its tab (without asking the server again) when the phone is turned
+//   the shop keeps its tab and the leaderboard keeps its tab (without asking the server again) when the phone is turned
 //   node test/client/browser/menu.mjs [section]        (run from the repository root; `section` filters by name)
 import { bootGame, clickMenu, closeSheet, inScene, playButton, sceneTexts, sheetName, sheetOpen, sheetText, waitSheet } from './lib.mjs';
 import { installApi, sessionInit } from './api-stub.mjs';
@@ -22,11 +22,6 @@ const active = (page, key) => page.evaluate((k) => window.game.scene.isActive(k)
 const fading = (page) => page.evaluate(() => Boolean(document.getElementById('fade')?.classList.contains('on')));
 const menuText = (page, sel) => page.evaluate((s) => document.querySelector(`#ms-menu ${s}`)?.innerText ?? '', sel);
 
-/** Remembers one object of a scene's current layout, so a test can tell when the scene has been built again. */
-const mark = (page, key, pick = (scene) => scene.children.list[0]) => inScene(page, key, (scene, src) => {
-  window.__mark = (0, eval)(`(${src})`)(scene);
-}, pick.toString());
-const rebuilt = (page, ms = 15_000) => page.waitForFunction(() => window.__mark.active === false, null, { timeout: ms }).then(() => true, () => false);
 
 // ---- 1. a first visit: the tutorial needs no wallet -------------------------------------------------------------------
 if (wanted('first')) {
@@ -83,15 +78,16 @@ if (wanted('visitor')) {
     await clickMenu(g.page, 'ranks');
     await g.page.waitForFunction(() => window.game.scene.isActive('LeaderboardScene'), null, { timeout: 15_000 });
     check(!(await sheetOpen(g.page)), 'the leaderboard opens, with no gate');
-    await g.page.waitForFunction(() => window.game.scene.getScene('LeaderboardScene').errorText, null, { timeout: 15_000 });
-    const lb = await sceneTexts(g.page, 'LeaderboardScene');
-    check(lb.some((t) => /reach the server/i.test(t)), 'with the API down it says so, in plain words');
-    check(!lb.some((t) => /TypeError|undefined|\[object|Failed to fetch/i.test(t)), 'and shows no raw error text');
+    await g.page.waitForFunction(() => /reach the server/i.test(document.querySelector('#ms-menu .lb')?.innerText ?? ''), null, { timeout: 15_000 });
+    const lb = await g.page.evaluate(() => document.querySelector('#ms-menu .lb').innerText);
+    check(/reach the server/i.test(lb), 'with the API down it says so, in plain words');
+    check(!/TypeError|undefined|\[object|Failed to fetch/i.test(lb), 'and shows no raw error text');
+    check(await g.page.evaluate(() => Boolean(document.querySelector('#ms-menu .lb [data-act="retry"]'))), 'with a way to try again');
     await g.startScene('MenuScene');
 
     await clickMenu(g.page, 'forge');
     await g.page.waitForFunction(() => window.game.scene.isActive('ForgeScene'), null, { timeout: 15_000 });
-    check(!(await sheetOpen(g.page)), 'the forge opens, with no gate');
+    check(!(await sheetOpen(g.page)), 'the shop opens, with no gate');
     check(g.errors.length === 0, `no browser errors ${g.errors.join(' | ')}`);
   } finally { await g.close(); }
 }
@@ -159,33 +155,37 @@ if (wanted('rotation')) {
     await closeSheet(g.page);
     check((await playButton(g.page)) !== null, 'the big button is still there, and still works after the turn');
 
-    log('▶ the forge keeps its tab when the phone is turned');
+    log('▶ the shop keeps its tab when the phone is turned, and is not built again');
     await g.page.setViewportSize(PHONE_SIDEWAYS);
     await g.page.waitForFunction(() => window.game.scale.height === 270, null, { timeout: 15_000 });
     await g.startScene('ForgeScene');
-    await inScene(g.page, 'ForgeScene', (scene) => scene.tabNim.emit('pointerdown'));
-    check((await inScene(g.page, 'ForgeScene', (scene) => scene.currentTab)) === 'nim', 'the player is on the third tab');
-    await mark(g.page, 'ForgeScene');
+    await g.page.waitForSelector('#ms-menu .sh .sh-card', { timeout: 15_000 });
+    await g.page.click('#ms-menu .sh [data-act="tab"][data-tab="looks"]');
+    await g.page.evaluate(() => { window.__shopRoot = document.querySelector('#ms-menu .sh'); });
+    const under = () => g.page.evaluate(() => {
+      const header = document.getElementById('arcade-header');
+      const top = document.querySelector('#ms-menu .sh').getBoundingClientRect().top;
+      return header.offsetParent === null ? top === 0 : Math.abs(top - header.getBoundingClientRect().bottom) < 1.5;
+    });
+    check(await under(), 'sideways: the shop fills the screen (the page header is not there)');
     await g.page.setViewportSize(PHONE_UPRIGHT);
-    check(await rebuilt(g.page), 'turned upright: the forge is built again');
-    check(await active(g.page, 'ForgeScene'), 'the forge is still showing');
-    check((await inScene(g.page, 'ForgeScene', (scene) => scene.cameras.main.height)) === 440, 'on the tall canvas');
-    check((await inScene(g.page, 'ForgeScene', (scene) => scene.currentTab)) === 'nim', 'and still on the third tab');
+    await g.page.waitForFunction(() => window.game.scale.height === 440, null, { timeout: 15_000 });
+    const shop = await g.page.evaluate(() => ({ same: window.__shopRoot === document.querySelector('#ms-menu .sh'), on: document.querySelector('#ms-menu .sh .sh-tab.on')?.dataset.tab, showing: window.game.scene.isActive('ForgeScene') }));
+    check(shop.showing && shop.same && shop.on === 'looks', 'turned upright: the same screen, still on the last tab');
+    check(await under(), 'and it sits under the page header');
 
     log('▶ the leaderboard keeps its tab, and does not ask the server again');
     await g.page.setViewportSize(PHONE_SIDEWAYS);
     await g.page.waitForFunction(() => window.game.scale.height === 270, null, { timeout: 15_000 });
     await g.startScene('LeaderboardScene');
     await g.page.waitForFunction(() => window.game.scene.getScene('LeaderboardScene').boardsReady, null, { timeout: 15_000 });
-    await inScene(g.page, 'LeaderboardScene', (scene) => scene.setActiveTab('daily'));
+    await g.page.click('#ms-menu .lb [data-act="tab"][data-tab="daily"]');
     const asked = api.callsTo(/^\/leaderboard/).length;
-    await mark(g.page, 'LeaderboardScene', (scene) => scene.titleText);
     await g.page.setViewportSize(PHONE_UPRIGHT);
-    check(await rebuilt(g.page), 'turned upright: the leaderboard is laid out again');
-    check((await inScene(g.page, 'LeaderboardScene', (scene) => scene.layoutSize.h)) === 440, 'for the tall canvas');
-    const lb = await inScene(g.page, 'LeaderboardScene', (scene) => ({ tab: scene.activeTab, ready: scene.boardsReady }));
-    check(lb.tab === 'daily' && lb.ready, 'it is still on the daily board');
-    check(api.callsTo(/^\/leaderboard/).length === asked, 'the boards were laid out again without being fetched again');
+    await g.page.waitForFunction(() => window.game.scale.height === 440, null, { timeout: 15_000 });
+    const lb = await g.page.evaluate(() => ({ on: document.querySelector('#ms-menu .lb .lb-tab.on')?.dataset.tab, shown: Boolean(document.querySelector('#ms-menu .lb')), ready: window.game.scene.getScene('LeaderboardScene').boardsReady }));
+    check(lb.shown && lb.on === 'daily' && lb.ready, 'turned upright: it is still on the daily board');
+    check(api.callsTo(/^\/leaderboard/).length === asked, 'and the boards were not fetched again');
     check(g.errors.length === 0, `no browser errors ${g.errors.join(' | ')}`);
   } finally { await g.close(); }
 }

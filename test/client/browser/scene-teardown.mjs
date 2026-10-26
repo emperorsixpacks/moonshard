@@ -1,6 +1,7 @@
 // Things that must survive a scene being torn down at an awkward moment (found by the independent review's random walk):
 //   a dialogue box whose parts are already gone must not stop the next dialogue from starting (it soft-locked the story)
 //   the pause service must tolerate its scene being stopped while paused
+//   a run left in the middle of a storm takes the rain and the lightning timer with it
 //   after the gate refused the pause menu's RETRY and the player passes it, the run restarts with the pause menu gone
 //   node test/client/browser/scene-teardown.mjs        (run from the repository root)
 import { bootGame } from './lib.mjs';
@@ -53,6 +54,24 @@ try {
   });
   check(detach.threw === null, `detaching does not throw (${detach.threw})`);
   check(!detach.paused && !detach.menuShown, 'and leaves nothing paused and no pause menu on screen');
+
+  log('▶ a run left in the middle of a storm');
+  // level 3 has rain over the arena, with a timer to the next flash of lightning; the scene going takes both with it
+  await g.startScene('SurvivalScene');
+  await page.waitForTimeout(1_000);
+  const storm = await page.evaluate(() => {
+    const scene = window.game.scene.getScene('SurvivalScene');
+    scene.startLevel(3);
+    return { kind: scene.weather.kind, emitters: scene.weather.emitterCount, lightning: Boolean(scene.weather.strikes) };
+  });
+  check(storm.kind === 'rain' && storm.emitters === 1 && storm.lightning, `level 3 has rain and a timer to the lightning (${JSON.stringify(storm)})`);
+  const left = await page.evaluate(() => {
+    const scene = window.game.scene.getScene('SurvivalScene');
+    let threw = null;
+    try { window.game.scene.stop('SurvivalScene'); } catch (e) { threw = e.message; } // torn down in the middle of it
+    return { threw, kind: scene.weather.kind, emitters: scene.weather.emitterCount, lightning: Boolean(scene.weather.strikes) };
+  });
+  check(left.threw === null && left.kind === 'none' && left.emitters === 0 && !left.lightning, `leaving takes the weather and the lightning with it (${JSON.stringify(left)})`);
 
   log('▶ the pause menu\'s RETRY is refused by the gate, then the player passes it');
   await g.startScene('SurvivalScene');

@@ -254,8 +254,9 @@ export async function makeHarness(opts = {}) {
 /**
  * Plays one honest-looking Daily Shard Trial: start, post checkpoints covering ~70% of the run,
  * then submit. Advances the fake clock. Returns the submit response ({status, body}).
+ * `level`: the Endless level the run reports; left out of the submit when it is not given, like a client from before levels.
  */
-export async function playTrial(h, p, { score = 1000, kills = 20, shards = 0, durationMs = 60_000 } = {}) {
+export async function playTrial(h, p, { score = 1000, kills = 20, shards = 0, durationMs = 60_000, level } = {}) {
   const run = (await h.api.post("/runs/start", { mode: "TRIAL" }, { token: p.token })).body;
   const first = Math.round(durationMs * 0.7);
   h.clock.advance(first);
@@ -268,7 +269,7 @@ export async function playTrial(h, p, { score = 1000, kills = 20, shards = 0, du
   h.clock.advance(durationMs - first + 500);
   return h.api.post(
     `/runs/${run.runId}/submit`,
-    { ticket: run.ticket, score, kills, shards, durationMs },
+    { ticket: run.ticket, score, kills, shards, durationMs, ...(level === undefined ? {} : { level }) },
     { token: p.token },
   );
 }

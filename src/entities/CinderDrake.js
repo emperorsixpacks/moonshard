@@ -3,7 +3,6 @@ import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
 import { juice } from '../engine/JuiceEffects.js';
 import EnemyHealthBar from '../ui/EnemyHealthBar.js';
-import Projectile from './Projectile.js';
 
 export default class CinderDrake extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y) {
@@ -49,6 +48,7 @@ export default class CinderDrake extends Phaser.Physics.Arcade.Sprite {
       if (now > this.stateTimer) {
         this.state = 'FLY';
         this.body.setAllowGravity(false);
+        this.setVelocityY(0);
         this.play('demon_flying_anim', true);
       }
       return;
@@ -59,6 +59,7 @@ export default class CinderDrake extends Phaser.Physics.Arcade.Sprite {
       if (this.y >= this.diveTargetY || (this.body.blocked && this.body.blocked.down)) {
         this.state = 'FLY';
         this.body.setAllowGravity(false);
+        this.setVelocityY(0);
         this.play('demon_flying_anim', true);
         this.attackCooldownUntil = now + 2600;
       }
@@ -108,22 +109,14 @@ export default class CinderDrake extends Phaser.Physics.Arcade.Sprite {
     const dirX = player.x < this.x ? -1 : 1;
     this.scene.time.delayedCall(160, () => {
       if (this.state === 'DEAD' || !this.active) return;
-      const glob = new Projectile(
-        this.scene,
+      this.scene.spawnProjectile(
+        'magma_glob',
         this.x + dirX * 14,
         this.y + 6,
-        'magma_glob',
         dirX * (GAME_CONFIG.MOBS.CINDER_DRAKE.MAGMA_SPEED || 160),
         -30,
-        GAME_CONFIG.MOBS.CINDER_DRAKE.DAMAGE || 20,
-        'enemy',
-        0.9
+        true
       );
-      glob.body.setAllowGravity(true);
-      glob.body.setGravityY(220);
-      if (this.scene.projectiles) {
-        this.scene.projectiles.add(glob);
-      }
     });
 
     this.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {

@@ -3,6 +3,7 @@ import { GAME_CONFIG } from '../config.js';
 import { sound } from '../engine/Audio.js';
 import { storage } from '../engine/Storage.js';
 import { juice } from '../engine/JuiceEffects.js';
+import { armourById, cutFor, cutLabel, takenDamage } from '../engine/gear.js';
 
 export default class Player extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y) {
@@ -32,6 +33,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     this.equippedWeaponId = storage.getEquippedWeapon();
     this.weaponConfig = Object.values(GAME_CONFIG.WEAPONS).find(w => w.id === this.equippedWeaponId) || GAME_CONFIG.WEAPONS.STARTER;
     this.companionActive = storage.isCompanionActive();
+    // What the hero wears (engine/gear.js): a helmet takes some off the blows of foes that come at the hero, a shield off what they throw
+    const worn = storage.getEquippedArmour();
+    this.armour = { helm: armourById(worn.helm), shield: armourById(worn.shield) };
 
     // Pet companion sprite (Sylva, Moon Sprite)
     if (this.companionActive) {
@@ -98,6 +102,43 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         lifespan: 380,
         blendMode: 'ADD',
         tint: [0x33ee66, 0x98ff98, 0xffff66],
+        emitting: false
+      });
+    } else if (this.weaponConfig.effect === 'moon_shimmer') {
+      this.particles = scene.add.particles(0, 0, 'spark', {
+        scale: { start: 1.2, end: 0.1 },
+        speed: { min: 15, max: 40 },
+        lifespan: 400,
+        blendMode: 'ADD',
+        tint: [0xb7c4ff, 0xe0e7ff, 0xffffff],
+        emitting: false
+      });
+    } else if (this.weaponConfig.effect === 'star_embers') {
+      this.particles = scene.add.particles(0, 0, 'spark', {
+        scale: { start: 1.4, end: 0 },
+        speed: { min: 25, max: 65 },
+        lifespan: 420,
+        blendMode: 'ADD',
+        tint: [0xffd966, 0xffa94d, 0xfff3b0],
+        emitting: false
+      });
+    } else if (this.weaponConfig.effect === 'cinder_embers') {
+      this.particles = scene.add.particles(0, 0, 'spark', {
+        scale: { start: 1.5, end: 0 },
+        speed: { min: 28, max: 70 },
+        lifespan: 430,
+        gravityY: -30,
+        blendMode: 'ADD',
+        tint: [0xff5a1f, 0xff9a3d, 0xffd27a],
+        emitting: false
+      });
+    } else if (this.weaponConfig.effect === 'void_shards') {
+      this.particles = scene.add.particles(0, 0, 'spark', {
+        scale: { start: 1.6, end: 0 },
+        speed: { min: 30, max: 75 },
+        lifespan: 450,
+        blendMode: 'ADD',
+        tint: [0xd2a8ff, 0x9d6bff, 0xffffff],
         emitting: false
       });
     }
@@ -408,8 +449,16 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     return Math.round(baseDamage * multiplier);
   }
 
-  takeDamage(amount = 20, knockbackDir = 0) {
+  /**
+   * The hero is hit. `source` is what the hit came from: 'contact' (a foe's body and weapon, which the helmet turns aside, the
+   * default) or 'ranged' (what a foe threw, which the shield does); anything else (a hazard, a fall) nothing turns aside. Worn
+   * armour takes its share off, and the hit still costs at least 1. Whoever throws something says 'ranged', or the helm cuts it.
+   */
+  takeDamage(amount = 20, knockbackDir = 0, source = 'contact') {
     if (this.isDead || (this.scene && this.scene.inDialogue) || this.scene.time.now < this.invulnerableUntil) return false;
+
+    const cut = cutFor(this.armour, source);
+    const dealt = takenDamage(amount, cut);
 
     // Normalize knockback direction: if a world X coordinate was passed, determine direction relative to player
     let dir = 0;
@@ -421,10 +470,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       dir = -1;
     }
 
-    this.health = Math.max(0, this.health - amount);
+    this.health = Math.max(0, this.health - dealt);
     this.invulnerableUntil = this.scene.time.now + GAME_CONFIG.PLAYER.INVULNERABILITY_MS;
     sound.playHit();
-    juice.spawnDamageNumber(this.scene, this.x, this.y - 18, amount, 'player');
+    // a hit the armour thinned says so: "-14" in the colour of the metal, with the cut beside it
+    juice.spawnDamageNumber(this.scene, this.x, this.y - 18, dealt, 'player', cut > 0 ? `-${dealt} (${cutLabel(cut)})` : null);
     juice.hitStopLight(this.scene);
 
     // Knockback

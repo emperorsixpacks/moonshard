@@ -1,6 +1,6 @@
 import { GAME_CONFIG } from '../config.js';
 import { explorerAddress, explorerTx } from '../gd/config.js';
-import { explainError, formatCountdown, formatG } from '../gd/format.js';
+import { explainError, formatCountdown, formatG, walletG } from '../gd/format.js';
 import { identiconSvg } from '../gd/identicon.js';
 import { canPlay, entryBlade, gateStep } from '../engine/playGateRules.js';
 import { ico } from './icons.js';
@@ -80,9 +80,6 @@ function connectHtml(s, busy) {
 const reasonText = (reason) => (/\s/.test(String(reason)) ? String(reason).slice(0, 120) : explainError(String(reason || 'not_claimable')));
 
 const txLink = (hash) => `<a class="lnk" href="${esc(explorerTx(hash))}" target="_blank" rel="noopener">View transaction</a>`;
-
-/** G$ in a wallet, rounded down: a balance shown as "20" must be able to pay 20. */
-const walletG = (g) => formatG(Math.floor(Number(g) * 100) / 100, 2);
 
 /** The text on the G$ button in the page header: a verified player's balance, once it is known. */
 export function walletPillText(s) {
@@ -322,6 +319,9 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null, config = nul
     } else {
       next = purseHtml(s);
     }
+    // anyone signed in can invite, whatever their own status: a friend counts once they are verified. It sits under the balance, in
+    // sight, as a second choice beside the day's gold claim.
+    next += button('invite', `${ico('share', 22)}<span>Invite friends</span>`, { disabled: busy, kind: 'plain', cls: 'gd-wallet' });
     out.push(col(who.join('')), col(next));
 
     if (status === 'verified') {
@@ -352,12 +352,20 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null, config = nul
 const gText = (v) => `${formatG(v, 2)} G$`;
 const SKINS = new Set(Object.values(GAME_CONFIG.WEAPONS).filter((w) => w.isSkin).map((w) => w.id));
 const CELESTIAL = new Set(Object.values(GAME_CONFIG.WEAPONS).filter((w) => w.tier === 'Celestial Blade').map((w) => w.id));
+const ARMOUR_IDS = new Set(Object.values(GAME_CONFIG.ARMOUR).map((a) => a.id));
 
 /** "100 G$ each" for a group at one price, "from 80 G$" for a group at several. */
 function groupPrice(items) {
   const prices = [...new Set(items.map((x) => Number(x.priceG)))];
   if (prices.length > 1) return `from ${gText(Math.min(...prices))}`;
   return items.length > 1 ? `${gText(prices[0])} each` : gText(prices[0]);
+}
+
+/** "15 to 120 G$" for pieces at several prices, "100 G$" for one price. */
+function priceRange(items) {
+  const prices = items.map((x) => Number(x.priceG));
+  const [lo, hi] = [Math.min(...prices), Math.max(...prices)];
+  return lo === hi ? gText(lo) : `${formatG(lo, 2)} to ${gText(hi)}`;
 }
 
 function looksLine(looks) {
@@ -416,10 +424,20 @@ export function howHtml(s, config = null, { open = false } = {}) {
     items.push(li('sword_clean', 'On this server your first blade is free, and blades are forged from forest materials alone.'));
   } else {
     if (blade) items.push(li('sword_clean', `Your hero fights with the <b>${esc(blade.name)}</b>: ${gText(blade.priceG)}. No blade, no fight: it is the last step before you play.`));
+    // What is forged: blades, then helms and shields. The last line says why none of it is power for sale.
     const forge = shop.items.filter((x) => x.kind === 'forge');
-    if (forge.length) items.push(li('anvil', `Stronger blades: ${forge.map((x) => `<b>${esc(x.name)}</b> forest materials + ${gText(x.priceG)}`).join(' · ')}. The materials only come from playing, so G$ alone never buys power.`));
+    const blades = forge.filter((x) => !ARMOUR_IDS.has(x.id));
+    const armour = forge.filter((x) => ARMOUR_IDS.has(x.id));
+    const never = 'The materials only come from playing, so G$ alone never buys power.';
+    const deeper = (pieces, what) => (pieces.some((x) => x.minLevel) ? ` ${what} ask for an Endless level too.` : '');
+    if (blades.length) {
+      items.push(li('anvil', `Stronger blades, forged from forest materials and a G$ fee: ${blades.map((x) => `<b>${esc(x.name)}</b> ${gText(x.priceG)}`).join(' · ')}.${deeper(blades, 'The ones past the Glaive')}${armour.length ? '' : ` ${never}`}`));
+    }
+    if (armour.length) {
+      items.push(li('shield_woods', `Helms and shields (${armour.length} pieces) are forged the same way, ${priceRange(armour)} a piece. A helm turns aside blows, a shield what is thrown.${deeper(armour, 'The better tiers')} ${never}`));
+    }
     const looks = shop.items.filter((x) => x.kind === 'cosmetic');
-    if (looks.length) items.push(li('sparkle', `The Moon Shop sells looks only: ${looksLine(looks)}. Nothing here adds power. Find them in the Forge.`));
+    if (looks.length) items.push(li('sparkle', `The Moon Shop sells looks only: ${looksLine(looks)}. Nothing here adds power. Find them in the Shop.`));
   }
   if (prizes) earnLines(s, config).forEach((t) => items.push(li('trophy', t)));
   else items.push(li('trophy', bountyLine(s)));

@@ -148,7 +148,7 @@ export default class BossDemon extends Phaser.Physics.Arcade.Sprite {
     const collider = this.scene.physics.add.overlap(this.scene.player, fireball, () => {
       if (this.scene.player && !this.scene.player.isDead) {
         const kDir = fireball.x < this.scene.player.x ? 1 : -1;
-        this.scene.player.takeDamage(18, kDir);
+        this.scene.player.takeDamage(18, kDir, 'ranged'); // thrown: the shield's to turn aside
         trailTimer.destroy();
         fireball.destroy();
         collider.destroy();

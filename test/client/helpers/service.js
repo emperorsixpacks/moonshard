@@ -46,9 +46,13 @@ export const SHOP = {
     { id: 'iron_starter', name: 'Rusted Shortsword', kind: 'blade', priceG: '20', requires: null },
     { id: 'iron_broadsword', name: 'Iron Broadsword', kind: 'forge', priceG: '30', requires: null },
     { id: 'forest_glaive', name: 'Forest Glaive', kind: 'forge', priceG: '60', requires: null },
+    { id: 'moonsteel_blade', name: 'Moonsteel Blade', kind: 'forge', priceG: '100', requires: 'forest_glaive', minLevel: 8 },
     { id: 'golden_albatross', name: 'Golden Solar Blade', kind: 'cosmetic', priceG: '150', requires: 'forest_glaive' },
     { id: 'skin_flame', name: 'Crimson Flame Katana', kind: 'cosmetic', priceG: '100', requires: null },
     { id: 'satchel_pet', name: 'Moon Sprite', kind: 'cosmetic', priceG: '80', requires: null },
+    { id: 'leather_cap', name: 'Leather Cap', kind: 'forge', priceG: '15', requires: null },
+    { id: 'chitin_helm', name: 'Chitin Helm', kind: 'forge', priceG: '50', requires: 'leather_cap', minLevel: 8 },
+    { id: 'oak_buckler', name: 'Oak Buckler', kind: 'forge', priceG: '15', requires: null },
   ],
 };
 
@@ -71,6 +75,7 @@ export function serverStub(opts = {}) {
     // the Moon Shop: GET /shop answers `shop`; /rewards/status lists `owned`; a confirmed purchase adds `buys` to it
     shop: SHOP,
     owned: ['iron_starter'],
+    bestLevel: 0, // the deepest Endless level the server has counted for the player
     buys: 'iron_starter',
     prizes: true, // what GET /config says about the daily prizes and the Shard Harvest
     ...opts,
@@ -97,7 +102,7 @@ export function serverStub(opts = {}) {
       case '/auth/nonce': return reply({ nonce: 'cd'.repeat(32), issuedAt: new Date().toISOString() });
       case '/auth/verify': return reply({ token: server.nextToken, ...identity });
       case '/me': case '/me/refresh': return reply(identity);
-      case '/rewards/status': return reply({ blessing: server.blessed, firstBossPrizeG: 2400, crystalStatus: { gdEarned: 0, dailyCapGd: 100, isCapped: false }, owned: [...server.owned] });
+      case '/rewards/status': return reply({ blessing: server.blessed, firstBossPrizeG: 2400, crystalStatus: { gdEarned: 0, dailyCapGd: 100, isCapped: false }, owned: [...server.owned], bestLevel: server.bestLevel });
       case '/shop': return reply(server.shop);
       case '/config': return reply(config);
       case '/engagement/status': return reply({ configured: true, canClaim: true, pendingRunId: 'run-1', rewardG: 2400 });

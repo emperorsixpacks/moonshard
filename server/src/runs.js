@@ -6,6 +6,7 @@ import { dayKey } from "./time.js";
 import { rankOf } from "./leaderboard.js";
 import { createRefreshCooldown } from "./auth.js";
 import { hasBlade } from "./shop.js";
+import { bestLevel, levelCeiling } from "./levels.js";
 
 const UNIQUE_VIOLATION = "23505"; // Postgres SQLSTATE, same code from pg and PGlite
 
@@ -245,6 +246,13 @@ export function runRoutes(ctx) {
     const shardCeil = Math.min(GAME.SHARDS_PER_KILL * kills + GAME.SHARDS_BASE_ALLOWANCE, GAME.MAX_SHARDS_PER_RUN);
     if (shards > shardCeil) throw new HttpError(400, "shard_count_anomaly");
 
+    // The Endless level the run ended on. Optional (a client from before levels sends none), Endless only: Story has chapters.
+    let level = null;
+    if (run.mode === "TRIAL" && b.level !== undefined && b.level !== null) {
+      level = int(b.level);
+      if (!Number.isInteger(level) || level < 1 || level > GAME.LEVELS.MAX) throw new HttpError(400, "invalid_level");
+    }
+
     const wantsBoss = b.bossCleared === true;
     if (wantsBoss && run.mode !== "STORY") throw new HttpError(400, "boss_requires_story");
     // The boss needs the play time (claimed) and the server's own time (measured): see GAME.BOSS_MIN.
@@ -270,6 +278,12 @@ export function runRoutes(ctx) {
       if (jumpedSince(last, totals, Math.max(0, elapsed - last.t_ms) + GAME.CLOCK_TOLERANCE_MS)) flags.push("totals_above_checkpoint");
     }
     if (wantsBoss && coverage < GAME.MIN_COVERAGE_BOSS) flags.push("boss_low_coverage");
+    // A level the claimed kills could not have reached in the time claimed: the run is flagged (so not ranked) and the level stored is the deepest they allow.
+    const deepest = levelCeiling(kills, seconds);
+    if (level !== null && level > deepest) {
+      flags.push("level_implausible");
+      level = deepest;
+    }
 
     // Only a run that has been played for a while counts: the server's own clock since /runs/start AND the claimed play
     // time must both reach MIN_RANKED_ELAPSED_MS. Shorter runs are still recorded (open board), unflagged, not ranked.
@@ -288,8 +302,8 @@ export function runRoutes(ctx) {
       // of concurrent submits of one ticket, exactly one gets the row back.
       const spent = await t.query(
         `UPDATE runs SET status='submitted', submitted_at=$2, score=$3, kills=$4, shards=$5, duration_ms=$6,
-                boss_cleared=$7, ranked_ok=$8, flags=$9 WHERE run_id=$1 AND status='open' RETURNING run_id`,
-        [run.run_id, new Date(ctx.now()), score, kills, shards, durationMs, bossCleared, rankedOk, flags.join(",")],
+                boss_cleared=$7, ranked_ok=$8, flags=$9, level=$10 WHERE run_id=$1 AND status='open' RETURNING run_id`,
+        [run.run_id, new Date(ctx.now()), score, kills, shards, durationMs, bossCleared, rankedOk, flags.join(","), level],
       );
       if (spent.rows.length === 0) {
         const now = await t.query("SELECT status FROM runs WHERE run_id = $1", [run.run_id]);
@@ -321,9 +335,12 @@ export function runRoutes(ctx) {
     const rank = run.mode === "TRIAL"
       ? { open: await rankOf(ctx, run.day, run.subject, "open"), ranked: await rankOf(ctx, run.day, run.subject, "ranked") }
       : null;
+    // `bestLevel`: the deepest level their ranked runs have reached, this one included, so the end screen and the Forge need no
+    // second request to know what it opened.
+    const best = run.mode === "TRIAL" ? await bestLevel(ctx, run.subject) : null;
     // `shardsCredited` and `tooShort` let the end screen say what happened instead of guessing: a run that ended before
     // `minPlayMs` is not a flagged run, it just did not play long enough to count.
-    res.json({ ok: true, isNewBest, rankedOk, bossCleared, flags, rank, shardsCredited, tooShort: !playedLongEnough, minPlayMs: GAME.MIN_RANKED_ELAPSED_MS });
+    res.json({ ok: true, isNewBest, rankedOk, bossCleared, flags, rank, shardsCredited, tooShort: !playedLongEnough, minPlayMs: GAME.MIN_RANKED_ELAPSED_MS, level, bestLevel: best });
   }));
 
   return r;

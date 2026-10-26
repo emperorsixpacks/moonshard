@@ -21,6 +21,7 @@ import { installHiRes } from './engine/HiRes.js';
 import { installHudAnchor } from './engine/HudAnchor.js';
 import { installPlayGate, resumeRememberedGate } from './engine/playGate.js';
 import { loadGameFonts } from './engine/fonts.js';
+import { captureReferral } from './gd/referral.js';
 
 // Phaser 3 Game Configuration
 const phaserConfig = {
@@ -102,6 +103,9 @@ function startGame() {
 
 // Host language, applied to the document for correct copy/layout.
 document.documentElement.lang = gdService.getStatus().language || 'en';
+
+// A friend who arrives through an invite link (?ref=CODE) keeps the code until they sign in.
+captureReferral();
 
 // Keep the canvas inside the visible area of embedded webviews (wallet header + system bars).
 setupImmersiveLayout();

@@ -307,6 +307,17 @@ export default class BootScene extends Phaser.Scene {
       g.generateTexture('lunar_crescent', 14, 14);
       g.destroy();
     }
+
+    // 7. Mist Puff: a soft round cloud, built up from rings so its edge fades (Endless mist and wisps, engine/EndlessWeather.js)
+    if (!this.textures.exists('mist_puff')) {
+      const g = this.add.graphics();
+      for (let r = 16; r >= 2; r -= 2) {
+        g.fillStyle(0xffffff, 0.07);
+        g.fillCircle(16, 16, r);
+      }
+      g.generateTexture('mist_puff', 32, 32);
+      g.destroy();
+    }
   }
 
   createAnimations() {
