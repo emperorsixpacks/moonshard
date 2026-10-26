@@ -153,7 +153,8 @@ export const GAME = {
   KILLS_SLACK: 5,
   /**
    * Endless levels (levels.js). A run reports the level it ended on, 1 to MAX; it cannot be deeper than the kills allow, at
-   * MIN_FOES_PER_LEVEL a level (the hand-built first wave has 15 foes, no level after it has fewer).
+   * MIN_FOES_PER_LEVEL a level (the hand-built first wave has 15 foes, no level after it has fewer), and the kills it can count
+   * are bounded by its time (SCORE_MODEL.KILLS_PER_SEC a second). That makes a made-up level cost real waiting, not impossible.
    */
   LEVELS: { MAX: 1_000, MIN_FOES_PER_LEVEL: 15 },
   MAX_SCORE: 100_000_000,

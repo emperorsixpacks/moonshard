@@ -54,12 +54,17 @@ const bladeIds = (ctx) => (shopOpen(ctx) ? GAME.SHOP.filter((item) => item.kind 
  *   playing   they own the entry blade (or, where there is no shop to buy one in, they have started a run).
  * A friend who turns out to be the inviter's own second wallet (the same root) is left out.
  * Parameters: $1 the inviter's subject, $2 the wallet they are signed in with, then one for each blade id.
+ *
+ * "By the person or by one of their wallets" is two EXISTS joined by OR, not `subject = x OR wallet IN (SELECT ...)`: that form
+ * cannot use an index, and reads every purchase (or run) once for each friend.
  */
 function factsSql(blades) {
+  const ids = blades.map((_, i) => `$${3 + i}`).join(", ");
   const playing = blades.length
-    ? `EXISTS (SELECT 1 FROM purchases p WHERE p.item_id IN (${blades.map((_, i) => `$${3 + i}`).join(", ")})
-         AND (p.subject = dw.subject OR p.wallet IN (SELECT address FROM wallets WHERE subject = dw.subject)))`
-    : "EXISTS (SELECT 1 FROM runs u WHERE u.subject = dw.subject OR u.wallet = r.referred_wallet)";
+    ? `(EXISTS (SELECT 1 FROM purchases p WHERE p.item_id IN (${ids}) AND p.subject = dw.subject)
+        OR EXISTS (SELECT 1 FROM wallets pw JOIN purchases p ON p.wallet = pw.address WHERE pw.subject = dw.subject AND p.item_id IN (${ids})))`
+    : `(EXISTS (SELECT 1 FROM runs u WHERE u.subject = dw.subject)
+        OR EXISTS (SELECT 1 FROM runs u WHERE u.wallet = r.referred_wallet))`;
   return `WITH mine AS (SELECT address FROM wallets WHERE subject = $1 UNION SELECT $2::text),
     facts AS (
       SELECT r.referred_wallet, r.created_at, dw.verified, dw.subject AS human, ${playing} AS playing
@@ -104,12 +109,15 @@ export async function referralStats(ctx, player) {
   };
 }
 
-/** Whether the server has seen anything of this player yet beyond signing in: a purchase or a run means they are already playing. */
+/**
+ * Whether the server has seen anything of this player yet beyond signing in: a purchase or a run means they are already playing.
+ * Four EXISTS, each on one indexed column (migrations 002, 003 and 006), not `subject = x OR wallet = y`, which reads the whole table.
+ */
 async function isNewPlayer(ctx, player) {
   const { rows } = await ctx.db.query(
     `SELECT (SELECT first_seen > now() - ($3::int * interval '1 day') FROM wallets WHERE address = $2) AS fresh,
-            EXISTS (SELECT 1 FROM runs WHERE subject = $1 OR wallet = $2)
-              OR EXISTS (SELECT 1 FROM purchases WHERE subject = $1 OR wallet = $2) AS played`,
+            (EXISTS (SELECT 1 FROM runs WHERE subject = $1) OR EXISTS (SELECT 1 FROM runs WHERE wallet = $2)
+              OR EXISTS (SELECT 1 FROM purchases WHERE subject = $1) OR EXISTS (SELECT 1 FROM purchases WHERE wallet = $2)) AS played`,
     [player.subject, player.wallet, GAME.REFERRALS.NEW_PLAYER_DAYS],
   );
   return Boolean(rows[0].fresh) && !rows[0].played;
@@ -130,10 +138,13 @@ export async function attribute(ctx, player, code) {
   const ownerSubject = (await ctx.db.query("SELECT subject FROM wallets WHERE address = $1", [owner.wallet])).rows[0]?.subject;
   if (owner.wallet === player.wallet || ownerSubject === player.subject) throw new HttpError(409, "own_code");
 
-  // Any wallet of this person that already came in through a code (the join is on the shared subject).
+  // Any wallet of this person that already came in through a code: this one, or another that shares their subject (two lookups,
+  // each on its own index, so this wallet's own answer comes first).
   const earlier = (await ctx.db.query(
-    `SELECT r.referrer_wallet FROM referrals r JOIN wallets w ON w.address = r.referred_wallet
-      WHERE r.referred_wallet = $1 OR w.subject = $2 LIMIT 1`,
+    `SELECT referrer_wallet FROM referrals WHERE referred_wallet = $1
+     UNION ALL
+     SELECT r.referrer_wallet FROM wallets w JOIN referrals r ON r.referred_wallet = w.address WHERE w.subject = $2
+     LIMIT 1`,
     [player.wallet, player.subject],
   )).rows[0];
   if (earlier) {

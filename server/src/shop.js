@@ -37,15 +37,21 @@ export function itemOf(input) {
  *
  * "They paid for": bought as this player, or bought by one of this player's wallets. A wallet that bought something before
  * it was verified as a second wallet of someone else belongs to that person now (wallets.subject), and so do its purchases.
+ *
+ * `only`: the ids the caller is asking about; the answer then covers just those, and the deepest level is looked up only if one
+ * of them (or something they require) asks for it. `best`: the deepest level, when the caller has it already.
  */
-export async function ownedItems(ctx, subject) {
+export async function ownedItems(ctx, subject, { only = null, best = null } = {}) {
   const { rows } = await ctx.db.query(
     "SELECT DISTINCT item_id FROM purchases WHERE subject = $1 OR wallet IN (SELECT address FROM wallets WHERE subject = $1)",
     [subject],
   );
   const paid = new Set(rows.map((r) => r.item_id));
-  // The deepest level is looked up only when something paid for asks for one: most players have bought nothing that does.
-  const reached = GAME.SHOP.some((item) => item.minLevel && paid.has(item.id)) ? await bestLevel(ctx, subject) : 0;
+  // The deepest level is looked up only when something paid for, and asked about, wants one: most players have bought nothing
+  // that does, and every run start asks about the entry blade alone.
+  const scope = only ? withRequirements(only) : null;
+  const wantsLevel = GAME.SHOP.some((item) => item.minLevel && paid.has(item.id) && (!scope || scope.has(item.id)));
+  const reached = best ?? (wantsLevel ? await bestLevel(ctx, subject) : 0);
   const owned = [];
   for (const item of GAME.SHOP) {
     if (!paid.has(item.id)) continue;
@@ -53,7 +59,16 @@ export async function ownedItems(ctx, subject) {
     if (item.minLevel && reached < item.minLevel) continue;
     owned.push(item.id);
   }
-  return owned;
+  return only ? owned.filter((id) => only.includes(id)) : owned;
+}
+
+/** `ids` and everything they require, down each chain: what has to be settled to know whether `ids` are owned. */
+function withRequirements(ids) {
+  const wanted = new Set();
+  for (const id of ids) {
+    for (let item = catalog.get(id); item && !wanted.has(item.id); item = catalog.get(item.requires)) wanted.add(item.id);
+  }
+  return wanted;
 }
 
 /**
@@ -64,7 +79,7 @@ export async function hasBlade(ctx, subject) {
   if (!shopOpen(ctx)) return true;
   const blades = GAME.SHOP.filter((item) => item.kind === "blade").map((item) => item.id);
   if (blades.length === 0) return true;
-  const owned = await ownedItems(ctx, subject);
+  const owned = await ownedItems(ctx, subject, { only: blades });
   return blades.some((id) => owned.includes(id));
 }
 

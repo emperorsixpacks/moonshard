@@ -278,10 +278,11 @@ export function runRoutes(ctx) {
       if (jumpedSince(last, totals, Math.max(0, elapsed - last.t_ms) + GAME.CLOCK_TOLERANCE_MS)) flags.push("totals_above_checkpoint");
     }
     if (wantsBoss && coverage < GAME.MIN_COVERAGE_BOSS) flags.push("boss_low_coverage");
-    // A level the claimed kills could not have reached: the run is flagged (so not ranked) and the level stored is the deepest they allow.
-    if (level !== null && level > levelCeiling(kills)) {
+    // A level the claimed kills could not have reached in the time claimed: the run is flagged (so not ranked) and the level stored is the deepest they allow.
+    const deepest = levelCeiling(kills, seconds);
+    if (level !== null && level > deepest) {
       flags.push("level_implausible");
-      level = levelCeiling(kills);
+      level = deepest;
     }
 
     // Only a run that has been played for a while counts: the server's own clock since /runs/start AND the claimed play

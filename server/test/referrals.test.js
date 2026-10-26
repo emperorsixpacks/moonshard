@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { GAME } from "../config.js";
 import { normalizeCode, maskWallet } from "../src/referrals.js";
-import { normalizeRefCode } from "../../src/gd/referral.js";
 import { makeHarness, TOKEN } from "./helpers.js";
 
 /*
@@ -40,9 +41,14 @@ test("codes: any case and stray spaces are fine, anything that cannot be a code 
   }
 });
 
-test("the game and the server agree on what a code is", () => {
+// the client's copy of the rule is read only where the client source sits next to the server (a server-only checkout has none)
+const clientReferral = new URL("../../src/gd/referral.js", import.meta.url);
+const hasClient = existsSync(fileURLToPath(clientReferral));
+
+test("the game and the server agree on what a code is", { skip: hasClient ? false : "the client source (src/gd/referral.js) is not next to the server" }, async () => {
   // the game keeps its own copy of the rule (src/gd/referral.js): a code the game sends that the server would refuse, or the
   // other way round, would silently drop invitations
+  const { normalizeRefCode } = await import(clientReferral.href);
   const inputs = ["k7m2qx9a", "  K7M2QX9A\n", "K7M2QX9A", "", "nope", "K7M2QX9I", "K7M2QX90", "K7M2QX9", "K7M2QX9AA", "K7M2 QX9A", "ABCDEFGH", "22222222", null, undefined, 42];
   for (const input of inputs) assert.equal(normalizeRefCode(input), normalizeCode(input), JSON.stringify(input));
 });

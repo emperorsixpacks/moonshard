@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { BOSS_LEVEL_PTS_PER_SEC, GAME, LEVEL_PTS_PER_SEC, SCORE_MODEL } from "../config.js";
+import { levelCeiling } from "../src/levels.js";
 import { makeHarness, playTrial } from "./helpers.js";
 
 // Run plausibility: what makes a run count as ranked, credit Shards, or clear a boss.
@@ -489,8 +490,11 @@ test("the level terms of the ceiling still cover the client's ladder of levels",
   for (const n of range(1, 400)) {
     // a player who is in level n has killed every foe of the levels before it: the most levels the server allows for that many kills
     const needed = levels.cumulativeFoes(n - 1);
-    const allowed = 1 + Math.floor((needed + GAME.KILLS_SLACK) / GAME.LEVELS.MIN_FOES_PER_LEVEL);
+    const allowed = levelCeiling(needed);
     assert.ok(allowed >= n, `a run that killed all ${needed} foes before level ${n} is inside the server's level ceiling (${allowed})`);
+    // and still inside it when those kills came as fast as the model allows (SCORE_MODEL.KILLS_PER_SEC): an honest run is never flagged for its time
+    const fastest = needed / SCORE_MODEL.KILLS_PER_SEC;
+    assert.ok(levelCeiling(needed, fastest) >= n, `...and when it took ${fastest} s, a kill every ${1 / SCORE_MODEL.KILLS_PER_SEC} s`);
   }
 
   // the whole rate again, from the client's own tables

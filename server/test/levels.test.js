@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { GAME } from "../config.js";
 import { bestLevel, levelCeiling } from "../src/levels.js";
 import { makeHarness, playTrial, TOKEN, transferCalldata, transferLog, VAULT } from "./helpers.js";
@@ -16,8 +17,12 @@ const G = (n) => BigInt(n) * 10n ** 18n;
 const status = async (h, p) => (await h.api.get("/rewards/status", { token: p.token })).body;
 const owned = async (h, p) => (await status(h, p)).owned;
 
-/** Plays a ranked-looking Trial that ends on `level` having killed `kills` (enough for it unless a test says otherwise). */
-const reach = (h, p, level, { kills = 15 * level + 30, ...rest } = {}) => playTrial(h, p, { score: 5_000, kills, level, ...rest });
+/**
+ * Plays a ranked-looking Trial that ends on `level` having killed `kills` (enough for it unless a test says otherwise), for as long
+ * as those kills take at two a second plus a margin: the server bounds a level by the kills AND by the time they could have taken.
+ */
+const reach = (h, p, level, { kills = 15 * level + 30, durationMs = 20_000 + Math.ceil(kills / 2) * 1_000, ...rest } = {}) =>
+  playTrial(h, p, { score: 5_000, kills, level, durationMs, ...rest });
 
 let hashes = 0;
 /** Pays for `item` on the fake chain and confirms it, as the game's shop does. */
@@ -34,9 +39,20 @@ async function buy(h, p, item, value = GAME.SHOP.find((i) => i.id === item).pric
 // ---- what a run reports -----------------------------------------------------------------------------------------------
 
 test("the most levels a run's kills allow: every level before it has at least 15 foes, and five kills may have gone uncounted", () => {
-  assert.deepEqual([0, 9, 10, 24, 25, 55, 100].map(levelCeiling), [1, 1, 2, 2, 3, 5, 8]);
+  assert.deepEqual([0, 9, 10, 24, 25, 55, 100].map((kills) => levelCeiling(kills)), [1, 1, 2, 2, 3, 5, 8]);
   assert.equal(GAME.LEVELS.MIN_FOES_PER_LEVEL, 15);
   assert.equal(GAME.LEVELS.MAX, 1_000);
+});
+
+test("and the time they take: no human kills more than two foes a second for long, so kills claimed beyond that buy no depth", () => {
+  // 30 s allow 2 x 30 + 10 = 70 kills: a script claiming 360 (12 a second, the looser limit on a bare count) is held to level 6
+  assert.equal(levelCeiling(360, 30), 6);
+  assert.equal(levelCeiling(360), 25, "without a time only the kills count");
+  // the time it takes to be credited with a level is the point: about 45 s for level 8, about three minutes for level 25
+  const secondsFor = (level) => { let s = 0; while (levelCeiling(15 * level, s) < level) s += 0.5; return s; };
+  assert.deepEqual([8, 15, 20, 25].map(secondsFor), [45, 97.5, 135, 172.5]);
+  // an honest player is slower than that: fewer kills than the time allows leave the kills as the bound
+  assert.equal(levelCeiling(100, 600), levelCeiling(100));
 });
 
 test("a Trial keeps the level it ended on, and the answer says it and the player's best", async () => {
@@ -115,6 +131,25 @@ test("the level a run may claim is exactly what its kills allow: one kill short 
   } finally { await h.close(); }
 });
 
+test("a level is also bounded by the time: 360 kills in 30 s is flagged and held to level 6, and the same kills over 173 s are not", async () => {
+  const h = await makeHarness();
+  try {
+    const script = await h.newPlayer({ verified: true });
+    const near = await h.newPlayer({ verified: true });
+    const player = await h.newPlayer({ verified: true });
+    // 360 kills in 30 s is exactly the 12 a second that the bare kill rate lets through: it used to claim level 25 and open every depth gate
+    const forged = await reach(h, script, 25, { kills: 360, durationMs: 30_000 });
+    assert.equal(forged.status, 200, JSON.stringify(forged.body));
+    assert.deepEqual([forged.body.flags, forged.body.level, forged.body.rankedOk, forged.body.bestLevel], [["level_implausible"], 6, false, 0]);
+    assert.equal((await status(h, script)).bestLevel, 0, "a forged run opens nothing");
+    // level 25 needs 355 kills and 2 x t + 10 >= 355: 172.5 s. At 172 s it is one kill short, at 173 s it stands.
+    const short = await reach(h, near, 25, { kills: 355, durationMs: 172_000 });
+    assert.deepEqual([short.body.flags, short.body.level], [["level_implausible"], 24]);
+    const fits = await reach(h, player, 25, { kills: 355, durationMs: 173_000 });
+    assert.deepEqual([fits.body.flags, fits.body.level, fits.body.rankedOk, fits.body.bestLevel], [[], 25, true, 25]);
+  } finally { await h.close(); }
+});
+
 test("a Story run has no level, whatever it sends", async () => {
   const h = await makeHarness();
   try {
@@ -138,8 +173,9 @@ test("only a ranked run counts: an unverified player's, a run that did not play 
     assert.equal((await status(h, free)).bestLevel, 0);
 
     const quick = await h.newPlayer({ verified: true });
-    const short = await reach(h, quick, 12, { durationMs: 20_000 }); // under 30 s: on the open board, not ranked
-    assert.deepEqual([short.body.rankedOk, short.body.tooShort, short.body.level], [false, true, 12], "the level is kept, as the run is");
+    // under 30 s: on the open board, not ranked (level 4 is the deepest that 20 s of kills can honestly reach: deeper is flagged)
+    const short = await reach(h, quick, 4, { durationMs: 20_000 });
+    assert.deepEqual([short.body.flags, short.body.rankedOk, short.body.tooShort, short.body.level], [[], false, true, 4], "the level is kept, as the run is");
     assert.equal((await status(h, quick)).bestLevel, 0);
   } finally { await h.close(); }
 });
@@ -299,7 +335,7 @@ test("a level reached by a flagged or unranked run opens nothing, even a deep on
     const p = await h.newPlayer({ verified: true });
     for (const item of ["forest_glaive", "moonsteel_blade"]) await buy(h, p, item);
     await reach(h, p, 40, { kills: 20 }); // flagged: the kills cannot have got that far
-    await reach(h, p, 10, { durationMs: 20_000 }); // too short to rank
+    await reach(h, p, 4, { durationMs: 20_000 }); // too short to rank (and no deeper than 20 s of kills reach)
     assert.deepEqual(await owned(h, p), ["iron_starter", "forest_glaive"]);
     await reach(h, p, 8);
     assert.deepEqual(await owned(h, p), ["iron_starter", "forest_glaive", "moonsteel_blade"]);
@@ -324,5 +360,67 @@ test("a Trial's start still asks only for the entry blade, however deep the play
     const p = await h.newPlayer({ verified: true });
     await reach(h, p, 20);
     assert.equal((await h.api.post("/runs/start", { mode: "TRIAL" }, { token: p.token })).status, 200);
+  } finally { await h.close(); }
+});
+
+/** Runs `fn` and returns every SQL text the server sent the database meanwhile. */
+async function sqlDuring(h, fn) {
+  const seen = [];
+  const query = h.db.query;
+  h.db.query = (sql, params) => { seen.push(String(sql)); return query.call(h.db, sql, params); };
+  try { await fn(); } finally { h.db.query = query; }
+  return seen;
+}
+const readsBestLevel = (sql) => /level IS NOT NULL/.test(sql);
+
+test("starting a Trial does not read the player's depth, however many gated items they own: it asks about the entry blade alone", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    await reach(h, p, 8);
+    await buy(h, p, "forest_glaive");
+    await buy(h, p, "moonsteel_blade"); // paid for and gated: what used to make every run start look the depth up
+    assert.deepEqual(await owned(h, p), ["iron_starter", "forest_glaive", "moonsteel_blade"]);
+    h.clock.advance(11_000); // the wait between two starts
+    let started;
+    const sql = await sqlDuring(h, async () => { started = await h.api.post("/runs/start", { mode: "TRIAL" }, { token: p.token }); });
+    assert.equal(started.status, 200, JSON.stringify(started.body));
+    assert.ok(sql.length > 0, "the start did read the database");
+    assert.equal(sql.filter(readsBestLevel).length, 0, "and none of it was the look-up of the best level");
+  } finally { await h.close(); }
+});
+
+test("the rewards status reads the best level once, for the field and for what it opens", async () => {
+  const h = await makeHarness();
+  try {
+    const p = await h.newPlayer({ verified: true });
+    await reach(h, p, 8);
+    await buy(h, p, "forest_glaive");
+    await buy(h, p, "moonsteel_blade");
+    let body;
+    const sql = await sqlDuring(h, async () => { body = await status(h, p); });
+    assert.deepEqual([body.bestLevel, body.owned.includes("moonsteel_blade")], [8, true]);
+    assert.equal(sql.filter(readsBestLevel).length, 1);
+  } finally { await h.close(); }
+});
+
+// ---- the migrations -----------------------------------------------------------------------------------------------------
+
+test("the runs migrations: the column is added alone, quickly, and the indexes are built in the file after it", async () => {
+  // ALTER TABLE keeps its ACCESS EXCLUSIVE lock until its transaction ends: an index built in the same file would hold every
+  // read of `runs` through the build. So 005 holds the column only, with a lock_timeout so it cannot queue behind a long query.
+  const migration = (name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8").replace(/--.*$/gm, "");
+  const column = migration("005_levels.sql");
+  assert.match(column, /SET LOCAL lock_timeout/);
+  assert.match(column, /ALTER TABLE runs ADD COLUMN IF NOT EXISTS level integer/);
+  assert.doesNotMatch(column, /CREATE INDEX/i, "an index built here would hold the table's exclusive lock through the build");
+  assert.doesNotMatch(migration("006_run_indexes.sql"), /ALTER TABLE/i, "and the index file takes only the lock that blocks writes");
+
+  const h = await makeHarness();
+  try {
+    const { rows } = await h.db.query("SELECT indexname FROM pg_indexes WHERE tablename = 'runs' AND indexname IN ('runs_subject_level', 'runs_wallet_level', 'runs_wallet') ORDER BY 1");
+    assert.deepEqual(rows.map((r) => r.indexname), ["runs_subject_level", "runs_wallet", "runs_wallet_level"]);
+    const done = (await h.db.query("SELECT name FROM _migrations WHERE name LIKE '005%' OR name LIKE '006%' ORDER BY 1")).rows.map((r) => r.name);
+    assert.deepEqual(done, ["005_levels.sql", "006_run_indexes.sql"]);
   } finally { await h.close(); }
 });
