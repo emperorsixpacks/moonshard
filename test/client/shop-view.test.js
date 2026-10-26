@@ -5,7 +5,8 @@ import { GAME } from '../../server/config.js';
 import { GAME_CONFIG } from '../../src/config.js';
 import { REALM_ORDER, REALMS } from '../../src/engine/levels.js';
 import { ARMOUR } from '../../src/engine/gear.js';
-import { SHOP_ICONS, TABS, noticeFor, shopHtml, shopModel, walletG } from '../../src/ui/shopView.js';
+import { walletG } from '../../src/gd/format.js';
+import { SHOP_ICONS, TABS, noticeFor, shopHtml, shopModel } from '../../src/ui/shopView.js';
 
 /*
  * The shop, as data and as markup: what each card offers a player in each state (the offer itself is forgeOffer's, tested on its
@@ -218,11 +219,19 @@ test('with no shop on the server everything is crafted from forest materials, an
   assert.deepEqual(chips(broadsword), ['10 Bark', '5 Iron'], 'no G$ chip: nothing is sold');
   const poor = cardOf(closed({ bark: 1, amber: 0, iron: 0 }), 'iron_broadsword');
   assert.deepEqual([poor.button, poor.offer.action], [{ text: 'Craft', tone: 'plain', short: true }, 'short']);
-  // and a blade that asks for a level waits for it on this device
-  const deep = shopModel(ctx({ status: status({ shop: CLOSED, owned: [] }), bestLevel: 7 }));
+  // and a blade that asks for a level waits for it on this device, once its tier is owned: the Glaive comes first
+  const glaive = ['iron_starter', 'forest_glaive'];
+  const deep = shopModel(ctx({ status: status({ shop: CLOSED, owned: [] }), bestLevel: 7, unlockedWeapons: glaive }));
   assert.equal(cardOf(deep, 'moonsteel_blade').button.text, 'Reach level 8 in Endless');
-  const reached = shopModel(ctx({ status: status({ shop: CLOSED, owned: [] }), bestLevel: 8 }));
+  const reached = shopModel(ctx({ status: status({ shop: CLOSED, owned: [] }), bestLevel: 8, unlockedWeapons: glaive }));
   assert.equal(cardOf(reached, 'moonsteel_blade').button.text, 'Craft');
+  const skipped = shopModel(ctx({ status: status({ shop: CLOSED, owned: [] }), bestLevel: 8 }));
+  assert.deepEqual([cardOf(skipped, 'moonsteel_blade').button.text, cardOf(skipped, 'moonsteel_blade').offer.action], ['Needs Forest Glaive', 'locked'], 'no level skips the tier under it');
+  // armour the same: the Chitin Helm waits for the Leather Cap, however deep the hero has been
+  const bare = shopModel(ctx({ tab: 'armour', status: status({ shop: CLOSED, owned: [] }), bestLevel: 30 }));
+  assert.equal(cardOf(bare, 'chitin_helm').button.text, 'Needs Leather Cap');
+  const capped = shopModel(ctx({ tab: 'armour', status: status({ shop: CLOSED, owned: [] }), bestLevel: 30, unlockedArmour: ['leather_cap'] }));
+  assert.equal(cardOf(capped, 'chitin_helm').button.text, 'Craft');
 });
 
 test('the relic re-roll is materials only, whatever the shop sells, and says the perk now', () => {

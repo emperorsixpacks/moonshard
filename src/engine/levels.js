@@ -196,6 +196,7 @@ export function foesIn(n) {
 
 /** Foes in levels 1 to n together: what a player has had to kill to get to level n + 1. */
 export function cumulativeFoes(n) {
+  if (!(n >= 1)) return 0; // no level yet, no foes
   const level = clampLevel(n);
   const firstAtCap = LV.SCRIPTED + 1 + (LV.FOES_CAP - LV.FOES_BASE) * LV.FOES_EVERY;
   const counted = Math.min(level, firstAtCap);
@@ -212,7 +213,10 @@ export function levelHpMul(n) {
   return round2(Math.min(LV.HP_CAP, scripted(LV.SCRIPTED) + (level - LV.SCRIPTED) * LV.HP_STEP));
 }
 
-/** How many times its base speed a walker of level n has: five percent a level, as the hand-built waves always had, up to SPEED_CAP. */
+/**
+ * How many times its base speed a walker of level n would have: five percent a level, up to SPEED_CAP. Planned, not applied yet:
+ * the arena scales a `walkSpeed` that none of its beasts has (see SurvivalScene.spawnEnemy), so no foe is faster at a deeper level.
+ */
 export function levelSpeedMul(n) {
   return round2(Math.min(LV.SPEED_CAP, 1 + (clampLevel(n) - 1) * LV.SPEED_STEP));
 }

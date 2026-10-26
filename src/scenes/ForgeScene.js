@@ -141,6 +141,7 @@ export default class ForgeScene extends Phaser.Scene {
 
   /** A material craft (no shop on the server, or an item it does not sell, and the relic re-roll). */
   craft(item) {
+    if (this.paying) return; // a forged piece's materials are taken once its fee is through: nothing else spends them meanwhile
     if (!storage.spendMaterials(item.cost)) {
       sound.playHit();
       showToast(`Not enough forest materials yet. Needs ${needsText(item.cost)}.`, { type: 'warn' });
@@ -180,7 +181,10 @@ export default class ForgeScene extends Phaser.Scene {
         sound.playHit();
         return;
       }
-      if (action === 'forge') storage.spendMaterials(item.cost);
+      if (action === 'forge' && !storage.spendMaterials(item.cost)) {
+        // the fee is paid and the piece is theirs; only another tab can have used the materials meanwhile, so none are taken
+        showToast('Forged. The forest materials were already spent elsewhere, so none were taken.', { type: 'warn' });
+      }
       // what was bought is owned now (the sync that follows a payment recorded it): put it on
       if (item.type === 'armour' ? storage.isArmourUnlocked(item.id) : storage.isWeaponUnlocked(item.id)) this.equip(item);
       sound.playVictory();

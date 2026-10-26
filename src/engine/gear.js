@@ -17,7 +17,10 @@ export const ARMOUR = Object.freeze(
 export const armourById = (id) => ARMOUR.find((piece) => piece.id === id) ?? null;
 export const armourFor = (slot) => ARMOUR.filter((piece) => piece.slot === slot);
 
-/** What a hit comes from: a foe's own body and weapons ('contact'), or what it throws ('ranged'). The helmet turns aside the first, the shield the second. */
+/**
+ * What a hit comes from: a foe's own body and weapons ('contact'), or what it throws ('ranged'). The helmet turns aside the first,
+ * the shield the second. A hit from neither (a hazard, a fall) is cut by nothing, and says so with any other name.
+ */
 export const SOURCES = Object.freeze(['contact', 'ranged']);
 const SLOT_OF_SOURCE = Object.freeze({ contact: 'helm', ranged: 'shield' });
 

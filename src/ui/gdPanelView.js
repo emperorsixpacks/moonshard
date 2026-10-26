@@ -1,6 +1,6 @@
 import { GAME_CONFIG } from '../config.js';
 import { explorerAddress, explorerTx } from '../gd/config.js';
-import { explainError, formatCountdown, formatG } from '../gd/format.js';
+import { explainError, formatCountdown, formatG, walletG } from '../gd/format.js';
 import { identiconSvg } from '../gd/identicon.js';
 import { canPlay, entryBlade, gateStep } from '../engine/playGateRules.js';
 import { ico } from './icons.js';
@@ -80,9 +80,6 @@ function connectHtml(s, busy) {
 const reasonText = (reason) => (/\s/.test(String(reason)) ? String(reason).slice(0, 120) : explainError(String(reason || 'not_claimable')));
 
 const txLink = (hash) => `<a class="lnk" href="${esc(explorerTx(hash))}" target="_blank" rel="noopener">View transaction</a>`;
-
-/** G$ in a wallet, rounded down: a balance shown as "20" must be able to pay 20. */
-const walletG = (g) => formatG(Math.floor(Number(g) * 100) / 100, 2);
 
 /** The text on the G$ button in the page header: a verified player's balance, once it is known. */
 export function walletPillText(s) {

@@ -443,7 +443,9 @@ export const GAME_CONFIG = {
       MAX_CONCURRENT: 4, // and in every level after them; the arena never holds more (the score ceiling counts on it)
       HP_STEP: 0.1, // foe HP grows this much a level after the scripted ones, up to HP_CAP times the base
       HP_CAP: 6,
-      SPEED_STEP: 0.05, // walkers move this much faster a level (the hand-built waves always did), up to SPEED_CAP times as fast
+      // What a walker's speed would grow by a level, up to SPEED_CAP times. Planned, not applied: the scene scales a `walkSpeed`
+      // that no beast of the arena has (their speeds are constants in their own classes), so foes move at their own pace at every level.
+      SPEED_STEP: 0.05,
       SPEED_CAP: 1.4,
       FOES_BASE: 20, // foes in the first built level (the sixth); one more every FOES_EVERY levels, up to FOES_CAP
       FOES_EVERY: 2,

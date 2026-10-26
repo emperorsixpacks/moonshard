@@ -1,7 +1,7 @@
 import { GAME_CONFIG } from '../config.js';
 import { BLADE_TIERS, REALM_ORDER, REALMS, realmSpan } from '../engine/levels.js';
 import { ARMOUR, armourById, armourEffect, baneLine, beastsList, kitSummary } from '../engine/gear.js';
-import { formatG } from '../gd/format.js';
+import { formatG, walletG } from '../gd/format.js';
 import { forgeOffer } from './forgeOffer.js';
 import { icoUse } from './icons.js';
 import { escapeHtml as esc } from './sheet.js';
@@ -50,9 +50,6 @@ const weaponArt = (weapon) => (SKIN_IMAGE[weapon.iconKey] ? { img: SKIN_IMAGE[we
 
 /** What a piece is called, as the server's label spells it in capitals ("NEEDS\nFOREST GLAIVE"): for putting its name back in a sentence. */
 const KNOWN_NAMES = [...Object.values(W), ...ARMOUR].map((piece) => piece.name);
-
-/** G$ in a wallet, rounded down (a balance shown as "20" can pay 20). */
-export const walletG = (g) => formatG(Math.floor(Number(g) * 100) / 100, 2);
 
 const hasMaterials = (mats = {}, cost = {}) => MATERIALS.every(([key]) => (mats[key] ?? 0) >= (cost[key] ?? 0));
 
@@ -116,10 +113,17 @@ function card({ type, art, name, tag, stats, note = null, noteTone = 'plain', it
   };
 }
 
-/** What forgeOffer reads for a blade, an armour piece or a look: owned and worn, the materials, the level asked for. */
+/** The name of the piece `piece` requires (a blade needs the tier before it) while this device has not got it; nothing when it has. */
+function missingTier(piece, ctx) {
+  const id = piece.requires;
+  if (!id || ctx.unlockedWeapons.includes(id) || ctx.unlockedArmour.includes(id)) return undefined;
+  return [...Object.values(W), ...ARMOUR].find((p) => p.id === id)?.name ?? id;
+}
+
+/** What forgeOffer reads for a blade, an armour piece or a look: owned and worn, the materials, the level and the piece asked for. */
 const itemOf = (piece, ctx, { unlocked, equipped }) => ({
   id: piece.id, cost: piece.cost, unlocked, equipped, hasMaterials: hasMaterials(ctx.mats, piece.cost),
-  minLevel: piece.minLevel, levelReached: ctx.bestLevel, chips: costChips(ctx.mats, piece.cost),
+  minLevel: piece.minLevel, levelReached: ctx.bestLevel, needs: missingTier(piece, ctx), chips: costChips(ctx.mats, piece.cost),
 });
 
 function bladeCard(weapon, ctx, status) {

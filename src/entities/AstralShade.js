@@ -162,7 +162,9 @@ export default class AstralShade extends Phaser.Physics.Arcade.Sprite {
   performShadowWarp() {
     sound.playWallSlide();
     const warpDir = this.flipX ? -1 : 1;
-    this.x += warpDir * 60;
+    // the blink ends at the arena's edge: past the wall the hero could never reach this foe again, and the level could not end
+    const { x: left, right } = this.scene.physics.world.bounds;
+    this.x = Phaser.Math.Clamp(this.x + warpDir * 60, left + this.body.halfWidth, right - this.body.halfWidth);
     this.state = 'PHASE_DRIFT';
     this.setAlpha(0.48);
     this.play('nightborne_run_anim', true);

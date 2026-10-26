@@ -12,18 +12,6 @@ const log = (...a) => console.log(...a);
 const failures = [];
 const check = (ok, message) => { if (!ok) { failures.push(message); log(`   ✗ ${message}`); } else log(`   ✓ ${message}`); };
 const active = (page, key) => page.evaluate((k) => window.game.scene.isActive(k), key);
-/** A real mouse click on the Forge button whose label starts with `label`. */
-async function clickForgeButton(page, label) {
-  await settled(page, 'ForgeScene');
-  const at = await inScene(page, 'ForgeScene', (scene, text) => {
-    const t = scene.contentContainer.list.find((o) => o.type === 'Text' && o.text.startsWith(text));
-    const b = scene.contentContainer.list.find((o) => o.type === 'Rectangle' && o.input && Math.abs(o.x - t.x) < 1 && Math.abs(o.y - t.y) < 1).getBounds();
-    const r = window.game.canvas.getBoundingClientRect();
-    const k = r.width / window.game.scale.width;
-    return { x: r.left + (b.x + b.width / 2) * k, y: r.top + (b.y + b.height / 2) * k };
-  }, label);
-  await page.mouse.click(at.x, at.y);
-}
 
 // ---- 1. the blade step of the way in ----------------------------------------------------------------------------------
 {

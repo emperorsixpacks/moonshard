@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { captureReferral, forgetRefCode, stashedRefCode } from '../../src/gd/referral.js';
-import { ADDR, reply, serverStub, startService, until, walletStub } from './helpers/service.js';
+import { ADDR, deferred, reply, serverStub, sleep, startService, until, walletStub } from './helpers/service.js';
 
 /*
  * A friend who arrived through an invite link tells the server who sent them when they sign in. It happens in the
@@ -71,6 +71,26 @@ test('a claim that hangs does not hold up the sign-in', async (t) => {
   const { gd } = await connected(t, server); // resolves: connect() does not wait for the claim
   assert.equal(gd.getStatus().connected, true);
   assert.equal(gd.getStatus().status, 'verified');
+});
+
+test('a restored session that another sign-in replaced before its identity answered does not claim the code with the old token', async (t) => {
+  const old = deferred();
+  const server = serverStub({ verified: true, nextToken: 'NEW', tokenOk: (tok) => tok === 'NEW' });
+  const tokens = [];
+  server.handlers['/me/refresh'] = ({ token }) => (token === 'OLD' ? old.promise : undefined);
+  // a hiccup keeps the code, so it is still there for a second claim to find
+  server.handlers['/referrals/claim'] = ({ token }) => { tokens.push(token); return reply({ error: 'internal_error' }, 500); };
+  arrive();
+  const { gd } = await startService(t, { wallet: walletStub(), server, session: { token: 'OLD', address: ADDR, host: 'browser' }, awaitReady: false });
+
+  assert.equal((await gd.connect()).ok, true); // init is still waiting for the old session's answer
+  await until(() => tokens.length === 1, { label: 'the new sign-in to claim' });
+  old.resolve(reply({ address: ADDR.toLowerCase(), verified: true, status: 'verified' }));
+  await gd.ready;
+  await sleep(20); // a claim made now would be on its way
+
+  assert.deepEqual(tokens, ['NEW'], 'one claim, made by the session in use');
+  assert.equal(stashedRefCode(), CODE, 'the hiccup kept the code for the next sign-in');
 });
 
 test('a session restored when the page opens claims the code too', async (t) => {

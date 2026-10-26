@@ -91,12 +91,12 @@ class GdServiceManager {
       if (getToken() === token) {
         this.s.needsReconnect = !restored;
         try {
-          await this.fetchIdentity(true, { token });
-          this.claimReferral(token);
+          const me = await this.fetchIdentity(true, { token });
+          if (me) this.claimReferral(token); // null: another sign-in took over meanwhile, and the code is for it to claim
           if (getToken() === token) await this.refreshAll();
         } catch (err) {
           if (err?.status === 401) this.authLost(token);
-          else this.s.offline = true;
+          else if (getToken() === token) this.s.offline = true; // what failed for a session that was replaced says nothing of the new one
         }
       }
     }

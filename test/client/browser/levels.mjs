@@ -13,6 +13,11 @@
 // L8  a blade made for a realm hits that realm's beasts harder, and every other beast as it always did
 // L9  a helm turns aside the blows of foes, a shield what they throw (each only its own kind)
 // L10 a run that ends on level N submits it, and the server's best level reaches the wallet status
+// L11 a foe cannot be put out of the hero's reach: the arena's edge holds each one in (a blink or a summon past the wall once
+//     left a level that could not end)
+// L12 a run left through the menu, or one the server already held, still brings the server's best level to the wallet
+// L13 a boss that falls to a stomp is counted and paid like any other kill
+// L14 in the Story too: a hazard or a fall is cut by no armour, and what a boss throws is the shield's
 import assert from 'node:assert/strict';
 import { bootGame, inScene, settled } from './lib.mjs';
 import { installApi, sessionInit } from './api-stub.mjs';
@@ -29,6 +34,7 @@ const log = (...a) => console.log(...a);
 const check = (ok, message) => { if (!ok) { failures.push(message); log(`   ✗ ${message}`); } else log('   ✓', message); };
 const wait = (ms) => page.waitForTimeout(ms);
 const inArena = (fn, arg) => inScene(page, 'SurvivalScene', fn, arg);
+const inStory = (fn, arg) => inScene(page, 'StoryScene', fn, arg);
 
 /** The hero standing on the floor at `x`: set down above it and left to land (one set down on the floor itself falls through). */
 async function stand(x) {
@@ -471,6 +477,146 @@ try {
   check(sent?.body?.level === 7, `the submit carries the level (${sent?.body?.level})`);
   await page.waitForFunction(() => window.gdService.getStatus().bestLevel >= 7, null, { timeout: 10_000 })
     .then(() => check(true, `and the server's best level (${api.bestLevel}) reaches the wallet status`), () => check(false, "the server's best level did not reach the wallet status"));
+
+  log('▶ L11: a foe cannot be put out of the hero\'s reach');
+  // the arena's edge holds every foe in. spawnEnemy once set it before the group's own defaults switched it off, so a foe that a
+  // summon or a blink put past the wall stayed there, out of reach, and the level could not end
+  await g.startScene('SurvivalScene'); // a new arena: the last one has ended its run
+  await settled(page, 'SurvivalScene', 10);
+  await calm();
+  await stand(300);
+  await inArena((s) => {
+    window.__placed = [[s.arenaWidth + 90, 300], [-90, 300]].map(([x, y]) => s.spawnMob('boar', x, y)); // as Gorgok's enrage summons them
+  });
+  await wait(700);
+  const placed = await inArena((s) => window.__placed.map((e) => ({ x: Math.round(e.x), active: e.active, width: s.arenaWidth })));
+  check(placed.every((p) => p.active && p.x >= 0 && p.x <= p.width), `a foe set down past either wall is back inside the arena (x ${placed.map((p) => p.x).join(' and ')} of ${placed[0].width})`);
+  await calm();
+  await stand(150);
+  const blink = await inArena((s) => {
+    const shade = s.spawnEnemy('astral_shade', s.arenaWidth - 30, 300, 1, {});
+    shade.hp = shade.maxHp = 1e6; // it takes the two blows without dying
+    shade.setFlipX(false); // the hero is on its left, so it blinks the other way: at the wall
+    shade.takeDamage(1, 150);
+    shade.takeDamage(1, 150); // the second blow in a row makes it blink
+    window.__shade = shade;
+    return { x: shade.x, state: shade.state, width: s.arenaWidth };
+  });
+  check(blink.state === 'PHASE_DRIFT' && blink.x > 0 && blink.x <= blink.width, `an Astral Shade that blinks at the wall lands inside the arena (x ${Math.round(blink.x)} of ${blink.width})`);
+  await wait(800);
+  check(await inArena((s) => window.__shade.x > 0 && window.__shade.x <= s.arenaWidth), '   and is still there a moment later, in reach');
+
+  log('▶ L12: the best level reaches the wallet from a run left through the menu, and from one the server already held');
+  const depth = () => page.evaluate(() => window.gdService.getStatus().bestLevel);
+  const submitAnswer = api.handlers.submit;
+  /** A new arena (and so a new ticket), on `level` and held calm. */
+  async function freshArena(level) {
+    await g.startScene('SurvivalScene');
+    await settled(page, 'SurvivalScene', 10);
+    await calm();
+    await inArena((s, n) => { s.startLevel(n); }, level);
+    await wait(500);
+  }
+  await freshArena(9);
+  const known = await depth();
+  await inArena((s) => s.endRunOnLeave()); // MAIN MENU or RETRY BATTLE in the pause menu: settled like a death, the answer used like one
+  await page.waitForFunction((n) => window.gdService.getStatus().bestLevel > n, known, { timeout: 10_000 })
+    .then(async () => check(true, `a run left through the menu on level 9 brings the server's best level to the wallet (${known} → ${await depth()})`),
+      () => check(false, `a run left through the menu did not bring the server's best level to the wallet (still ${known})`));
+  api.handlers.submit = async () => ({ status: 409, body: { error: 'already_submitted' } }); // the server holds the run: its first answer was lost
+  api.bestLevel = 12; // and counted the level
+  await freshArena(2);
+  await inArena((s) => s.handleGameOver());
+  await page.waitForFunction(() => window.gdService.getStatus().bestLevel >= 12, null, { timeout: 15_000 })
+    .then(() => check(true, 'a run the server already held still brings its best level to the wallet (12)'),
+      async () => check(false, `a run the server already held did not bring its best level to the wallet (${await depth()})`));
+  api.handlers.submit = submitAnswer;
+
+  log('▶ L13: a boss that falls to a stomp is a kill like any other');
+  await g.startScene('SurvivalScene');
+  await settled(page, 'SurvivalScene', 10);
+  await calm();
+  const stomped = await inArena((s) => {
+    const boss = s.spawnEnemy('boss_gorgok', 440, 280, 1, {});
+    boss.hp = 1; // the stomp finishes it
+    const before = { boss: s.killCount.boss_gorgok ?? 0, total: s.killCount.total, score: s.totalScore };
+    const p = s.player;
+    p.setPosition(boss.x, boss.y - 60); // above it and falling: the arena's stomp, not a blow
+    p.setVelocity(0, 200);
+    s.handlePlayerHurt(boss);
+    return { before, after: { boss: s.killCount.boss_gorgok ?? 0, total: s.killCount.total, score: s.totalScore }, state: boss.state };
+  });
+  check(stomped.state === 'DEAD' && stomped.after.boss === stomped.before.boss + 1 && stomped.after.total === stomped.before.total + 1,
+    `a boss stomped to death is counted (boss kills ${stomped.before.boss} → ${stomped.after.boss}, all kills ${stomped.before.total} → ${stomped.after.total})`);
+  check(stomped.after.score > stomped.before.score, `   and pays its points (score ${stomped.before.score} → ${stomped.after.score})`);
+
+  log('▶ L14: in the Story a hazard is cut by no armour, and what a boss throws is the shield\'s');
+  async function startStory(chapter) {
+    await page.evaluate(() => { const s = window.game.scene.getScene('StoryScene'); if (s) { s.dialogueBox = null; s.chapterIntroCard = null; } });
+    await g.startScene('StoryScene', { chapter, skipIntroCard: true, skipDialogue: true });
+    await page.waitForTimeout(1_500); // the ticket arrives and a little time passes
+  }
+  /** The hero in `wear`, whole and touchable, with each hit it takes written down: how much, what it said it came from, what it cost. */
+  const arm = (wear) => inStory((s, w) => {
+    const p = s.player;
+    p.armour = w;
+    p.health = p.maxHealth;
+    p.invulnerableUntil = 0;
+    window.__hits = [];
+    if (!p.__wrapped) {
+      p.__wrapped = true;
+      const take = p.takeDamage.bind(p);
+      p.takeDamage = (amount, dir, source) => {
+        const before = p.health;
+        const landed = Boolean(take(amount, dir, source));
+        window.__hits.push({ amount, source: source ?? null, cost: before - p.health, landed });
+        return landed;
+      };
+    }
+  }, wear);
+  const hits = () => page.evaluate(() => window.__hits);
+  const both = { helm: A.LEATHER_CAP, shield: A.OAK_BUCKLER };
+  await startStory(1);
+  await inStory((s) => { s.enemies.getChildren().slice().forEach((e) => e.destroy()); }); // nothing else is there to touch the hero
+  await arm(both);
+  await inStory((s) => s.handleHazardHit(s.player, { hazardLabel: 'WATER' }));
+  let [hit] = await hits();
+  check(hit?.landed && hit.cost === 35, `water costs a hero in a helm and a shield the whole 35 (${hit?.cost})`);
+  await wait(300);
+  await arm(both);
+  await inStory((s) => s.handleHazardHit(s.player, { isLavaGeyser: true }));
+  [hit] = await hits();
+  check(hit?.landed && hit.cost === 28, `a lava geyser costs the whole 28 (${hit?.cost})`);
+  await wait(300);
+  await arm(both);
+  await inStory((s) => { s.player.setPosition(s.player.x, s.levelHeight + 80); });
+  await page.waitForFunction(() => window.__hits.length > 0, null, { timeout: 5_000 }).catch(() => {});
+  [hit] = await hits();
+  check(hit?.landed && hit.cost === 35, `a fall out of the world costs the whole 35 (${hit?.cost})`);
+  // the hero wears a shield and no helm, so only a shot that says it was thrown is thinned
+  const shieldOnly = { shield: A.OAK_BUCKLER };
+  const shieldCut = cutFor(shieldOnly, 'ranged');
+  for (const [chapter, name, launch] of [
+    [4, "Ignis's fireball", (s) => s.boss.launchFireball(s.player)],
+    [5, "Umbra's void dart", (s) => s.boss.launchVoidDart(s.player, 0)],
+    [5, "Umbra's crescent wave", (s) => { s.player.setPosition(s.boss.x - 130, s.boss.groundY); s.boss.fireCrescentWave(-1); }],
+  ]) {
+    await startStory(chapter);
+    await inStory((s, ch) => {
+      s.triggerBossEncounter(ch);
+      s.inDialogue = false; // the boss's speech is not what is tried here: the world goes on, as it does once the dialogue closes
+      s.physics.resume();
+      s.physics.world.isPaused = false;
+      s.boss.nextActionTime = Number.MAX_SAFE_INTEGER; // it throws nothing but the shot below
+    }, chapter);
+    await wait(400);
+    await arm(shieldOnly);
+    await inStory(launch);
+    await page.waitForFunction(() => window.__hits.length > 0, null, { timeout: 6_000 }).catch(() => {});
+    const [shot] = await hits();
+    check(shot?.source === 'ranged', `${name} lands as a thrown hit (${shot ? `it says ${shot.source ?? 'nothing at all'}` : 'it never landed'})`);
+    check(shot && shot.cost === takenDamage(shot.amount, shieldCut) && shot.cost < shot.amount, `   so the shield turns part of it aside (${shot?.amount} costs ${shot?.cost}, ${Math.round(shieldCut * 100)}% off)`);
+  }
 
   check(g.errors.length === 0, `no browser errors${g.errors.length ? `: ${g.errors.join(' | ')}` : ''}`);
   assert.deepEqual(failures, [], `${failures.length} check(s) failed`);

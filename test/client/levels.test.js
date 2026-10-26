@@ -100,6 +100,7 @@ test('foes in levels 1 to n together', () => {
     sum += foesIn(n);
     assert.equal(cumulativeFoes(n), sum, `to level ${n}`);
   }
+  assert.equal(cumulativeFoes(0), 0, 'before level 1 there is nothing to have killed');
   assert.equal(cumulativeFoes(1), 15);
   assert.equal(cumulativeFoes(5), 97);
   assert.equal(cumulativeFoes(100_000), cumulativeFoes(34) + 34 * (100_000 - 34));

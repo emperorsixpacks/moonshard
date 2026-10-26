@@ -1046,15 +1046,19 @@ export default class SurvivalScene extends Phaser.Scene {
         enemy.hp = Math.max(1, Math.round(enemy.hp * hpMul));
         enemy.maxHp = enemy.hp;
       }
-      // Progressive speed boost (each level walkers move slightly faster, up to a cap)
+      // The level's speed multiplier reaches only a beast that keeps its pace in a `walkSpeed` of its own, and none of the arena's
+      // does yet (their speeds are constants in their own code), so for now every foe moves at its own pace at every level.
       if (enemy.walkSpeed) enemy.walkSpeed *= this.waveSpeedMul;
       if (type === 'boss_gorgok') this.attachBossBar(enemy);
 
-      if (enemy.body) enemy.body.setCollideWorldBounds(true);
-      // a body that joins the group is given the group's defaults, gravity included: a flyer is put back in the air
+      // a body that joins the group is given the group's defaults, gravity and the edge of the world included: a flyer is put
+      // back in the air, and every foe is kept inside the arena (a blink or a summon can place one past the wall, out of reach)
       const floats = Boolean(enemy.body) && !enemy.body.allowGravity;
       this.enemies.add(enemy);
-      if (floats) enemy.body.setAllowGravity(false);
+      if (enemy.body) {
+        enemy.body.setCollideWorldBounds(true);
+        if (floats) enemy.body.setAllowGravity(false);
+      }
 
       // Spawn puff
       const spawnPuff = this.add.circle(x, y, 14, 0x88ee88, 0.75).setDepth(20);
@@ -1286,10 +1290,9 @@ export default class SurvivalScene extends Phaser.Scene {
             this.addKill(enemy.mobType, res.pts, 25, enemy.x, enemy.y - 12, 'STOMP KILL! 👢', enemy);
           }
         }
-      } else if (enemy.mobType === 'boss_gorgok') {
-        enemy.takeDamage(25, this.player.x);
       } else {
-        const res = enemy.takeDamage(35, this.player.x);
+        // a boss takes a lighter stomp than the rest; one that falls to it is a kill like any other (score, shards, the count)
+        const res = enemy.takeDamage(enemy.mobType === 'boss_gorgok' ? 25 : 35, this.player.x);
         if (res && res.killed) {
           this.addKill(enemy.mobType, res.pts, 25, enemy.x, enemy.y - 12, 'STOMP KILL! 👢', enemy);
         }
@@ -1327,8 +1330,8 @@ export default class SurvivalScene extends Phaser.Scene {
         sound.playSlash(2);
         this.cameras.main.shake(180, 0.02);
 
-        // Visual charge impact cue
-        const impactText = this.add.text(this.player.x, this.player.y - 20, `💥 CHARGE HIT! -${enemyDmg}`, {
+        // Visual charge impact cue (the hero's own damage number says what the hit cost once the armour had its share)
+        const impactText = this.add.text(this.player.x, this.player.y - 20, '💥 CHARGE HIT!', {
           fontFamily: 'Press Start 2P',
           fontSize: '7px',
           color: '#ff2222',
@@ -1442,7 +1445,18 @@ export default class SurvivalScene extends Phaser.Scene {
       shards: this.sessionCrystalsCollected || 0,
       durationMs: Math.round(this.activeClock.ms),
       level: this.level,
-    });
+    }).then((result) => this.refreshDepth(result));
+  }
+
+  /**
+   * The server's best level opens the blades and armour that ask for one, and the Shop and the goal line read it from the wallet
+   * status. A settled run says when it moved; one the server already held says nothing of the level (its first answer was
+   * lost), which is as good a reason to ask again. Resolves to whether the status was fetched; never rejects.
+   */
+  refreshDepth(result) {
+    const deeper = (result?.bestLevel ?? 0) > (gdService.getStatus().bestLevel ?? 0);
+    if (!deeper && !result?.alreadySubmitted) return Promise.resolve(false);
+    return gdService.refreshAll().then(() => true, () => false);
   }
 
   /** Settle the run with the server and bring the result screen and the local record up to date. Never throws. */
@@ -1483,9 +1497,7 @@ export default class SurvivalScene extends Phaser.Scene {
       }
       this.describeProof(proof);
       this.recordTrial(runData, proof);
-      if ((result.bestLevel ?? 0) > (gdService.getStatus().bestLevel ?? 0)) {
-        gdService.refreshAll().then(() => this.refreshGameOverModal(proof)).catch(() => {}); // the Forge and the goal line read it
-      }
+      this.refreshDepth(result).then((fetched) => { if (fetched) this.refreshGameOverModal(proof); }).catch(() => {}); // the Shop and the goal line read it
     } catch (err) {
       // finish() does not reject; this is a bug on our side. The player still gets an honest, final screen.
       console.warn('[survival] could not settle the run', err?.message);

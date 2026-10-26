@@ -109,6 +109,20 @@ test('with no shop a blade that asks for a level is crafted once this device has
   assert.equal(forgeOffer(item(), status({ shop: CLOSED })).action, 'craft');
 });
 
+test('crafted from materials alone the tiers still go in order: a piece waits for the one it needs, before its level', () => {
+  const closed = status({ shop: CLOSED });
+  const moonsteel = item({ id: 'moonsteel_blade', cost: { bark: 20, iron: 12, amber: 12 }, minLevel: 8, levelReached: 8, needs: 'Forest Glaive' });
+  assert.deepEqual(forgeOffer(moonsteel, closed), { label: 'NEEDS\nFOREST GLAIVE', action: 'locked' });
+  assert.deepEqual(forgeOffer({ ...moonsteel, levelReached: 0 }, closed), { label: 'NEEDS\nFOREST GLAIVE', action: 'locked' }, 'the tier is named first');
+  assert.deepEqual(forgeOffer({ ...moonsteel, needs: undefined }, closed), { label: 'CRAFT\n(20B/12A/12I)', action: 'craft' }, 'owning the tier opens it');
+  // an item an older server does not list is crafted while its shop is open, and the order holds there too
+  const older = status({ shop: { ...SHOP, items: SHOP.items.filter((x) => x.id !== 'moonsteel_blade') } });
+  assert.equal(forgeOffer(moonsteel, older).action, 'locked');
+  assert.equal(forgeOffer({ ...moonsteel, needs: undefined }, older).action, 'craft');
+  // a piece the shop does sell is the server's to judge, from what it says the player owns
+  assert.equal(forgeOffer({ ...moonsteel, needs: 'Forest Glaive' }, status({ owned: ['iron_starter', 'forest_glaive'], bestLevel: 8 })).action, 'forge');
+});
+
 test('what is owned is equipped, or put on and off for the pet', () => {
   assert.deepEqual(forgeOffer(item({ unlocked: true }), status()), { label: 'EQUIP', action: 'equip' });
   assert.deepEqual(forgeOffer(item({ unlocked: true, equipped: true }), status()), { label: 'EQUIPPED', action: 'none' });

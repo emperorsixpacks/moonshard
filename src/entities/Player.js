@@ -451,7 +451,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
   /**
    * The hero is hit. `source` is what the hit came from: 'contact' (a foe's body and weapon, which the helmet turns aside, the
-   * default) or 'ranged' (what a foe threw, which the shield does). Worn armour takes its share off, and the hit still costs at least 1.
+   * default) or 'ranged' (what a foe threw, which the shield does); anything else (a hazard, a fall) nothing turns aside. Worn
+   * armour takes its share off, and the hit still costs at least 1. Whoever throws something says 'ranged', or the helm cuts it.
    */
   takeDamage(amount = 20, knockbackDir = 0, source = 'contact') {
     if (this.isDead || (this.scene && this.scene.inDialogue) || this.scene.time.now < this.invulnerableUntil) return false;
