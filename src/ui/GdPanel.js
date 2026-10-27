@@ -6,7 +6,7 @@ import { openSheet } from './sheet.js';
 import { rememberGate } from '../engine/gateMemory.js';
 import { fetchConfig } from '../gd/leaderboard.js';
 import { openEmailSheet } from './emailSheet.js';
-import { openReferralSheet } from './referralSheet.js';
+import { copyText, openReferralSheet } from './referralSheet.js';
 
 /**
  * The wallet and the way into the game, drawn as one sheet over the screen (src/ui/sheet.js). What it says is decided by
@@ -19,6 +19,7 @@ export class GdPanel {
     this.gate = null; // { label, launch } while the verified-human gate is showing
     this.config = null; // /api/config, for the amounts "How G$ works" names
     this.howOpen = false;
+    this.twinOpen = false; // the "Verified with GoodDollar before?" help under the face scan
     this.unsubscribe = null;
   }
 
@@ -57,7 +58,9 @@ export class GdPanel {
       onAction: (act, el) => this.onAction(act, el),
     });
     this.sheet.el.addEventListener('toggle', (e) => {
-      if (e.target.classList?.contains('how')) this.howOpen = e.target.open;
+      const classes = e.target.classList;
+      if (classes?.contains('twin')) this.twinOpen = e.target.open;
+      else if (classes?.contains('how')) this.howOpen = e.target.open;
     }, true);
     gdService.refreshAll().catch(() => {});
     if (!this.config) {
@@ -70,7 +73,7 @@ export class GdPanel {
   }
 
   view() {
-    return { gate: this.gate ? { label: this.gate.label } : null, config: this.config, howOpen: this.howOpen };
+    return { gate: this.gate ? { label: this.gate.label } : null, config: this.config, howOpen: this.howOpen, twinOpen: this.twinOpen };
   }
 
   render() {
@@ -113,6 +116,13 @@ export class GdPanel {
   async onAction(act, el) {
     if (act === 'email') { this.openEmail(); return; }
     if (act === 'invite') { this.openInvite({ back: true }); return; }
+    if (act === 'copy') {
+      // the wallet's address, for GoodDollar's guide to link it to a wallet that was verified before
+      const address = gdService.getStatus().address;
+      const ok = address ? await copyText(address) : false;
+      showToast(ok ? 'Address copied.' : 'Could not copy. Press and hold the address to copy it.', { type: ok ? 'info' : 'warn' });
+      return;
+    }
     if (act === 'play') {
       const request = this.gate;
       this.close();

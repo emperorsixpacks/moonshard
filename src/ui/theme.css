@@ -222,6 +222,8 @@
 #ms-ui .how ul{margin:0;padding:2px 14px 14px;list-style:none;display:flex;flex-direction:column;gap:12px;color:var(--mist);font:400 21px/1.25 var(--font-ui)}
 #ms-ui .how li{display:flex;gap:12px;align-items:flex-start}
 #ms-ui .how li .ico{margin-top:1px}
+#ms-ui .how li>span{min-width:0}
+#ms-ui .how .addr{display:block;margin:8px 0;padding:8px 10px;background:var(--ink-deep);box-shadow:var(--sunk);color:var(--bone);font:400 19px/1.2 var(--font-ui);word-break:break-all;user-select:all}
 #ms-ui .foot{display:flex;justify-content:space-between;align-items:center}
 #ms-ui .lnk{min-height:44px;padding:0 4px;font:400 20px var(--font-ui);color:var(--mist);text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--mist-dim)}
 #ms-ui .stepper{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr)}

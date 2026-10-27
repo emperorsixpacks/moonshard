@@ -61,7 +61,10 @@ function connectHtml(s, busy) {
     if (!wallets.length) {
       // "I have a wallet" only where a wallet could connect; elsewhere (a phone browser with no WalletConnect) it could only fail
       const other = s.walletAppAvailable ? button('connect', 'I have a wallet', { disabled: busy, kind: 'ghost' }) : note("Using a wallet app? Open Moonshard from inside that app's browser.");
-      return `${withEmail}${note('No wallet app? An email is all you need.')}${other}`;
+      // GoodDollar verifies one wallet per person: someone who already did the face scan in another wallet is stopped as a "twin" when
+      // they come in by email (that is a new wallet), so where their wallet can connect, say so before they choose
+      const twin = s.walletAppAvailable ? note('Verified with GoodDollar before? Connect that wallet instead, so you do not scan again.') : '';
+      return `${withEmail}${note('No wallet app? An email is all you need.')}${twin}${other}`;
     }
     if (wallets.length > 1) return `<p class="note">Choose how to sign in</p><div class="gd-wallets">${withEmail}${wallets.map((w) => button('connect', `${walletIcon(w)}<span>${esc(w.name)}</span>`, { id: w.id, disabled: busy, kind: 'plain', cls: 'gd-wallet' })).join('')}</div>`;
     return `<div class="gd-wallets">${withEmail}${button('connect', `${walletIcon(wallets[0])}<span>Connect ${esc(wallets[0].name)}</span>`, { id: wallets[0].id, disabled: busy, kind: 'plain', cls: 'gd-wallet' })}</div>`;
@@ -244,7 +247,7 @@ export const panelTitle = (s, { gate = null } = {}) => (gate ? gateTitle(s) : 'W
  * The way in, shown when the player tries to start a mode they may not play yet: the steps, the current one marked, and the
  * one action that moves them forward. `gate.label` names the mode they asked for.
  */
-function gateHtml(s, gate, busy, txDisabled, now) {
+function gateHtml(s, gate, busy, txDisabled, now, twinOpen) {
   const step = gateStep(s);
   const { blade, names } = gateNodes(s);
   const about = s.verified ? 2 : 1; // "checking" and "unreachable" are about the blade once the player is verified
@@ -264,15 +267,37 @@ function gateHtml(s, gate, busy, txDisabled, now) {
     action = bladeHtml(s, blade, txDisabled, now);
   } else if (step === 'verify') {
     const expired = s.status === 'expired';
-    action = `${lead(expired ? 'Your GoodDollar verification has expired. Verify again to play.' : "A quick face scan from GoodDollar proves you are a real person. Moonshard never sees your face.")}${button('verify', 'Start face scan', { disabled: txDisabled })}${button('recheck', "I'm done, check again", { disabled: busy, kind: 'ghost' })}`;
+    action = `${lead(expired ? 'Your GoodDollar verification has expired. Verify again to play.' : "A quick face scan from GoodDollar proves you are a real person. Moonshard never sees your face.")}${button('verify', 'Start face scan', { disabled: txDisabled })}${button('recheck', "I'm done, check again", { disabled: busy, kind: 'ghost' })}${expired ? '' : twinHelpHtml(s, { open: twinOpen })}`;
   } else {
     action = `${lead(blade ? 'You are verified and your blade is ready.' : 'You are verified.')}${button('play', `Play ${esc(modeName(gate.label))}`, { disabled: busy })}`;
   }
   return `<ol class="stepper" aria-label="Steps">${steps.join('')}</ol>${action}`;
 }
 
+/** GoodDollar's guide to linking one more wallet to a verified identity. */
+export const LINK_GUIDE = 'https://docs.gooddollar.org/user-guides/connect-another-wallet-address-to-identity';
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * Under the face scan: what to do when GoodDollar answers "We found your twin". GoodDollar verifies one wallet per person, so
+ * a player who already scanned their face for another wallet (in the GoodDollar wallet, or in another app) cannot verify this
+ * one, and Moonshard cannot change that. What works is linking this wallet to the verified one in GoodDollar's guide: a linked
+ * wallet is that person's, and the server already plays it as the verified wallet's player (server/src/identity.js). Folded
+ * away until asked for; empty when there is no well-formed address to give them.
+ */
+export function twinHelpHtml(s, { open = false } = {}) {
+  if (!ADDRESS.test(s.address ?? '')) return '';
+  const li = (icon, text) => `<li>${ico(icon, 22)}<span>${text}</span></li>`;
+  const guide = `<a class="lnk" href="${LINK_GUIDE}" target="_blank" rel="noopener">GoodDollar's guide</a>`;
+  return `<details class="how twin"${open ? ' open' : ''}><summary>Verified with GoodDollar before?${ico('chev', 16)}</summary><ul>${[
+    li('lock', 'GoodDollar verifies one wallet per person. If you did the face scan before, in the GoodDollar wallet or another app, it stops with "We found your twin": that wallet is the one it knows, and this one is new.'),
+    li('loop', `Link this wallet to your verified one. Open ${guide}, connect the verified wallet there and add this address on Celo (you approve one transaction, and a small network fee may apply):<code class="addr">${esc(s.address)}</code>${button('copy', `${ico('copy', 20)}<span>Copy address</span>`, { kind: 'plain', cls: 'gd-wallet' })}`),
+    li('check', `Then come back and tap "I'm done, check again". Or connect the wallet you verified with instead.`),
+  ].join('')}</ul></details>`;
+}
+
 /** The sheet's body. */
-export function renderPanelHtml(s, now = Date.now(), { gate = null, config = null, howOpen = false } = {}) {
+export function renderPanelHtml(s, now = Date.now(), { gate = null, config = null, howOpen = false, twinOpen = false } = {}) {
   const busy = Boolean(s.busy);
   const txDisabled = busy || s.wrongChain || s.needsReconnect;
   const status = Object.hasOwn(LABELS, s.status) ? s.status : 'anonymous'; // never interpolate server text into markup
@@ -284,7 +309,7 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null, config = nul
   if (gate) {
     if (!s.connected && s.sessionExpired) out.push(warn('Your session ended. Connect your wallet again to keep playing.'));
     if (s.connected && s.needsReconnect && gateStep(s) !== 'ready') out.push(warn('Reconnect your wallet to continue.'));
-    out.push(gateHtml(s, gate, busy, txDisabled, now));
+    out.push(gateHtml(s, gate, busy, txDisabled, now, twinOpen));
     if (s.connected) out.push(button('disconnect', 'Disconnect', { disabled: busy, kind: 'ghost' }));
   } else if (!s.connected) {
     // why on the left, which wallet on the right
@@ -315,7 +340,7 @@ export function renderPanelHtml(s, now = Date.now(), { gate = null, config = nul
       const copy = status === 'expired'
         ? 'Your GoodDollar verification has expired. Verify again to keep earning.'
         : "Moonshard is played by verified humans: one human, one slot. GoodDollar's quick face scan proves you are a real person. Moonshard never sees your face.";
-      next = `${lead(copy)}${button('verify', 'Start face scan', { disabled: txDisabled })}${button('recheck', "I'm done, check again", { disabled: busy, kind: 'ghost' })}`;
+      next = `${lead(copy)}${button('verify', 'Start face scan', { disabled: txDisabled })}${button('recheck', "I'm done, check again", { disabled: busy, kind: 'ghost' })}${status === 'unverified' ? twinHelpHtml(s, { open: twinOpen }) : ''}`;
     } else {
       next = purseHtml(s);
     }
