@@ -220,6 +220,42 @@ test('a connected player who is not verified is sent to the face scan', () => {
   assert.equal(gateTitle(status({ ...s, status: 'expired' })), 'Verify again');
 });
 
+const LINK_GUIDE = 'https://docs.gooddollar.org/user-guides/connect-another-wallet-address-to-identity';
+
+test('under the face scan, a folded help says what to do on "We found your twin": link this wallet to the verified one', () => {
+  const s = { status: 'unverified', verified: false, ubi: null, bounty: null, spoils: [] };
+  for (const h of [gated(s), html(s)]) {
+    assert.match(h, /<details class="how twin">/, 'folded away until it is asked for');
+    assert.match(h, /Verified with GoodDollar before\?/);
+    assert.ok(h.includes(`href="${LINK_GUIDE}" target="_blank" rel="noopener"`), 'GoodDollar\'s own guide, opened in a new tab');
+    assert.ok(h.includes(`<code class="addr">${ADDR}</code>`), 'the full address, to paste into the guide');
+    assert.match(h, /data-act="copy"/);
+    assert.ok(h.indexOf('data-act="verify"') < h.indexOf('class="how twin"'), 'it sits under the scan, which stays the main action');
+  }
+  assert.match(renderPanelHtml(status(s), 0, { twinOpen: true }), /<details class="how twin" open>/);
+  assert.match(renderPanelHtml(status(s), 0, { gate, twinOpen: true }), /<details class="how twin" open>/);
+});
+
+test('the twin help is for a wallet that has not been verified, and for nobody else', () => {
+  for (const over of [
+    {}, // verified
+    { status: 'expired', verified: false }, // it was verified, so it is not a twin
+    { status: 'unknown', verified: false },
+    { connected: false, status: 'anonymous', verified: false, ubi: null, bounty: null, spoils: [] },
+  ]) {
+    assert.doesNotMatch(html(over), /class="how twin"|data-act="copy"/, JSON.stringify(over));
+    assert.doesNotMatch(gated(over), /class="how twin"|data-act="copy"/, JSON.stringify(over));
+  }
+});
+
+test('the twin help never puts anything but a well-formed address into the page', () => {
+  for (const address of ['<img src=x onerror=alert(1)>', '0xabc', '', null, `${ADDR}"><b>`]) {
+    const h = html({ status: 'unverified', verified: false, ubi: null, bounty: null, spoils: [], address });
+    assert.doesNotMatch(h, /class="how twin"/, String(address));
+    assert.ok(!h.includes('<img src=x') && !h.includes(`${ADDR}"><b>`), `${address} is not put into the page as markup`);
+  }
+});
+
 test('the gate says when it is still checking, and when it cannot reach the server', () => {
   assert.match(gated({ status: 'unknown', verified: false, offline: false }), /Checking your verification/);
   const off = gated({ status: 'unknown', verified: false, offline: true });
@@ -421,11 +457,13 @@ test('with a Magic key and no wallet app, email is the main way in and the walle
 test('"I have a wallet" is offered only where a wallet could connect', () => {
   for (const h of [gated({ ...anonymous, wallets: [], emailAvailable: true, walletAppAvailable: true }), html({ ...anonymous, wallets: [], emailAvailable: true, walletAppAvailable: true })]) {
     assert.match(h, /data-act="connect"[^>]*>I have a wallet</);
+    assert.match(h, /Verified with GoodDollar before\? Connect that wallet instead/, 'someone verified in another wallet is told to bring it, before the email makes a twin');
   }
   // a phone browser with no injected wallet and no WalletConnect: the button could only fail, so it is not there
   for (const h of [gated({ ...anonymous, wallets: [], emailAvailable: true, walletAppAvailable: false }), html({ ...anonymous, wallets: [], emailAvailable: true, walletAppAvailable: false })]) {
     assert.doesNotMatch(h, /data-act="connect"/);
     assert.doesNotMatch(h, /I have a wallet/);
+    assert.doesNotMatch(h, /Connect that wallet instead/, 'no wallet can connect here, so there is nothing to bring');
     assert.match(h, /Open Moonshard from inside that app/);
     assert.match(h, /data-act="email"/, 'the email stays the way in');
   }
